@@ -40,7 +40,7 @@ const CandlestickChart = ({ data, chartType }: { data: any[], chartType: string 
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[400px] text-white/60">
-        No hay datos disponibles para el gráfico
+        No chart data available
       </div>
     );
   }
@@ -56,7 +56,7 @@ const CandlestickChart = ({ data, chartType }: { data: any[], chartType: string 
   if (allPrices.length === 0) {
     return (
       <div className="flex items-center justify-center h-[400px] text-white/60">
-        No hay datos de precio válidos
+        No valid price data available
       </div>
     );
   }
@@ -85,9 +85,9 @@ const CandlestickChart = ({ data, chartType }: { data: any[], chartType: string 
     try {
       const date = new Date(time);
       if (chartType === '1H' || chartType === '4H') {
-        return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
       }
-      return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     } catch {
       return '';
     }
@@ -990,9 +990,9 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
                         tickFormatter={(value) => {
                           const date = new Date(value);
                           if (chartType === '1H' || chartType === '4H') {
-                            return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                            return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                           }
-                          return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+                          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                         }}
                       />
                       <YAxis stroke="#94a3b8" />

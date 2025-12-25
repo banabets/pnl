@@ -141,24 +141,24 @@ export default function UserProfile() {
       <div className="bg-black rounded-lg p-8 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
         <div className="mb-8 pb-6 border-b border-white/10">
           <h2 className="text-3xl font-bold text-white mb-2">
-            {isRegister ? 'Crear Cuenta' : 'Iniciar Sesión'}
+            {isRegister ? 'Create Account' : 'Sign In'}
           </h2>
           <p className="text-white/50 text-sm">
-            {isRegister ? 'Regístrate para gestionar tu perfil y wallets' : 'Accede a tu cuenta para gestionar tu perfil'}
+            {isRegister ? 'Sign up to manage your profile and wallets' : 'Sign in to access your account'}
           </p>
         </div>
         
         <form onSubmit={isRegister ? handleRegister : handleLogin} className="space-y-5">
           <div>
             <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-              Usuario
+              Username
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              placeholder={isRegister ? "Elige un nombre de usuario" : "Usuario o email"}
+              placeholder={isRegister ? "Choose a username" : "Username or email"}
               className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
             />
           </div>
@@ -181,14 +181,14 @@ export default function UserProfile() {
           
           <div>
             <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-              Contraseña
+              Password
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              placeholder={isRegister ? "Mínimo 6 caracteres" : "Tu contraseña"}
+              placeholder={isRegister ? "Minimum 6 characters" : "Your password"}
               className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
             />
           </div>
@@ -196,14 +196,14 @@ export default function UserProfile() {
           {isRegister && (
             <div>
               <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-                Confirmar Contraseña
+                Confirm Password
               </label>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                placeholder="Repite tu contraseña"
+                placeholder="Repeat your password"
                 className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
               />
             </div>
@@ -218,10 +218,10 @@ export default function UserProfile() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  {isRegister ? 'Registrando...' : 'Iniciando...'}
+                  {isRegister ? 'Signing up...' : 'Signing in...'}
                 </span>
               ) : (
-                isRegister ? 'Registrarse' : 'Iniciar Sesión'
+                isRegister ? 'Sign Up' : 'Sign In'
               )}
             </button>
             <button
@@ -235,7 +235,7 @@ export default function UserProfile() {
               }}
               className="px-6 py-3 bg-black border border-white/15 hover:border-white/30 text-white rounded-lg font-medium shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] hover:shadow-[0_2px_6px_rgba(0,0,0,0.4)] transition-all text-sm"
             >
-              {isRegister ? 'Ya tengo cuenta' : 'Crear cuenta'}
+              {isRegister ? 'Already have an account' : 'Create account'}
             </button>
           </div>
         </form>
@@ -249,14 +249,14 @@ export default function UserProfile() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
           <div>
-            <h2 className="text-3xl font-bold text-white mb-2">Mi Perfil</h2>
-            <p className="text-white/50 text-sm">Gestiona tu información personal y preferencias</p>
+            <h2 className="text-3xl font-bold text-white mb-2">My Profile</h2>
+            <p className="text-white/50 text-sm">Manage your personal information and preferences</p>
           </div>
           <button
             onClick={handleLogout}
             className="px-5 py-2.5 bg-black border border-red-500/40 hover:border-red-500/60 text-red-400 rounded-lg font-medium text-sm shadow-[0_2px_6px_rgba(239,68,68,0.2),inset_0_1px_0_rgba(255,255,255,0.05)] hover:shadow-[0_4px_10px_rgba(239,68,68,0.3)] transition-all"
           >
-            Cerrar Sesión
+            Sign Out
           </button>
         </div>
 
@@ -358,14 +358,14 @@ export default function UserProfile() {
 
       {/* Account Stats */}
       <div className="bg-black rounded-lg p-6 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
-        <h3 className="text-xl font-bold text-white mb-4">Información de la Cuenta</h3>
+        <h3 className="text-xl font-bold text-white mb-4">Account Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-black/30 rounded-lg p-4 border border-white/10">
             <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
               Miembro desde
             </div>
             <div className="text-white font-semibold">
-              {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('es-ES', { 
+              {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { 
                 year: 'numeric', 
                 month: 'long', 
                 day: 'numeric' 
@@ -377,7 +377,7 @@ export default function UserProfile() {
               Última actualización
             </div>
             <div className="text-white font-semibold">
-              {user?.updatedAt ? new Date(user.updatedAt).toLocaleDateString('es-ES', { 
+              {user?.updatedAt ? new Date(user.updatedAt).toLocaleDateString('en-US', { 
                 year: 'numeric', 
                 month: 'long', 
                 day: 'numeric' 

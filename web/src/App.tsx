@@ -562,7 +562,7 @@ function App() {
               { id: 'pumpfun', label: 'Trade Bot' },
               { id: 'master', label: 'Master Wallet' },
               { id: 'config', label: 'Config' },
-              { id: 'profile', label: 'Perfil' },
+              { id: 'profile', label: 'Profile' },
             ].map((tab) => (
               <button
                 key={tab.id}

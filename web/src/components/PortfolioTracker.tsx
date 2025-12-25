@@ -48,13 +48,15 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
     try {
       setLoading(true);
       const [summaryRes, positionsRes] = await Promise.all([
-        api.get('/portfolio/summary'),
-        api.get(`/portfolio/positions?status=${filter === 'all' ? '' : filter}`),
+        api.get('/portfolio/summary').catch(() => ({ data: null })),
+        api.get(`/portfolio/positions?status=${filter === 'all' ? '' : filter}`).catch(() => ({ data: { positions: [] } })),
       ]);
       setSummary(summaryRes.data);
-      setPositions(positionsRes.data.positions || []);
+      setPositions(positionsRes.data?.positions || []);
     } catch (error) {
       console.error('Failed to load portfolio:', error);
+      setSummary(null);
+      setPositions([]);
     } finally {
       setLoading(false);
     }
@@ -68,7 +70,7 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
-    return date.toLocaleString('es-ES', {
+    return date.toLocaleString('en-US', {
       day: '2-digit',
       month: 'short',
       hour: '2-digit',
@@ -80,6 +82,7 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+        <span className="ml-3 text-white/60">Loading portfolio...</span>
       </div>
     );
   }
@@ -87,7 +90,7 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      {summary && (
+      {summary ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-black border border-white/15 rounded-lg p-4">
             <div className="text-white/60 text-sm mb-1">Total Invested</div>
@@ -120,6 +123,11 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
               {summary.openPositions}
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="bg-black border border-white/15 rounded-lg p-8 text-center">
+          <div className="text-white/60 mb-2">No portfolio data available</div>
+          <div className="text-white/40 text-sm">Start trading to see your positions here</div>
         </div>
       )}
 
