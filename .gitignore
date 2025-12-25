@@ -26,6 +26,7 @@ keypairs/
 !package.json
 !package-lock.json
 !tsconfig.json
+!vercel.json
 !web/package.json
 !web/package-lock.json
 !web/tsconfig.json
