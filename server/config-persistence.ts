@@ -1,0 +1,56 @@
+// Config Persistence Manager
+// Saves and loads simulation mode to/from disk
+
+import fs from 'fs';
+import path from 'path';
+
+const CONFIG_FILE = path.join(__dirname, '../config.json');
+
+export interface PersistentConfig {
+  simulationMode: boolean;
+  rpcUrl: string;
+  maxSolPerSwap: number;
+  slippageBps: number;
+}
+
+export class ConfigPersistence {
+  private defaultConfig: PersistentConfig = {
+    simulationMode: false, // Always real mode - simulation removed
+    rpcUrl: process.env.RPC_URL || 'https://api.mainnet-beta.solana.com',
+    maxSolPerSwap: 0.05,
+    slippageBps: 50,
+  };
+
+  loadConfig(): PersistentConfig {
+    try {
+      if (fs.existsSync(CONFIG_FILE)) {
+        const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+        const config = JSON.parse(data);
+        console.log('📂 Config loaded from disk:', config);
+        return { ...this.defaultConfig, ...config };
+      }
+    } catch (error) {
+      console.error('Error loading config from disk:', error);
+    }
+    
+    console.log('📂 Using default config (no file found)');
+    return { ...this.defaultConfig };
+  }
+
+  saveConfig(config: Partial<PersistentConfig>): void {
+    try {
+      const currentConfig = this.loadConfig();
+      const newConfig = { ...currentConfig, ...config };
+      
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
+      console.log('💾 Config saved to disk:', newConfig);
+    } catch (error) {
+      console.error('Error saving config to disk:', error);
+    }
+  }
+
+  updateSimulationMode(enabled: boolean): void {
+    this.saveConfig({ simulationMode: enabled });
+  }
+}
+
