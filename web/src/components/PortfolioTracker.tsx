@@ -62,7 +62,8 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
     }
   };
 
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number | undefined) => {
+    if (price === undefined || price === null || isNaN(price)) return '0.00000000';
     if (price >= 1) return price.toFixed(4);
     if (price >= 0.01) return price.toFixed(6);
     return price.toFixed(8);
@@ -95,32 +96,32 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
           <div className="bg-black border border-white/15 rounded-lg p-4">
             <div className="text-white/60 text-sm mb-1">Total Invested</div>
             <div className="text-2xl font-bold text-white">
-              {summary.totalInvested.toFixed(4)} SOL
+              {(summary.totalInvested ?? 0).toFixed(4)} SOL
             </div>
           </div>
           <div className="bg-black border border-white/15 rounded-lg p-4">
             <div className="text-white/60 text-sm mb-1">Current Value</div>
             <div className="text-2xl font-bold text-white">
-              {summary.totalValue.toFixed(4)} SOL
+              {(summary.totalValue ?? 0).toFixed(4)} SOL
             </div>
           </div>
           <div className="bg-black border border-white/15 rounded-lg p-4">
             <div className="text-white/60 text-sm mb-1">Total P&L</div>
             <div className={`text-2xl font-bold ${
-              summary.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'
+              (summary.totalPnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
             }`}>
-              {summary.totalPnl >= 0 ? '+' : ''}{summary.totalPnl.toFixed(4)} SOL
+              {(summary.totalPnl ?? 0) >= 0 ? '+' : ''}{(summary.totalPnl ?? 0).toFixed(4)} SOL
             </div>
             <div className={`text-sm ${
-              summary.totalPnlPercent >= 0 ? 'text-green-400' : 'text-red-400'
+              (summary.totalPnlPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
             }`}>
-              {summary.totalPnlPercent >= 0 ? '+' : ''}{summary.totalPnlPercent.toFixed(2)}%
+              {(summary.totalPnlPercent ?? 0) >= 0 ? '+' : ''}{(summary.totalPnlPercent ?? 0).toFixed(2)}%
             </div>
           </div>
           <div className="bg-black border border-white/15 rounded-lg p-4">
             <div className="text-white/60 text-sm mb-1">Open Positions</div>
             <div className="text-2xl font-bold text-white">
-              {summary.openPositions}
+              {summary.openPositions ?? 0}
             </div>
           </div>
         </div>
@@ -189,25 +190,25 @@ export default function PortfolioTracker({ socket }: PortfolioTrackerProps) {
                       {formatPrice(position.currentPrice)}
                     </td>
                     <td className="px-4 py-3 text-right text-white">
-                      {position.tokenAmount.toFixed(2)}
+                      {(position.tokenAmount ?? 0).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-right text-white">
-                      {position.currentValue.toFixed(4)} SOL
+                      {(position.currentValue ?? 0).toFixed(4)} SOL
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className={`font-medium ${
-                        position.pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                        (position.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                       }`}>
-                        {position.pnl >= 0 ? '+' : ''}{position.pnl.toFixed(4)} SOL
+                        {(position.pnl ?? 0) >= 0 ? '+' : ''}{(position.pnl ?? 0).toFixed(4)} SOL
                       </div>
                       <div className={`text-sm ${
-                        position.pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'
+                        (position.pnlPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                       }`}>
-                        {position.pnlPercent >= 0 ? '+' : ''}{position.pnlPercent.toFixed(2)}%
+                        {(position.pnlPercent ?? 0) >= 0 ? '+' : ''}{(position.pnlPercent ?? 0).toFixed(2)}%
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-white/60 text-sm">
-                      {formatTime(position.entryTimestamp)}
+                      {position.entryTimestamp ? formatTime(position.entryTimestamp) : 'N/A'}
                     </td>
                   </tr>
                 ))

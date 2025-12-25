@@ -288,9 +288,9 @@ class PortfolioTracker {
   // Get portfolio summary
   getPortfolioSummary() {
     const openPositions = this.getOpenPositions();
-    const totalInvested = openPositions.reduce((sum, p) => sum + p.entryAmount, 0);
-    const totalValue = openPositions.reduce((sum, p) => sum + p.currentValue, 0);
-    const totalPnl = openPositions.reduce((sum, p) => sum + p.pnl, 0);
+    const totalInvested = openPositions.reduce((sum, p) => sum + (p.entryAmount || 0), 0);
+    const totalValue = openPositions.reduce((sum, p) => sum + (p.currentValue || 0), 0);
+    const totalPnl = openPositions.reduce((sum, p) => sum + (p.pnl || 0), 0);
     const totalPnlPercent = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
 
     const closedPositions = Array.from(this.positions.values())
@@ -298,13 +298,13 @@ class PortfolioTracker {
     const realizedPnl = closedPositions.reduce((sum, p) => sum + (p.pnl || 0), 0);
 
     return {
-      openPositions: openPositions.length,
-      totalInvested,
-      totalValue,
-      totalPnl,
-      totalPnlPercent,
-      realizedPnl,
-      totalPnl: totalPnl + realizedPnl,
+      openPositions: openPositions.length || 0,
+      totalInvested: totalInvested || 0,
+      totalValue: totalValue || 0,
+      totalPnl: totalPnl || 0,
+      totalPnlPercent: totalPnlPercent || 0,
+      realizedPnl: realizedPnl || 0,
+      totalPnl: (totalPnl || 0) + (realizedPnl || 0),
     };
   }
 }
