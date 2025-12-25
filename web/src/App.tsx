@@ -96,11 +96,23 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Auto-detect server URL (use current hostname for local network access)
-    let serverUrl = window.location.origin.replace(/:\d+$/, ':3001');
+    // Auto-detect server URL based on environment
+    let serverUrl: string;
     
-    // If already on port 3001, use the same origin
-    if (window.location.port === '3001' || window.location.port === '') {
+    // Use environment variable if available (for production)
+    if (import.meta.env.VITE_SOCKET_URL) {
+      serverUrl = import.meta.env.VITE_SOCKET_URL;
+    }
+    // If we're on the same origin (served by the backend), use same origin
+    else if (window.location.port === '3001' || window.location.port === '') {
+      serverUrl = window.location.origin;
+    }
+    // Development: use localhost:3001
+    else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      serverUrl = 'http://localhost:3001';
+    }
+    // Production fallback: try to use same origin (won't work if backend is separate)
+    else {
       serverUrl = window.location.origin;
     }
     

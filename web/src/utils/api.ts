@@ -1,13 +1,24 @@
 import axios from 'axios';
 
-// Auto-detect API URL based on current hostname (works for localhost and local network)
+// Auto-detect API URL based on environment
 const getApiUrl = () => {
+  // Use environment variable if available (for production)
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  
   // If we're on the same origin (served by the backend), use relative path
   if (window.location.port === '3001' || window.location.port === '') {
     return '/api';
   }
-  // Otherwise, use the same hostname but port 3001
-  return `${window.location.protocol}//${window.location.hostname}:3001/api`;
+  
+  // Development: use localhost:3001
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:3001/api';
+  }
+  
+  // Production fallback: try to use same origin (won't work if backend is separate)
+  return '/api';
 };
 
 const API_URL = getApiUrl();
