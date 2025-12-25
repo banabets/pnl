@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Build outputs (will be generated)
+dist/
+web/dist/
+
+# Environment variables (use Vercel env vars)
+.env
+.env.local
+.env.*.local
+.env.bak
+
+# Keypairs (IMPORTANT: Never commit private keys!)
+keypairs/
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+!web/tsconfig.node.json
+
+# Data directory
+data/
+sessions/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
