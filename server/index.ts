@@ -49,6 +49,10 @@ try {
   console.warn('PumpFunOnChainSearch not found');
 }
 
+// Config Persistence (must be imported before use)
+import { ConfigPersistence } from './config-persistence';
+const configPersistence = new ConfigPersistence();
+
 try {
   configManager = require('../dist/config').configManager;
 } catch (e) {
@@ -91,6 +95,10 @@ import { TradesListener } from '../src/pumpfun/trades-listener';
 import { UserSessionManager } from './user-session';
 const userSessionManager = new UserSessionManager();
 
+// User Auth Manager
+import { UserAuthManager } from './user-auth';
+const userAuthManager = new UserAuthManager();
+
 // WebSocket API Comparison (optional - only if dependencies available)
 let compareWebSocketAPIs: any = null;
 try {
@@ -100,9 +108,6 @@ try {
   console.warn('WebSocket comparison module not available (install ws and socket.io-client)');
 }
 
-// Config Persistence
-import { ConfigPersistence } from './config-persistence';
-const configPersistence = new ConfigPersistence();
 
 // Portfolio Tracker, Stop Loss, and Price Alerts
 import { portfolioTracker } from './portfolio-tracker';
@@ -4098,10 +4103,10 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces for local network access
 
-httpServer.listen(PORT, HOST, () => {
+httpServer.listen(PORT, HOST as string, () => {
   console.log(`🚀 Server running on http://${HOST}:${PORT}`);
   console.log(`📊 Web interface available at:`);
   console.log(`   - http://localhost:${PORT}`);
