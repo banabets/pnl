@@ -270,7 +270,7 @@ export default function UserProfile() {
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold text-white mb-1">
-                {user?.profile?.displayName || user?.username || 'Usuario'}
+                {user?.profile?.displayName || user?.username || 'User'}
               </div>
               <div className="text-white/60 text-sm">@{user?.username}</div>
               {user?.email && (
@@ -285,14 +285,14 @@ export default function UserProfile() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-                Nombre de Usuario
+                Username
               </label>
               <input
                 type="text"
                 value={editUsername}
                 onChange={(e) => setEditUsername(e.target.value)}
                 required
-                placeholder="Tu nombre de usuario"
+                placeholder="Your username"
                 className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
               />
             </div>
@@ -307,7 +307,7 @@ export default function UserProfile() {
                 disabled
                 className="w-full px-4 py-2.5 bg-black/50 border border-white/10 rounded-md text-white/50 cursor-not-allowed text-sm"
               />
-              <p className="text-xs text-white/40 mt-1.5">El email no puede ser modificado</p>
+              <p className="text-xs text-white/40 mt-1.5">Email cannot be modified</p>
             </div>
           </div>
           
@@ -362,7 +362,7 @@ export default function UserProfile() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-black/30 rounded-lg p-4 border border-white/10">
             <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
-              Miembro desde
+              Member since
             </div>
             <div className="text-white font-semibold">
               {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { 
@@ -374,7 +374,7 @@ export default function UserProfile() {
           </div>
           <div className="bg-black/30 rounded-lg p-4 border border-white/10">
             <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
-              Última actualización
+              Last updated
             </div>
             <div className="text-white font-semibold">
               {user?.updatedAt ? new Date(user.updatedAt).toLocaleDateString('en-US', { 
