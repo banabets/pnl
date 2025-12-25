@@ -20,5 +20,10 @@ export default defineConfig({
     outDir: 'build',
     chunkSizeWarningLimit: 1000,
   },
+  // Expose environment variables to the client
+  define: {
+    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL),
+    'import.meta.env.VITE_SOCKET_URL': JSON.stringify(process.env.VITE_SOCKET_URL),
+  },
 });
 
