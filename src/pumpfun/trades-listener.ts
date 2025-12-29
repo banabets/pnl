@@ -294,22 +294,6 @@ export class TradesListener {
       let finalSeller = '';
       let finalSolAmount = 0;
       
-      // Get signer if not already set
-      if (!signerAccount) {
-        if ('transaction' in tx && tx.transaction) {
-          const message = tx.transaction.message;
-          if ('accountKeys' in message && message.accountKeys && message.accountKeys.length > 0) {
-            const firstKey = message.accountKeys[0];
-            signerAccount = typeof firstKey === 'string' ? firstKey : firstKey.toString();
-          } else if ('instructions' in message) {
-            const staticKeys = (message as any).staticAccountKeys;
-            if (staticKeys && staticKeys.length > 0) {
-              signerAccount = staticKeys[0].toString();
-            }
-          }
-        }
-      }
-      
       if (isBuy) {
         // This is a BUY trade: user is buying tokens with SOL
         finalBuyer = signerAccount || accountOwner || '';
