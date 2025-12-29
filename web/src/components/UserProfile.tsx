@@ -5,9 +5,34 @@ interface User {
   id: string;
   username: string;
   email: string;
+  createdAt: string;
+  lastLogin?: string;
+  role: 'user' | 'admin' | 'premium';
+  status: 'active' | 'suspended' | 'banned';
   profile?: {
     displayName?: string;
     bio?: string;
+    avatar?: string;
+    timezone?: string;
+    language?: string;
+  };
+  settings?: {
+    theme?: 'light' | 'dark' | 'auto';
+    notifications?: {
+      email?: boolean;
+      priceAlerts?: boolean;
+      tradeAlerts?: boolean;
+    };
+    trading?: {
+      defaultSlippage?: number;
+      defaultWalletIndex?: number;
+    };
+  };
+  stats?: {
+    totalTrades?: number;
+    totalVolume?: number;
+    totalProfit?: number;
+    winRate?: number;
   };
 }
 
@@ -16,6 +41,7 @@ export default function UserProfile() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
+  const [activeTab, setActiveTab] = useState<'profile' | 'settings' | 'security' | 'activity'>('profile');
   
   // Register/Login form state
   const [username, setUsername] = useState('');
@@ -27,29 +53,77 @@ export default function UserProfile() {
   const [editUsername, setEditUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
+  const [timezone, setTimezone] = useState('');
+  const [language, setLanguage] = useState('');
+  
+  // Settings state
+  const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('dark');
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [priceAlerts, setPriceAlerts] = useState(true);
+  const [tradeAlerts, setTradeAlerts] = useState(true);
+  const [defaultSlippage, setDefaultSlippage] = useState(1);
+  
+  // Security state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  
+  // Activity logs
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
 
   useEffect(() => {
-    // Check if user is logged in (simple check - in production use proper auth)
-    const savedUserId = localStorage.getItem('userId');
-    if (savedUserId) {
-      loadUser(savedUserId);
-    }
+    checkAuth();
   }, []);
 
-  const loadUser = async (userId: string) => {
+  useEffect(() => {
+    if (isLoggedIn && user) {
+      loadActivityLogs();
+    }
+  }, [isLoggedIn, user]);
+
+  const checkAuth = async () => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      try {
+        const res = await api.get('/auth/me');
+        if (res.data.success) {
+          setUser(res.data.user);
+          setIsLoggedIn(true);
+          loadUserData(res.data.user);
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userId');
+      }
+    }
+  };
+
+  const loadUserData = (userData: User) => {
+    setEditUsername(userData.username);
+    setDisplayName(userData.profile?.displayName || '');
+    setBio(userData.profile?.bio || '');
+    setTimezone(userData.profile?.timezone || '');
+    setLanguage(userData.profile?.language || '');
+    
+    if (userData.settings) {
+      setTheme(userData.settings.theme || 'dark');
+      setEmailNotifications(userData.settings.notifications?.email ?? true);
+      setPriceAlerts(userData.settings.notifications?.priceAlerts ?? true);
+      setTradeAlerts(userData.settings.notifications?.tradeAlerts ?? true);
+      setDefaultSlippage(userData.settings.trading?.defaultSlippage || 1);
+    }
+  };
+
+  const loadActivityLogs = async () => {
+    if (!user) return;
     try {
-      const res = await api.get(`/auth/user/${userId}`);
+      const res = await api.get(`/auth/user/${user.id}/activity?limit=50`);
       if (res.data.success) {
-        setUser(res.data.user);
-        setIsLoggedIn(true);
-        setEditUsername(res.data.user.username);
-        setDisplayName(res.data.user.profile?.displayName || '');
-        setBio(res.data.user.profile?.bio || '');
+        setActivityLogs(res.data.logs);
       }
     } catch (error) {
-      console.error('Failed to load user:', error);
-      localStorage.removeItem('userId');
-      setIsLoggedIn(false);
+      console.error('Failed to load activity logs:', error);
     }
   };
 
@@ -61,8 +135,8 @@ export default function UserProfile() {
       return;
     }
     
-    if (password.length < 6) {
-      alert('Password must be at least 6 characters');
+    if (password.length < 8) {
+      alert('Password must be at least 8 characters');
       return;
     }
     
@@ -71,7 +145,10 @@ export default function UserProfile() {
       const res = await api.post('/auth/register', { username, email, password });
       if (res.data.success) {
         localStorage.setItem('userId', res.data.user.id);
-        await loadUser(res.data.user.id);
+        localStorage.setItem('authToken', res.data.token);
+        setUser(res.data.user);
+        setIsLoggedIn(true);
+        loadUserData(res.data.user);
         alert('✅ Registration successful!');
         setIsRegister(false);
         setUsername('');
@@ -94,7 +171,9 @@ export default function UserProfile() {
       if (res.data.success) {
         localStorage.setItem('userId', res.data.user.id);
         localStorage.setItem('authToken', res.data.token);
-        await loadUser(res.data.user.id);
+        setUser(res.data.user);
+        setIsLoggedIn(true);
+        loadUserData(res.data.user);
         alert('✅ Login successful!');
         setUsername('');
         setPassword('');
@@ -115,7 +194,9 @@ export default function UserProfile() {
       const res = await api.put(`/auth/user/${user.id}/profile`, {
         username: editUsername,
         displayName,
-        bio
+        bio,
+        timezone,
+        language
       });
       if (res.data.success) {
         setUser(res.data.user);
@@ -128,7 +209,72 @@ export default function UserProfile() {
     }
   };
 
-  const handleLogout = () => {
+  const handleUpdateSettings = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const res = await api.put(`/auth/user/${user.id}/settings`, {
+        theme,
+        notifications: {
+          email: emailNotifications,
+          priceAlerts,
+          tradeAlerts
+        },
+        trading: {
+          defaultSlippage
+        }
+      });
+      if (res.data.success) {
+        setUser(res.data.user);
+        alert('✅ Settings updated successfully!');
+      }
+    } catch (error: any) {
+      alert(`Error: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    
+    if (newPassword !== confirmNewPassword) {
+      alert('New passwords do not match');
+      return;
+    }
+    
+    if (newPassword.length < 8) {
+      alert('New password must be at least 8 characters');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await api.post(`/auth/user/${user.id}/change-password`, {
+        currentPassword,
+        newPassword
+      });
+      if (res.data.success) {
+        alert('✅ Password changed successfully!');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+      }
+    } catch (error: any) {
+      alert(`Error: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
     localStorage.removeItem('userId');
     localStorage.removeItem('authToken');
     setUser(null);
@@ -173,7 +319,7 @@ export default function UserProfile() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="tu@email.com"
+                placeholder="your@email.com"
                 className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
               />
             </div>
@@ -188,7 +334,7 @@ export default function UserProfile() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              placeholder={isRegister ? "Minimum 6 characters" : "Your password"}
+              placeholder={isRegister ? "Minimum 8 characters" : "Your password"}
               className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
             />
           </div>
@@ -245,12 +391,12 @@ export default function UserProfile() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="bg-black rounded-lg p-8 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
           <div>
             <h2 className="text-3xl font-bold text-white mb-2">My Profile</h2>
-            <p className="text-white/50 text-sm">Manage your personal information and preferences</p>
+            <p className="text-white/50 text-sm">Manage your account and preferences</p>
           </div>
           <button
             onClick={handleLogout}
@@ -276,117 +422,263 @@ export default function UserProfile() {
               {user?.email && (
                 <div className="text-white/40 text-xs mt-1">{user.email}</div>
               )}
+              {user?.stats && (
+                <div className="flex gap-4 mt-2 text-xs">
+                  <span className="text-white/50">Trades: {user.stats.totalTrades || 0}</span>
+                  <span className="text-white/50">Volume: {(user.stats.totalVolume || 0).toFixed(2)} SOL</span>
+                  <span className="text-white/50">P&L: {(user.stats.totalProfit || 0).toFixed(4)} SOL</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      
-        {/* Edit Profile Form */}
-        <form onSubmit={handleUpdateProfile} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 border-b border-white/10">
+          {(['profile', 'settings', 'security', 'activity'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-sm font-medium transition-all ${
+                activeTab === tab
+                  ? 'text-white border-b-2 border-white'
+                  : 'text-white/50 hover:text-white/70'
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {/* Profile Tab */}
+        {activeTab === 'profile' && (
+          <form onSubmit={handleUpdateProfile} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={user?.email || ''}
+                  disabled
+                  className="w-full px-4 py-2.5 bg-black/50 border border-white/10 rounded-md text-white/50 cursor-not-allowed text-sm"
+                />
+                <p className="text-xs text-white/40 mt-1.5">Email cannot be modified</p>
+              </div>
+            </div>
+            
             <div>
               <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-                Username
+                Display Name
               </label>
               <input
                 type="text"
-                value={editUsername}
-                onChange={(e) => setEditUsername(e.target.value)}
-                required
-                placeholder="Your username"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your full name or nickname (optional)"
                 className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
               />
             </div>
             
             <div>
               <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-                Email
+                Bio
               </label>
-              <input
-                type="email"
-                value={user?.email || ''}
-                disabled
-                className="w-full px-4 py-2.5 bg-black/50 border border-white/10 rounded-md text-white/50 cursor-not-allowed text-sm"
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Tell us about yourself..."
+                rows={4}
+                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all resize-none text-sm"
               />
-              <p className="text-xs text-white/40 mt-1.5">Email cannot be modified</p>
             </div>
-          </div>
-          
-          <div>
-            <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-              Nombre para Mostrar
-            </label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Tu nombre completo o apodo (opcional)"
-              className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
-              Biografía
-            </label>
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              placeholder="Cuéntanos sobre ti..."
-              rows={4}
-              className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all resize-none text-sm"
-            />
-          </div>
-          
-          <div className="pt-4 border-t border-white/10">
+            
             <button
               type="submit"
               disabled={loading}
               className="w-full px-6 py-3 bg-black border-2 border-white/20 hover:border-white/40 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6)] transition-all"
             >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Guardando...
-                </span>
-              ) : (
-                'Guardar Cambios'
-              )}
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </form>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            <div>
+              <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
+                Theme
+              </label>
+              <select
+                value={theme}
+                onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'auto')}
+                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+                <option value="auto">Auto</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-white/70 text-sm font-medium mb-3 uppercase tracking-wider">
+                Notifications
+              </label>
+              <div className="space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={emailNotifications}
+                    onChange={(e) => setEmailNotifications(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-black text-white focus:ring-2 focus:ring-white/20"
+                  />
+                  <span className="text-white/80 text-sm">Email notifications</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={priceAlerts}
+                    onChange={(e) => setPriceAlerts(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-black text-white focus:ring-2 focus:ring-white/20"
+                  />
+                  <span className="text-white/80 text-sm">Price alerts</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tradeAlerts}
+                    onChange={(e) => setTradeAlerts(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-black text-white focus:ring-2 focus:ring-white/20"
+                  />
+                  <span className="text-white/80 text-sm">Trade alerts</span>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
+                Default Slippage (%)
+              </label>
+              <input
+                type="number"
+                value={defaultSlippage}
+                onChange={(e) => setDefaultSlippage(parseFloat(e.target.value))}
+                min="0.1"
+                max="50"
+                step="0.1"
+                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+              />
+            </div>
+
+            <button
+              onClick={handleUpdateSettings}
+              disabled={loading}
+              className="w-full px-6 py-3 bg-black border-2 border-white/20 hover:border-white/40 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6)] transition-all"
+            >
+              {loading ? 'Saving...' : 'Save Settings'}
             </button>
           </div>
-        </form>
-      </div>
+        )}
 
-      {/* Account Stats */}
-      <div className="bg-black rounded-lg p-6 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
-        <h3 className="text-xl font-bold text-white mb-4">Account Information</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-black/30 rounded-lg p-4 border border-white/10">
-            <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
-              Member since
+        {/* Security Tab */}
+        {activeTab === 'security' && (
+          <form onSubmit={handleChangePassword} className="space-y-6">
+            <div>
+              <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
+                Current Password
+              </label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+              />
             </div>
-            <div className="text-white font-semibold">
-              {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              }) : 'N/A'}
+            
+            <div>
+              <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
+                New Password
+              </label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={8}
+                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+              />
             </div>
+            
+            <div>
+              <label className="block text-white/70 text-sm font-medium mb-2 uppercase tracking-wider">
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                required
+                minLength={8}
+                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+              />
+            </div>
+            
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full px-6 py-3 bg-black border-2 border-white/20 hover:border-white/40 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6)] transition-all"
+            >
+              {loading ? 'Changing...' : 'Change Password'}
+            </button>
+          </form>
+        )}
+
+        {/* Activity Tab */}
+        {activeTab === 'activity' && (
+          <div className="space-y-3">
+            {activityLogs.length > 0 ? (
+              activityLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="p-4 bg-black/30 rounded-lg border border-white/10"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-white font-medium text-sm">{log.action}</span>
+                    <span className="text-white/40 text-xs">
+                      {new Date(log.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                  {log.details && (
+                    <div className="text-white/60 text-xs mt-1">
+                      {JSON.stringify(log.details, null, 2)}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-white/50">
+                No activity logs yet
+              </div>
+            )}
           </div>
-          <div className="bg-black/30 rounded-lg p-4 border border-white/10">
-            <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
-              Last updated
-            </div>
-            <div className="text-white font-semibold">
-              {user?.updatedAt ? new Date(user.updatedAt).toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              }) : 'N/A'}
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
-
