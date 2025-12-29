@@ -14,8 +14,7 @@ let WalletManager: any;
 let FundManager: any;
 let VolumeBot: any;
 let MasterWalletManager: any;
-let PumpFunBot: any;
-let PumpFunOnChainSearch: any;
+// PumpFunBot and PumpFunOnChainSearch modules don't exist - removed
 let configManager: any;
 
 try {
@@ -42,17 +41,8 @@ try {
   console.warn('MasterWalletManager not found');
 }
 
-try {
-  PumpFunBot = require(path.join(distPath, 'pumpfun')).PumpFunBot;
-} catch (e) {
-  console.warn('PumpFunBot not found');
-}
-
-try {
-  PumpFunOnChainSearch = require(path.join(projectRoot, 'src/pumpfun/onchain-search')).PumpFunOnChainSearch;
-} catch (e) {
-  console.warn('PumpFunOnChainSearch not found');
-}
+// PumpFunBot and PumpFunOnChainSearch modules don't exist
+// Only these pumpfun modules exist: pumpfun-parser, trades-listener, websocket-listener
 
 // Config Persistence (must be imported before use)
 import { ConfigPersistence } from './config-persistence';
@@ -140,8 +130,9 @@ const walletManager = WalletManager ? new WalletManager() : null;
 const fundManager = FundManager ? new FundManager() : null;
 const volumeBot = VolumeBot ? new VolumeBot() : null;
 const masterWalletManager = MasterWalletManager ? new MasterWalletManager() : null;
-const pumpFunBot = PumpFunBot ? new PumpFunBot() : null;
-const onChainSearch = PumpFunOnChainSearch ? new PumpFunOnChainSearch() : null;
+// PumpFunBot and PumpFunOnChainSearch don't exist - set to null
+const pumpFunBot = null;
+const onChainSearch = null;
 const wsListener = new PumpFunWebSocketListener();
 const tradesListener = new TradesListener();
 
