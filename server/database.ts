@@ -163,11 +163,7 @@ const ActivityLogSchema = new mongoose.Schema({
   userAgent: String
 }, { timestamps: true });
 
-// Create indexes for performance
-UserSchema.index({ username: 1 });
-UserSchema.index({ email: 1 });
-SessionSchema.index({ userId: 1 });
-SessionSchema.index({ token: 1 });
+// Create compound indexes for performance (simple indexes already defined in schema)
 WalletSchema.index({ userId: 1, index: 1 });
 PositionSchema.index({ userId: 1, tokenMint: 1 });
 TradeSchema.index({ userId: 1, timestamp: -1 });
