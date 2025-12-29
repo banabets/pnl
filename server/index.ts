@@ -3,6 +3,11 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import path from 'path';
+
+// Resolve paths relative to project root (works with both ts-node and node)
+const projectRoot = path.resolve(__dirname, '..');
+const distPath = path.join(projectRoot, 'dist');
+
 // Import from compiled dist/ (source files were removed)
 // Note: Some modules may not exist - we'll handle gracefully
 let WalletManager: any;
@@ -14,37 +19,37 @@ let PumpFunOnChainSearch: any;
 let configManager: any;
 
 try {
-  WalletManager = require('../dist/wallet').WalletManager;
+  WalletManager = require(path.join(distPath, 'wallet')).WalletManager;
 } catch (e) {
   console.warn('WalletManager not found');
 }
 
 try {
-  FundManager = require('../dist/funds').FundManager;
+  FundManager = require(path.join(distPath, 'funds')).FundManager;
 } catch (e) {
   console.warn('FundManager not found');
 }
 
 try {
-  VolumeBot = require('../dist/bot').VolumeBot;
+  VolumeBot = require(path.join(distPath, 'bot')).VolumeBot;
 } catch (e) {
   console.warn('VolumeBot not found');
 }
 
 try {
-  MasterWalletManager = require('../dist/master-wallet').MasterWalletManager;
+  MasterWalletManager = require(path.join(distPath, 'master-wallet')).MasterWalletManager;
 } catch (e) {
   console.warn('MasterWalletManager not found');
 }
 
 try {
-  PumpFunBot = require('../dist/pumpfun').PumpFunBot;
+  PumpFunBot = require(path.join(distPath, 'pumpfun')).PumpFunBot;
 } catch (e) {
   console.warn('PumpFunBot not found');
 }
 
 try {
-  PumpFunOnChainSearch = require('../src/pumpfun/onchain-search').PumpFunOnChainSearch;
+  PumpFunOnChainSearch = require(path.join(projectRoot, 'src/pumpfun/onchain-search')).PumpFunOnChainSearch;
 } catch (e) {
   console.warn('PumpFunOnChainSearch not found');
 }
@@ -54,7 +59,7 @@ import { ConfigPersistence } from './config-persistence';
 const configPersistence = new ConfigPersistence();
 
 try {
-  configManager = require('../dist/config').configManager;
+  configManager = require(path.join(distPath, 'config')).configManager;
 } catch (e) {
   console.warn('configManager not found, using in-memory config with persistence');
   
@@ -2510,15 +2515,15 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
       console.log('🔍 Using PumpFunTransactionParser for pump.fun specific trades...');
       let PumpFunParser: any = null;
       try {
-        PumpFunParser = require('../dist/pumpfun/pumpfun-parser').PumpFunTransactionParser;
+        PumpFunParser = require(path.join(distPath, 'pumpfun/pumpfun-parser')).PumpFunTransactionParser;
       } catch (e) {
         try {
-          PumpFunParser = require('../src/pumpfun/pumpfun-parser').PumpFunTransactionParser;
+          PumpFunParser = require(path.join(projectRoot, 'src/pumpfun/pumpfun-parser')).PumpFunTransactionParser;
         } catch (e2) {
           // Parser not available, skip
         }
       }
-      
+
       if (PumpFunParser) {
         const parser = new PumpFunParser();
         const pumpFunTrades = await parser.getTradesFromPumpFunProgram(mint, limit);
@@ -3008,15 +3013,15 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
       console.log('🔍 Using PumpFunTransactionParser for pump.fun specific trades...');
       let PumpFunParser: any = null;
       try {
-        PumpFunParser = require('../dist/pumpfun/pumpfun-parser').PumpFunTransactionParser;
+        PumpFunParser = require(path.join(distPath, 'pumpfun/pumpfun-parser')).PumpFunTransactionParser;
       } catch (e) {
         try {
-          PumpFunParser = require('../src/pumpfun/pumpfun-parser').PumpFunTransactionParser;
+          PumpFunParser = require(path.join(projectRoot, 'src/pumpfun/pumpfun-parser')).PumpFunTransactionParser;
         } catch (e2) {
           // Parser not available, skip
         }
       }
-      
+
       if (PumpFunParser) {
         const parser = new PumpFunParser();
         const pumpFunTrades = await parser.getTradesFromPumpFunProgram(mint, limit);
