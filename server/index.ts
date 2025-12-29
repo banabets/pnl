@@ -337,7 +337,7 @@ app.post('/api/funds/emergency-recover', async (req, res) => {
     const config = configManager.getConfig();
     if (!config.connection) {
       const { Connection } = require('@solana/web3.js');
-      const rpcUrl = config.rpcUrl || 'https://api.mainnet-beta.solana.com';
+      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
       config.connection = new Connection(rpcUrl, 'confirmed');
     }
     
@@ -462,7 +462,7 @@ app.get('/api/master-wallet', async (req, res) => {
     let realBalance = 0;
     try {
       const { Connection, PublicKey } = require('@solana/web3.js');
-      const rpcUrl = config.rpcUrl || 'https://api.mainnet-beta.solana.com';
+      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
       const connection = new Connection(rpcUrl, 'confirmed');
       const publicKey = new PublicKey(info.publicKey);
       const balanceLamports = await connection.getBalance(publicKey);
@@ -557,7 +557,7 @@ app.post('/api/master-wallet/withdraw', async (req, res) => {
       // Create connection if not exists
       if (!config.connection) {
         const { Connection } = require('@solana/web3.js');
-        const rpcUrl = config.rpcUrl || 'https://api.mainnet-beta.solana.com';
+        const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
         config.connection = new Connection(rpcUrl, 'confirmed');
       }
       
@@ -882,7 +882,7 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
     if (!config.connection) {
       const { Connection } = require('@solana/web3.js');
       // Use premium Helius RPC if available
-      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997' || 'https://api.mainnet-beta.solana.com';
+      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
       config.connection = new Connection(rpcUrl, 'confirmed');
     }
     
@@ -1110,7 +1110,7 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
   const config = configManager.getConfig();
   if (!config.connection) {
     const { Connection } = require('@solana/web3.js');
-    const rpcUrl = config.rpcUrl || 'https://api.mainnet-beta.solana.com';
+    const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
     config.connection = new Connection(rpcUrl, 'confirmed');
   }
   
@@ -1778,7 +1778,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
     try {
       const { Connection, PublicKey } = require('@solana/web3.js');
       const config = configManager.getConfig();
-      const connection = new Connection(config.rpcUrl || 'https://api.mainnet-beta.solana.com', 'confirmed');
+      const connection = new Connection(config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997', 'confirmed');
       const PUMP_FUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
       
       // Get recent transactions from pump.fun program - get more for better coverage
@@ -1939,7 +1939,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
     console.log('⚠️ All APIs failed, trying public Solana RPC...');
     try {
       const publicRpc = new (require('@solana/web3.js').Connection)(
-        'https://api.mainnet-beta.solana.com',
+        'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997',
         'confirmed'
       );
       
@@ -2541,7 +2541,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
 
     // Method 6: Try to get trades from bonding curve (on-chain)
     const { Connection, PublicKey } = require('@solana/web3.js');
-    const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+    const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
     const connection = new Connection(rpcUrl, 'confirmed');
     const mintPubkey = new PublicKey(mint);
     const PUMP_FUN_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
@@ -3040,7 +3040,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
     // Method 5: Parse real trades from on-chain transactions (improved)
     try {
       const { Connection, PublicKey } = require('@solana/web3.js');
-      const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+      const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
       const connection = new Connection(rpcUrl, 'confirmed');
       const mintPubkey = new PublicKey(mint);
       
@@ -3600,7 +3600,7 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
       const { getMint } = require('@solana/spl-token');
 
       const config = configManager.getConfig();
-      const rpcUrl = config.rpcUrl || 'https://api.mainnet-beta.solana.com';
+      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
       const connection = new Connection(rpcUrl, 'confirmed');
       const mintPubkey = new PublicKey(mint);
 
