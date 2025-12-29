@@ -13,7 +13,6 @@ export default function Dashboard({ socket }: DashboardProps) {
     totalBalance: 0,
     masterWalletExists: false,
     masterBalance: 0,
-    simulationMode: false, // Always false - simulation removed
   });
 
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -91,7 +90,6 @@ export default function Dashboard({ socket }: DashboardProps) {
         totalBalance: walletsRes.data.totalBalance || 0,
         masterWalletExists: masterRes.data.exists || false,
         masterBalance: masterRes.data.balance || 0,
-        simulationMode: false, // Always false - simulation removed
       });
     } catch (error) {
       console.error('Failed to load stats:', error);
@@ -167,7 +165,7 @@ export default function Dashboard({ socket }: DashboardProps) {
         <h2 className="text-3xl font-bold text-white mb-8">Dashboard</h2>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
           <div className="bg-black rounded-lg p-5 border border-white/15 hover:border-white/25 shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.12)] transition-all duration-300">
             <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-2">Total Wallets</div>
             <div className="text-3xl font-bold text-white">{stats.totalWallets}</div>
@@ -190,12 +188,6 @@ export default function Dashboard({ socket }: DashboardProps) {
             {stats.masterWalletExists && (
               <div className="text-sm text-white/60 mt-2">{stats.masterBalance.toFixed(4)} SOL</div>
             )}
-          </div>
-          <div className="bg-black rounded-lg p-5 border border-white/15 hover:border-white/25 shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.12)] transition-all duration-300">
-            <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-2">Mode</div>
-            <div className="text-2xl font-bold">
-              <span className="text-red-400">Live</span> {/* Simulation mode removed - always real */}
-            </div>
           </div>
         </div>
 

@@ -138,7 +138,17 @@ import { portfolioTracker } from './portfolio-tracker';
 import { stopLossManager } from './stop-loss-manager';
 import { priceAlertManager } from './price-alerts';
 
+// MongoDB Connection
+import { connectDatabase, isConnected } from './database';
+
+// Connect to MongoDB
+connectDatabase().catch((error) => {
+  console.error('❌ Failed to connect to MongoDB:', error);
+  console.warn('⚠️ Continuing without MongoDB - some features may not work');
+});
+
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Railway, Heroku, etc.)
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
   cors: {
@@ -271,7 +281,7 @@ app.post('/api/auth/register', authRateLimiter, async (req, res) => {
     const { username, email, password } = req.body;
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
     
-    const result = userAuthManager.register(username, email, password, ipAddress as string);
+    const result = await userAuthManager.register(username, email, password, ipAddress as string);
     
     if (result.success) {
       res.json({ success: true, user: result.user, token: result.token });
@@ -290,7 +300,7 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
     
-    const result = userAuthManager.login(usernameOrEmail, password, ipAddress as string, userAgent);
+    const result = await userAuthManager.login(usernameOrEmail, password, ipAddress as string, userAgent);
     
     if (result.success) {
       res.json({ success: true, user: result.user, token: result.token });

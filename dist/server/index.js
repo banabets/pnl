@@ -126,7 +126,15 @@ catch (e) {
 const portfolio_tracker_1 = require("./portfolio-tracker");
 const stop_loss_manager_1 = require("./stop-loss-manager");
 const price_alerts_1 = require("./price-alerts");
+// MongoDB Connection
+const database_1 = require("./database");
+// Connect to MongoDB
+(0, database_1.connectDatabase)().catch((error) => {
+    console.error('❌ Failed to connect to MongoDB:', error);
+    console.warn('⚠️ Continuing without MongoDB - some features may not work');
+});
 const app = (0, express_1.default)();
+app.set('trust proxy', 1); // Trust first proxy (Railway, Heroku, etc.)
 const httpServer = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(httpServer, {
     cors: {
@@ -247,7 +255,7 @@ app.post('/api/auth/register', authRateLimiter, async (req, res) => {
     try {
         const { username, email, password } = req.body;
         const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-        const result = userAuthManager.register(username, email, password, ipAddress);
+        const result = await userAuthManager.register(username, email, password, ipAddress);
         if (result.success) {
             res.json({ success: true, user: result.user, token: result.token });
         }
@@ -265,7 +273,7 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
         const { usernameOrEmail, password } = req.body;
         const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
         const userAgent = req.headers['user-agent'];
-        const result = userAuthManager.login(usernameOrEmail, password, ipAddress, userAgent);
+        const result = await userAuthManager.login(usernameOrEmail, password, ipAddress, userAgent);
         if (result.success) {
             res.json({ success: true, user: result.user, token: result.token });
         }

@@ -9,6 +9,7 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const crypto_1 = __importDefault(require("crypto"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const database_1 = require("./database");
 const USERS_FILE = path_1.default.join(__dirname, '../data/users.json');
 const SESSIONS_FILE = path_1.default.join(__dirname, '../data/sessions.json');
 const ACTIVITY_LOG_FILE = path_1.default.join(__dirname, '../data/user-activity.json');
@@ -19,16 +20,28 @@ const dataDir = path_1.default.join(__dirname, '../data');
 if (!fs_1.default.existsSync(dataDir)) {
     fs_1.default.mkdirSync(dataDir, { recursive: true });
 }
+// Flag to use MongoDB if available
+const USE_MONGODB = (0, database_1.isConnected)();
 class UserAuthManager {
     constructor() {
         this.users = new Map();
         this.sessions = new Map();
         this.activityLogs = [];
-        this.loadUsers();
-        this.loadSessions();
-        this.loadActivityLogs();
+        this.useMongoDB = false;
+        this.useMongoDB = (0, database_1.isConnected)();
+        if (this.useMongoDB) {
+            console.log('📊 Using MongoDB for user data');
+        }
+        else {
+            console.log('📂 Using JSON files for user data (MongoDB not connected)');
+            this.loadUsers();
+            this.loadSessions();
+            this.loadActivityLogs();
+        }
     }
-    loadUsers() {
+    async loadUsers() {
+        if (this.useMongoDB)
+            return; // MongoDB handles this automatically
         try {
             if (fs_1.default.existsSync(USERS_FILE)) {
                 const data = fs_1.default.readFileSync(USERS_FILE, 'utf-8');
@@ -44,7 +57,9 @@ class UserAuthManager {
             console.error('Error loading users:', error);
         }
     }
-    saveUsers() {
+    async saveUsers() {
+        if (this.useMongoDB)
+            return; // MongoDB handles this automatically
         try {
             const usersArray = Array.from(this.users.values());
             fs_1.default.writeFileSync(USERS_FILE, JSON.stringify(usersArray, null, 2));
@@ -118,22 +133,42 @@ class UserAuthManager {
     generateToken(userId) {
         return jsonwebtoken_1.default.sign({ userId, iat: Math.floor(Date.now() / 1000) }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
     }
-    logActivity(userId, action, details, ipAddress) {
-        const log = {
-            id: crypto_1.default.randomUUID(),
-            userId,
-            action,
-            details,
-            timestamp: new Date().toISOString(),
-            ipAddress
-        };
-        this.activityLogs.push(log);
-        if (this.activityLogs.length > 10000) {
-            this.activityLogs = this.activityLogs.slice(-10000);
+    async logActivity(userId, action, details, ipAddress) {
+        if (this.useMongoDB) {
+            try {
+                const user = await database_1.User.findOne({ id: userId }).exec();
+                if (user) {
+                    const log = new database_1.ActivityLog({
+                        userId: user._id,
+                        action,
+                        details,
+                        timestamp: new Date(),
+                        ipAddress
+                    });
+                    await log.save();
+                }
+            }
+            catch (error) {
+                console.error('Error logging activity to MongoDB:', error);
+            }
         }
-        this.saveActivityLogs();
+        else {
+            const log = {
+                id: crypto_1.default.randomUUID(),
+                userId,
+                action,
+                details,
+                timestamp: new Date().toISOString(),
+                ipAddress
+            };
+            this.activityLogs.push(log);
+            if (this.activityLogs.length > 10000) {
+                this.activityLogs = this.activityLogs.slice(-10000);
+            }
+            this.saveActivityLogs();
+        }
     }
-    register(username, email, password, ipAddress) {
+    async register(username, email, password, ipAddress) {
         // Validation
         if (!username || !email || !password) {
             return { success: false, error: 'Username, email, and password are required' };
@@ -147,99 +182,211 @@ class UserAuthManager {
         if (password.length < 8) {
             return { success: false, error: 'Password must be at least 8 characters' };
         }
-        // Check if username or email already exists
-        for (const user of this.users.values()) {
-            if (user.username.toLowerCase() === username.toLowerCase()) {
-                return { success: false, error: 'Username already exists' };
+        try {
+            if (this.useMongoDB) {
+                // Use MongoDB
+                // Check if username or email already exists
+                const existingUser = await database_1.User.findOne({
+                    $or: [
+                        { username: new RegExp(`^${username}$`, 'i') },
+                        { email: new RegExp(`^${email}$`, 'i') }
+                    ]
+                }).exec();
+                if (existingUser) {
+                    return { success: false, error: 'Username or email already exists' };
+                }
+                const userId = crypto_1.default.randomUUID();
+                const { hash, salt } = this.hashPassword(password);
+                const now = new Date();
+                const newUser = new database_1.User({
+                    id: userId,
+                    username,
+                    email: email.toLowerCase(),
+                    passwordHash: `${salt}:${hash}`,
+                    createdAt: now,
+                    updatedAt: now,
+                    emailVerified: false,
+                    role: 'user',
+                    status: 'active',
+                    profile: {},
+                    settings: {
+                        theme: 'dark',
+                        notifications: {
+                            email: true,
+                            priceAlerts: true,
+                            tradeAlerts: true
+                        },
+                        trading: {
+                            defaultSlippage: 1,
+                            defaultWalletIndex: 0
+                        }
+                    },
+                    stats: {
+                        totalTrades: 0,
+                        totalVolume: 0,
+                        totalProfit: 0,
+                        winRate: 0
+                    }
+                });
+                await newUser.save();
+                const token = this.generateToken(userId);
+                await this.createSession(userId, token, ipAddress);
+                await this.logActivity(userId, 'user_registered', { username, email }, ipAddress);
+                console.log(`✅ New user registered: ${username} (${userId})`);
+                const userObj = newUser.toObject();
+                return {
+                    success: true,
+                    user: { ...userObj, passwordHash: '' },
+                    token
+                };
             }
-            if (user.email.toLowerCase() === email.toLowerCase()) {
-                return { success: false, error: 'Email already exists' };
+            else {
+                // Use JSON files (fallback)
+                // Check if username or email already exists
+                for (const user of this.users.values()) {
+                    if (user.username.toLowerCase() === username.toLowerCase()) {
+                        return { success: false, error: 'Username already exists' };
+                    }
+                    if (user.email.toLowerCase() === email.toLowerCase()) {
+                        return { success: false, error: 'Email already exists' };
+                    }
+                }
+                const userId = crypto_1.default.randomUUID();
+                const { hash, salt } = this.hashPassword(password);
+                const now = new Date().toISOString();
+                const newUser = {
+                    id: userId,
+                    username,
+                    email: email.toLowerCase(),
+                    passwordHash: `${salt}:${hash}`,
+                    createdAt: now,
+                    updatedAt: now,
+                    emailVerified: false,
+                    role: 'user',
+                    status: 'active',
+                    profile: {},
+                    settings: {
+                        theme: 'dark',
+                        notifications: {
+                            email: true,
+                            priceAlerts: true,
+                            tradeAlerts: true
+                        },
+                        trading: {
+                            defaultSlippage: 1,
+                            defaultWalletIndex: 0
+                        }
+                    },
+                    stats: {
+                        totalTrades: 0,
+                        totalVolume: 0,
+                        totalProfit: 0,
+                        winRate: 0
+                    }
+                };
+                this.users.set(userId, newUser);
+                await this.saveUsers();
+                const token = this.generateToken(userId);
+                this.createSession(userId, token, ipAddress);
+                this.logActivity(userId, 'user_registered', { username, email }, ipAddress);
+                console.log(`✅ New user registered: ${username} (${userId})`);
+                return {
+                    success: true,
+                    user: { ...newUser, passwordHash: '' },
+                    token
+                };
             }
         }
-        const userId = crypto_1.default.randomUUID();
-        const { hash, salt } = this.hashPassword(password);
-        const now = new Date().toISOString();
-        const newUser = {
-            id: userId,
-            username,
-            email: email.toLowerCase(),
-            passwordHash: `${salt}:${hash}`, // Store salt:hash
-            createdAt: now,
-            updatedAt: now,
-            emailVerified: false,
-            role: 'user',
-            status: 'active',
-            profile: {},
-            settings: {
-                theme: 'dark',
-                notifications: {
-                    email: true,
-                    priceAlerts: true,
-                    tradeAlerts: true
-                },
-                trading: {
-                    defaultSlippage: 1,
-                    defaultWalletIndex: 0
-                }
-            },
-            stats: {
-                totalTrades: 0,
-                totalVolume: 0,
-                totalProfit: 0,
-                winRate: 0
-            }
-        };
-        this.users.set(userId, newUser);
-        this.saveUsers();
-        const token = this.generateToken(userId);
-        this.createSession(userId, token, ipAddress);
-        this.logActivity(userId, 'user_registered', { username, email }, ipAddress);
-        console.log(`✅ New user registered: ${username} (${userId})`);
-        return {
-            success: true,
-            user: { ...newUser, passwordHash: '' },
-            token
-        };
+        catch (error) {
+            console.error('Error in register:', error);
+            return { success: false, error: error.message || 'Registration failed' };
+        }
     }
-    login(usernameOrEmail, password, ipAddress, userAgent) {
+    async login(usernameOrEmail, password, ipAddress, userAgent) {
         if (!usernameOrEmail || !password) {
             return { success: false, error: 'Username/email and password are required' };
         }
-        // Find user
-        let user = null;
-        for (const u of this.users.values()) {
-            if (u.username.toLowerCase() === usernameOrEmail.toLowerCase() ||
-                u.email.toLowerCase() === usernameOrEmail.toLowerCase()) {
-                user = u;
-                break;
+        try {
+            if (this.useMongoDB) {
+                // Use MongoDB
+                const userDoc = await database_1.User.findOne({
+                    $or: [
+                        { username: new RegExp(`^${usernameOrEmail}$`, 'i') },
+                        { email: new RegExp(`^${usernameOrEmail}$`, 'i') }
+                    ]
+                }).exec();
+                if (!userDoc) {
+                    await this.logActivity('', 'login_failed', { reason: 'user_not_found', usernameOrEmail }, ipAddress);
+                    return { success: false, error: 'Invalid username/email or password' };
+                }
+                if (userDoc.status !== 'active') {
+                    return { success: false, error: `Account is ${userDoc.status}` };
+                }
+                // Verify password
+                const [salt, hash] = userDoc.passwordHash.split(':');
+                if (!this.verifyPassword(password, hash, salt)) {
+                    await this.logActivity(userDoc.id, 'login_failed', { reason: 'invalid_password' }, ipAddress);
+                    return { success: false, error: 'Invalid username/email or password' };
+                }
+                // Update last login
+                userDoc.lastLogin = new Date();
+                userDoc.updatedAt = new Date();
+                await userDoc.save();
+                // Generate token and create session
+                const token = this.generateToken(userDoc.id);
+                await this.createSession(userDoc.id, token, ipAddress, userAgent);
+                await this.logActivity(userDoc.id, 'user_logged_in', { username: userDoc.username }, ipAddress);
+                console.log(`✅ User logged in: ${userDoc.username} (${userDoc.id})`);
+                const userObj = userDoc.toObject();
+                return {
+                    success: true,
+                    user: { ...userObj, passwordHash: '' },
+                    token
+                };
+            }
+            else {
+                // Use JSON files (fallback)
+                let user = null;
+                for (const u of this.users.values()) {
+                    if (u.username.toLowerCase() === usernameOrEmail.toLowerCase() ||
+                        u.email.toLowerCase() === usernameOrEmail.toLowerCase()) {
+                        user = u;
+                        break;
+                    }
+                }
+                if (!user) {
+                    this.logActivity('', 'login_failed', { reason: 'user_not_found' }, ipAddress);
+                    return { success: false, error: 'Invalid username/email or password' };
+                }
+                if (user.status !== 'active') {
+                    return { success: false, error: `Account is ${user.status}` };
+                }
+                // Verify password
+                const [salt, hash] = user.passwordHash.split(':');
+                if (!this.verifyPassword(password, hash, salt)) {
+                    this.logActivity(user.id, 'login_failed', { reason: 'invalid_password' }, ipAddress);
+                    return { success: false, error: 'Invalid username/email or password' };
+                }
+                // Update last login
+                user.lastLogin = new Date().toISOString();
+                user.updatedAt = new Date().toISOString();
+                await this.saveUsers();
+                // Generate token and create session
+                const token = this.generateToken(user.id);
+                await this.createSession(user.id, token, ipAddress, userAgent);
+                await this.logActivity(user.id, 'user_logged_in', { username: user.username }, ipAddress);
+                console.log(`✅ User logged in: ${user.username} (${user.id})`);
+                return {
+                    success: true,
+                    user: { ...user, passwordHash: '' },
+                    token
+                };
             }
         }
-        if (!user) {
-            return { success: false, error: 'Invalid username/email or password' };
+        catch (error) {
+            console.error('Error in login:', error);
+            return { success: false, error: error.message || 'Login failed' };
         }
-        if (user.status !== 'active') {
-            return { success: false, error: `Account is ${user.status}` };
-        }
-        // Verify password
-        const [salt, hash] = user.passwordHash.split(':');
-        if (!this.verifyPassword(password, hash, salt)) {
-            this.logActivity(user.id, 'login_failed', { reason: 'invalid_password' }, ipAddress);
-            return { success: false, error: 'Invalid username/email or password' };
-        }
-        // Update last login
-        user.lastLogin = new Date().toISOString();
-        user.updatedAt = new Date().toISOString();
-        this.saveUsers();
-        // Generate token and create session
-        const token = this.generateToken(user.id);
-        this.createSession(user.id, token, ipAddress, userAgent);
-        this.logActivity(user.id, 'user_logged_in', { username: user.username }, ipAddress);
-        console.log(`✅ User logged in: ${user.username} (${user.id})`);
-        return {
-            success: true,
-            user: { ...user, passwordHash: '' },
-            token
-        };
     }
     logout(token) {
         this.sessions.delete(token);
@@ -270,20 +417,42 @@ class UserAuthManager {
             return null;
         }
     }
-    createSession(userId, token, ipAddress, userAgent) {
+    async createSession(userId, token, ipAddress, userAgent) {
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
-        const session = {
-            userId,
-            token,
-            createdAt: now.toISOString(),
-            lastActive: now.toISOString(),
-            ipAddress,
-            userAgent,
-            expiresAt: expiresAt.toISOString()
-        };
-        this.sessions.set(token, session);
-        this.saveSessions();
+        if (this.useMongoDB) {
+            try {
+                const user = await database_1.User.findOne({ id: userId }).exec();
+                if (user) {
+                    const session = new database_1.Session({
+                        userId: user._id,
+                        token,
+                        createdAt: now,
+                        lastActive: now,
+                        expiresAt,
+                        ipAddress,
+                        userAgent
+                    });
+                    await session.save();
+                }
+            }
+            catch (error) {
+                console.error('Error creating session in MongoDB:', error);
+            }
+        }
+        else {
+            const session = {
+                userId,
+                token,
+                createdAt: now.toISOString(),
+                lastActive: now.toISOString(),
+                ipAddress,
+                userAgent,
+                expiresAt: expiresAt.toISOString()
+            };
+            this.sessions.set(token, session);
+            this.saveSessions();
+        }
     }
     getUserById(userId) {
         const user = this.users.get(userId);

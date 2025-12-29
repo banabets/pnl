@@ -56,6 +56,7 @@ export declare class UserAuthManager {
     private users;
     private sessions;
     private activityLogs;
+    private useMongoDB;
     constructor();
     private loadUsers;
     private saveUsers;
@@ -67,18 +68,18 @@ export declare class UserAuthManager {
     private verifyPassword;
     private generateToken;
     private logActivity;
-    register(username: string, email: string, password: string, ipAddress?: string): {
+    register(username: string, email: string, password: string, ipAddress?: string): Promise<{
         success: boolean;
         user?: User;
         token?: string;
         error?: string;
-    };
-    login(usernameOrEmail: string, password: string, ipAddress?: string, userAgent?: string): {
+    }>;
+    login(usernameOrEmail: string, password: string, ipAddress?: string, userAgent?: string): Promise<{
         success: boolean;
         user?: User;
         token?: string;
         error?: string;
-    };
+    }>;
     logout(token: string): {
         success: boolean;
     };
