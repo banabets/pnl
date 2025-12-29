@@ -7,7 +7,7 @@ export async function recoverFromWallets(
   walletAddresses: string[],
   privateKeys: string[], // Array of base58 private keys
   masterWalletAddress: string,
-  rpcUrl: string = 'https://api.mainnet-beta.solana.com'
+  rpcUrl: string = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997'
 ) {
   const connection = new Connection(rpcUrl, 'confirmed');
   const masterPublicKey = new PublicKey(masterWalletAddress);

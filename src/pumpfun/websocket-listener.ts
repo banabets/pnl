@@ -24,7 +24,7 @@ export class PumpFunWebSocketListener {
   constructor() {
     // Use Helius WebSocket endpoint for real-time listening
     // Convert wss:// to https:// for Connection (it handles WebSocket internally)
-    const wsRpcUrl = process.env.WS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=b8baac5d-2270-45ba-8324-9d7024c3f828';
+    const wsRpcUrl = process.env.WS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
     this.connection = new Connection(wsRpcUrl, 'confirmed');
   }
 
@@ -135,7 +135,7 @@ export class PumpFunWebSocketListener {
         try {
           // Try searching SPL Token program for recent token mints
           // Use a timeout to avoid hanging
-          const publicRpc = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+          const publicRpc = new Connection('https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997', 'confirmed');
           
           let tokenSignatures: any[] = [];
           try {
@@ -314,7 +314,7 @@ export class PumpFunWebSocketListener {
         const batch = recentSignatures.slice(i, i + batchSize);
         
         // Use the connection that worked (or try both)
-        const rpcToUse = recentSignatures.length > 0 ? this.connection : new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+        const rpcToUse = recentSignatures.length > 0 ? this.connection : new Connection('https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997', 'confirmed');
         
         await Promise.all(batch.map(async (sig) => {
           try {
