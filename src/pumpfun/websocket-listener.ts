@@ -108,24 +108,59 @@ export class PumpFunWebSocketListener {
     try {
       console.log('📡 Fetching recent historical transactions...');
       
-      // Try with current connection first
-      let recentSignatures = await this.connection.getSignaturesForAddress(
-        PUMP_FUN_PROGRAM_ID,
-        { limit: 50 },
-        'confirmed'
-      ).catch(() => []);
+      // Try with current connection first (with timeout and error handling)
+      let recentSignatures: any[] = [];
+      try {
+        recentSignatures = await Promise.race([
+          this.connection.getSignaturesForAddress(
+            PUMP_FUN_PROGRAM_ID,
+            { limit: 20 }, // Reduced from 50 to avoid rate limits
+            'confirmed'
+          ),
+          new Promise<any[]>((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 10000)
+          )
+        ]).catch(() => []);
+      } catch (error: any) {
+        // If we get rate limited or timeout, just skip historical fetch
+        if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests') || error?.message?.includes('Timeout')) {
+          console.log('⚠️ Rate limited or timeout fetching historical transactions, skipping...');
+          return; // Exit early to avoid more rate limits
+        }
+      }
 
-      // If no results, try alternative methods
+      // If no results, try alternative methods (but limit attempts to avoid rate limits)
       if (recentSignatures.length === 0) {
         console.log('⚠️ No transactions from pump.fun program, trying SPL Token program...');
         try {
           // Try searching SPL Token program for recent token mints
+          // Use a timeout to avoid hanging
           const publicRpc = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
-          const tokenSignatures = await publicRpc.getSignaturesForAddress(
-            TOKEN_PROGRAM_ID,
-            { limit: 50 },
-            'confirmed'
-          );
+          
+          let tokenSignatures: any[] = [];
+          try {
+            tokenSignatures = await Promise.race([
+              publicRpc.getSignaturesForAddress(
+                TOKEN_PROGRAM_ID,
+                { limit: 20 }, // Reduced from 50
+                'confirmed'
+              ),
+              new Promise<any[]>((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout')), 10000)
+              )
+            ]).catch(() => []);
+          } catch (error: any) {
+            if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests') || error?.message?.includes('Timeout')) {
+              console.log('⚠️ Rate limited fetching SPL token transactions, skipping historical fetch...');
+              return; // Exit early
+            }
+            throw error;
+          }
+          
+          if (tokenSignatures.length === 0) {
+            console.log('⚠️ No SPL token transactions found, will rely on real-time WebSocket only');
+            return;
+          }
           
           console.log(`Found ${tokenSignatures.length} recent SPL token transactions`);
           
@@ -133,7 +168,10 @@ export class PumpFunWebSocketListener {
           // Only process very recent transactions (last 24 hours)
           const oneDayAgo = Date.now() / 1000 - (24 * 60 * 60);
           
-          for (let i = 0; i < Math.min(tokenSignatures.length, 30); i++) {
+          // Reduce processing to avoid rate limits
+          const maxToProcess = Math.min(tokenSignatures.length, 10); // Reduced from 30
+          
+          for (let i = 0; i < maxToProcess; i++) {
             try {
               const sig = tokenSignatures[i];
               const txTimestamp = sig.blockTime || Date.now() / 1000;
@@ -143,10 +181,37 @@ export class PumpFunWebSocketListener {
                 continue;
               }
               
-              const tx = await publicRpc.getTransaction(sig.signature, {
-                commitment: 'confirmed',
-                maxSupportedTransactionVersion: 0,
-              });
+              // Add retry logic with exponential backoff for 429 errors
+              let tx = null;
+              let retries = 0;
+              const maxRetries = 3;
+              
+              while (retries < maxRetries && !tx) {
+                try {
+                  tx = await publicRpc.getTransaction(sig.signature, {
+                    commitment: 'confirmed',
+                    maxSupportedTransactionVersion: 0,
+                  });
+                } catch (error: any) {
+                  if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests')) {
+                    retries++;
+                    if (retries >= maxRetries) {
+                      console.log(`⚠️ Rate limited after ${maxRetries} retries, skipping remaining transactions...`);
+                      return; // Exit early to avoid more rate limits
+                    }
+                    const delay = Math.min(1000 * Math.pow(2, retries), 8000); // Max 8 seconds
+                    console.log(`Server responded with 429 Too Many Requests. Retrying after ${delay}ms delay...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                  } else {
+                    // Other error, skip this transaction
+                    break;
+                  }
+                }
+              }
+              
+              if (!tx) {
+                continue; // Skip if we couldn't get the transaction
+              }
 
               if (tx?.meta?.postTokenBalances) {
                 for (const balance of tx.meta.postTokenBalances) {
@@ -168,6 +233,27 @@ export class PumpFunWebSocketListener {
                     // Only add if transaction is recent (within 24 hours)
                     if (txTimestamp >= oneDayAgo) {
                       // Verify token creation time by checking account
+                      // Skip verification to reduce RPC calls and avoid rate limits
+                      // Just add the token if it's recent enough
+                      try {
+                        // Skip expensive verification calls to avoid rate limits
+                        // Just trust the transaction timestamp for recent transactions
+                        const isVeryRecent = txTimestamp >= (Date.now() / 1000 - (2 * 60 * 60)); // Last 2 hours
+                        
+                        if (isVeryRecent) {
+                          await this.notifyTokenUpdate({
+                            mint: balance.mint,
+                            timestamp: txTimestamp,
+                            signature: sig.signature,
+                          });
+                        }
+                      } catch (error) {
+                        // Skip verification errors
+                        continue;
+                      }
+                      
+                      // OLD CODE - Commented out to avoid rate limits
+                      /*
                       try {
                         const mintPubkey = new PublicKey(balance.mint);
                         const mintAccount = await publicRpc.getAccountInfo(mintPubkey).catch(() => null);
@@ -197,13 +283,14 @@ export class PumpFunWebSocketListener {
                         // If verification fails, skip this token
                         continue;
                       }
+                      */
                     }
                   }
                 }
               }
               
-              // Small delay
-              await new Promise(resolve => setTimeout(resolve, 150));
+              // Increased delay to avoid rate limits
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Increased from 150ms to 1000ms
             } catch (error) {
               continue;
             }
@@ -219,9 +306,11 @@ export class PumpFunWebSocketListener {
 
       console.log(`Found ${recentSignatures.length} recent pump.fun transactions to process`);
 
-      // Process transactions in batches
-      const batchSize = 5;
-      for (let i = 0; i < Math.min(recentSignatures.length, 30); i += batchSize) {
+      // Process transactions in batches (reduced to avoid rate limits)
+      const batchSize = 3; // Reduced from 5
+      const maxToProcess = Math.min(recentSignatures.length, 15); // Reduced from 30
+      
+      for (let i = 0; i < maxToProcess; i += batchSize) {
         const batch = recentSignatures.slice(i, i + batchSize);
         
         // Use the connection that worked (or try both)
@@ -229,10 +318,30 @@ export class PumpFunWebSocketListener {
         
         await Promise.all(batch.map(async (sig) => {
           try {
-            const tx = await rpcToUse.getTransaction(sig.signature, {
-              commitment: 'confirmed',
-              maxSupportedTransactionVersion: 0,
-            });
+            // Add retry logic with exponential backoff
+            let tx = null;
+            let retries = 0;
+            const maxRetries = 2;
+            
+            while (retries < maxRetries && !tx) {
+              try {
+                tx = await rpcToUse.getTransaction(sig.signature, {
+                  commitment: 'confirmed',
+                  maxSupportedTransactionVersion: 0,
+                });
+              } catch (error: any) {
+                if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests')) {
+                  retries++;
+                  if (retries >= maxRetries) {
+                    return; // Skip this transaction
+                  }
+                  const delay = Math.min(1000 * Math.pow(2, retries), 4000);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                  return; // Skip on other errors
+                }
+              }
+            }
 
             if (tx?.meta) {
               const timestamp = sig.blockTime || Date.now() / 1000;
@@ -243,9 +352,9 @@ export class PumpFunWebSocketListener {
           }
         }));
 
-        // Small delay between batches
-        if (i + batchSize < recentSignatures.length) {
-          await new Promise(resolve => setTimeout(resolve, 200));
+        // Increased delay between batches to avoid rate limits
+        if (i + batchSize < maxToProcess) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Increased from 200ms to 2000ms
         }
       }
 
