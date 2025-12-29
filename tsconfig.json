@@ -20,5 +20,11 @@
     "types": ["node"]
   },
   "include": ["src/pumpfun/**/*", "server/**/*"],
-  "exclude": ["node_modules", "dist", "web", "src/App.tsx", "src/components"]
+  "exclude": ["node_modules", "dist", "web", "src/App.tsx", "src/components"],
+  "ts-node": {
+    "esm": false,
+    "compilerOptions": {
+      "module": "commonjs"
+    }
+  }
 }

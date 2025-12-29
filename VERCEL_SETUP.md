@@ -86,3 +86,4 @@ If you want to use `pnl.onl` (without www):
 - Check that `VITE_SOCKET_URL` uses `https://` (not `http://`)
 - Some free tiers may limit WebSocket connections
 
+

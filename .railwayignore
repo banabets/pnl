@@ -1,0 +1,10 @@
+web/
+node_modules/
+dist/
+.git/
+*.log
+.env
+.env.local
+keypairs/
+sessions/
+data/
