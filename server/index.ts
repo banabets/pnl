@@ -111,17 +111,9 @@ const userAuthManager = new UserAuthManager();
 import { authenticateToken, optionalAuth, requireRole, AuthenticatedRequest } from './auth-middleware';
 
 // Rate limiting for auth endpoints
-let rateLimit: any;
-try {
-  rateLimit = require('express-rate-limit');
-  // Handle both default export and named export
-  if (typeof rateLimit !== 'function' && rateLimit.default) {
-    rateLimit = rateLimit.default;
-  }
-} catch (e) {
-  console.warn('express-rate-limit not available, rate limiting disabled');
-  rateLimit = () => (req: any, res: any, next: any) => next(); // No-op middleware
-}
+// Use dynamic require for Railway compatibility
+const rateLimitModule = require('express-rate-limit');
+const rateLimit = rateLimitModule.default || rateLimitModule;
 
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
