@@ -696,13 +696,15 @@ app.get('/api/wallets/export-all', async (req, res) => {
 
 app.get('/api/wallets', async (req, res) => {
   // Check if WalletManager is available
-  if (!WalletManager) {
-    return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
+  if (!WalletManager || !walletManager) {
+    // Return empty response instead of 503 to avoid frontend errors
+    return res.json({
+      totalWallets: 0,
+      totalBalance: 0,
+      wallets: []
+    });
   }
   try {
-    if (!walletManager) {
-      return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
-    }
     
     // Add rate limiting protection - cache for 5 seconds
     const cacheKey = 'wallet-summary';
