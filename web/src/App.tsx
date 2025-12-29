@@ -102,18 +102,29 @@ function App() {
     // Use environment variable if available (for production)
     if (import.meta.env.VITE_SOCKET_URL) {
       serverUrl = import.meta.env.VITE_SOCKET_URL;
-    }
-    // If we're on the same origin (served by the backend), use same origin
-    else if (window.location.port === '3001' || window.location.port === '') {
-      serverUrl = window.location.origin;
+      console.log('🔌 Using VITE_SOCKET_URL:', serverUrl);
     }
     // Development: use localhost:3001
     else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       serverUrl = 'http://localhost:3001';
+      console.log('🔌 Using localhost for development');
     }
-    // Production fallback: try to use same origin (won't work if backend is separate)
-    else {
+    // Production: try to derive from API URL if available
+    else if (import.meta.env.VITE_API_URL) {
+      // Extract base URL from API URL (remove /api suffix)
+      const apiUrl = import.meta.env.VITE_API_URL;
+      serverUrl = apiUrl.replace(/\/api\/?$/, '');
+      console.log('🔌 Derived Socket URL from VITE_API_URL:', serverUrl);
+    }
+    // If we're on the same origin (served by the backend), use same origin
+    else if (window.location.port === '3001' || window.location.port === '') {
       serverUrl = window.location.origin;
+      console.log('🔌 Using same origin (backend served frontend)');
+    }
+    // Production fallback: use Railway backend URL (hardcoded as last resort)
+    else {
+      serverUrl = 'https://web-production-a1176.up.railway.app';
+      console.log('⚠️ Using fallback Railway URL (consider setting VITE_SOCKET_URL)');
     }
     
     console.log('🔌 Connecting to Socket.IO server:', serverUrl);

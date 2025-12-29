@@ -695,6 +695,10 @@ app.get('/api/wallets/export-all', async (req, res) => {
 });
 
 app.get('/api/wallets', async (req, res) => {
+  // Check if WalletManager is available
+  if (!WalletManager) {
+    return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
+  }
   try {
     if (!walletManager) {
       return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
