@@ -491,6 +491,9 @@ app.get('/api/master-wallet', async (req, res) => {
 
 app.post('/api/master-wallet/create', async (req, res) => {
   try {
+    if (!masterWalletManager) {
+      return res.status(503).json({ error: 'MasterWalletManager not available. Please rebuild the project.' });
+    }
     const keypair = masterWalletManager.createMasterWallet();
     broadcast('master-wallet:created', {
       publicKey: keypair.publicKey.toBase58(),
@@ -1829,10 +1832,8 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
               }
             }
             
-            // Small delay to avoid rate limiting
-            if (i % 10 === 0 && i > 0) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-            }
+            // Delay after every request to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 150));
           } catch (err) {
             // Skip failed transactions
           }
@@ -3062,8 +3063,8 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
         
         const trades: any[] = [];
         
-        // Process transactions to extract real trade info (process more for better results)
-        for (let i = 0; i < Math.min(signatures.length, 100); i++) {
+        // Process transactions to extract real trade info (limited to avoid rate limits)
+        for (let i = 0; i < Math.min(signatures.length, 50); i++) {
           try {
             const sig = signatures[i];
             const tx = await connection.getTransaction(sig.signature, {
@@ -3419,8 +3420,8 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
               });
             }
             
-            // Small delay to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 150));
+            // Delay to avoid rate limiting (200ms between requests)
+            await new Promise(resolve => setTimeout(resolve, 200));
           } catch (txError) {
             continue;
           }
