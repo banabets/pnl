@@ -3,7 +3,7 @@ node_modules/
 web/node_modules/
 
 # Build outputs
-dist/
+# dist/ - NOT ignored, needed for Railway (contains pre-compiled modules)
 web/build/
 web/dist/
 
