@@ -67,9 +67,10 @@ export class PumpFunTransactionParser {
           if (!tx?.meta) continue;
 
           // Check if this transaction involves our token mint
-          const accounts = tx.transaction.message.accountKeys;
+          const accounts = (tx.transaction.message as any).accountKeys ||
+                          (tx.transaction.message as any).staticAccountKeys || [];
           const mintInTx = accounts.some(
-            (acc) => acc.pubkey?.toBase58() === tokenMint
+            (acc: any) => (acc.pubkey?.toBase58?.() || acc?.toBase58?.() || acc) === tokenMint
           );
 
           if (!mintInTx) continue;
@@ -99,7 +100,7 @@ export class PumpFunTransactionParser {
    * Parse a pump.fun transaction to extract trade information
    */
   private async parsePumpFunTransaction(
-    tx: ParsedTransactionWithMeta,
+    tx: any, // Support both ParsedTransactionWithMeta and VersionedTransactionResponse
     signature: string,
     tokenMint: string
   ): Promise<PumpFunTrade | null> {
@@ -117,9 +118,11 @@ export class PumpFunTransactionParser {
       let signerAccount = '';
 
       // Get signer (first account)
-      const accounts = tx.transaction.message.accountKeys;
+      const accounts = tx.transaction.message.accountKeys ||
+                      tx.transaction.message.staticAccountKeys || [];
       if (accounts && accounts.length > 0) {
-        signerAccount = accounts[0]?.pubkey?.toBase58() || '';
+        const firstAccount = accounts[0];
+        signerAccount = firstAccount?.pubkey?.toBase58?.() || firstAccount?.toBase58?.() || '';
       }
 
       // Find token balance changes for our mint
