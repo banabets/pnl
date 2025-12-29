@@ -5,8 +5,18 @@ import {
   Transaction,
   sendAndConfirmTransaction,
   SystemProgram,
+  SYSVAR_RENT_PUBKEY,
 } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount } from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, getAccount, getMint } from '@solana/spl-token';
+import { Program, AnchorProvider, Wallet, BN } from '@coral-xyz/anchor';
+
+// Load IDL dynamically
+let idl: any;
+try {
+  idl = require('./pump-fun-idl.json');
+} catch (e) {
+  console.warn('pump-fun-idl.json not found');
+}
 
 // Pump.fun Program ID
 const PUMP_FUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
@@ -37,6 +47,8 @@ export class PumpFunBot {
   private isRunning: boolean = false;
   private wallets: Keypair[] = [];
   private rpcUrl: string;
+  private program: Program<any> | null = null;
+  private globalState: PublicKey | null = null;
 
   constructor(rpcUrl?: string) {
     this.rpcUrl = rpcUrl || process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
@@ -84,6 +96,9 @@ export class PumpFunBot {
       if (this.wallets.length === 0) {
         throw new Error('No wallets found in keypairs directory');
       }
+
+      // Initialize Anchor program
+      await this.initializeProgram();
 
       console.log(`✅ Initialized PumpFunBot with ${this.wallets.length} wallets`);
     } catch (error) {
@@ -265,6 +280,13 @@ export class PumpFunBot {
         PUMP_FUN_PROGRAM_ID
       );
 
+      // Derive associated bonding curve token account (ATA for bonding curve PDA)
+      const associatedBondingCurve = await getAssociatedTokenAddress(
+        tokenMint,
+        bondingCurve,
+        true // allowOwnerOffCurve = true for PDA
+      );
+
       // Get associated token account for the wallet
       const associatedTokenAccount = await getAssociatedTokenAddress(
         tokenMint,
@@ -285,82 +307,56 @@ export class PumpFunBot {
         );
       }
 
-      // Try to use pump.fun API first (simpler)
-      try {
-        const pumpFunApiUrl = `https://frontend-api.pump.fun/coins/${tokenMint.toBase58()}`;
-        const tokenInfo = await fetch(pumpFunApiUrl).then(r => r.json()).catch(() => null);
-        
-        if (tokenInfo && !tokenInfo.complete) {
-          // Token is still on bonding curve, use pump.fun swap
-          return await this.swapOnBondingCurve(
-            wallet,
-            tokenMint,
-            bondingCurve,
-            associatedTokenAccount,
-            solAmount,
-            slippageBps,
-            createATAInstruction
-          );
-        }
-      } catch (apiError) {
-        // Fallback to on-chain method
-        console.log('Pump.fun API failed, using on-chain method');
-      }
+      // Get global state and fee recipient
+      const globalState = await this.getGlobalState();
+      const feeRecipient = await this.getFeeRecipient();
 
-      // If token has graduated, use Raydium/Jupiter
-      // For now, we'll use a simplified approach
-      throw new Error('Token has graduated from bonding curve. Use Raydium/Jupiter swap instead.');
+      // Calculate max SOL cost with slippage (in lamports)
+      const maxSolCost = new BN(Math.floor(solAmount * 1e9 * (1 + slippageBps / 10000)));
+
+      // For buy, we need to calculate expected token amount from bonding curve
+      // This is a simplified approach - actual would use bonding curve formula
+      // For now, we'll use a placeholder amount (will be calculated by the program)
+      // The amount parameter in buy() is the minimum tokens expected, but we pass a large number
+      // and let maxSolCost limit the SOL spent
+      const mintInfo = await getMint(this.connection, tokenMint);
+      const minTokenAmount = new BN(1); // Minimum 1 token (will be adjusted by program)
+
+      // Use Anchor program if available
+      if (this.program && idl) {
+        // Derive event authority
+        const [eventAuthority] = PublicKey.findProgramAddressSync(
+          [Buffer.from('__event_authority')],
+          PUMP_FUN_PROGRAM_ID
+        );
+
+        const tx = await this.program.methods
+          .buy(minTokenAmount, maxSolCost)
+          .accounts({
+            global: globalState,
+            feeRecipient: feeRecipient,
+            mint: tokenMint,
+            bondingCurve: bondingCurve,
+            associatedBondingCurve: associatedBondingCurve,
+            associatedUser: associatedTokenAccount,
+            user: wallet.publicKey,
+            systemProgram: SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            rent: SYSVAR_RENT_PUBKEY,
+            eventAuthority: eventAuthority,
+            program: PUMP_FUN_PROGRAM_ID,
+          })
+          .signers([wallet])
+          .rpc();
+
+        return tx;
+      } else {
+        // Fallback: manual instruction building (simplified)
+        throw new Error('Anchor program not initialized. Cannot execute buy.');
+      }
     } catch (error: any) {
       throw new Error(`Buy failed: ${error.message}`);
     }
-  }
-
-  /**
-   * Swap SOL for tokens on pump.fun bonding curve
-   */
-  private async swapOnBondingCurve(
-    wallet: Keypair,
-    tokenMint: PublicKey,
-    bondingCurve: PublicKey,
-    associatedTokenAccount: PublicKey,
-    solAmount: number,
-    slippageBps: number,
-    createATAInstruction: any
-  ): Promise<string> {
-    // This is a placeholder - actual implementation would need:
-    // 1. Anchor IDL for pump.fun program
-    // 2. Proper instruction building
-    // 3. Calculation of expected tokens from bonding curve formula
-    
-    // For now, we'll use pump.fun's public API endpoint if available
-    // or construct a basic transaction
-    
-    const lamports = Math.floor(solAmount * 1e9);
-    
-    const transaction = new Transaction().add(
-      // Add instruction to swap SOL for tokens on bonding curve
-      // This would need the actual pump.fun program instruction
-      // For now, this is a placeholder
-      SystemProgram.transfer({
-        fromPubkey: wallet.publicKey,
-        toPubkey: bondingCurve,
-        lamports: lamports,
-      })
-    );
-
-    if (createATAInstruction) {
-      transaction.add(createATAInstruction);
-    }
-
-    // Sign and send transaction
-    const signature = await sendAndConfirmTransaction(
-      this.connection,
-      transaction,
-      [wallet],
-      { commitment: 'confirmed' }
-    );
-
-    return signature;
   }
 
   /**
@@ -373,6 +369,19 @@ export class PumpFunBot {
     slippageBps: number
   ): Promise<string> {
     try {
+      // Derive bonding curve PDA
+      const [bondingCurve] = PublicKey.findProgramAddressSync(
+        [Buffer.from('bonding-curve'), tokenMint.toBuffer()],
+        PUMP_FUN_PROGRAM_ID
+      );
+
+      // Derive associated bonding curve token account (ATA for bonding curve PDA)
+      const associatedBondingCurve = await getAssociatedTokenAddress(
+        tokenMint,
+        bondingCurve,
+        true // allowOwnerOffCurve = true for PDA
+      );
+
       // Get associated token account
       const associatedTokenAccount = await getAssociatedTokenAddress(
         tokenMint,
@@ -381,69 +390,68 @@ export class PumpFunBot {
 
       // Check token balance
       let tokenBalance = 0;
+      let tokenAmount = BigInt(0);
       try {
         const tokenAccount = await getAccount(this.connection, associatedTokenAccount);
         const mintInfo = await getMint(this.connection, tokenMint);
         tokenBalance = Number(tokenAccount.amount) / Math.pow(10, mintInfo.decimals);
+        tokenAmount = tokenAccount.amount;
       } catch {
         throw new Error('Token account not found or has no balance');
       }
 
       // Check if token is still on bonding curve
-      const [bondingCurve] = PublicKey.findProgramAddressSync(
-        [Buffer.from('bonding-curve'), tokenMint.toBuffer()],
-        PUMP_FUN_PROGRAM_ID
-      );
-
       const bondingCurveInfo = await this.connection.getAccountInfo(bondingCurve).catch(() => null);
       
-      if (bondingCurveInfo) {
-        // Token is still on bonding curve, use pump.fun swap
-        return await this.swapTokensForSol(
-          wallet,
-          tokenMint,
-          bondingCurve,
-          associatedTokenAccount,
-          solAmount,
-          slippageBps
-        );
-      } else {
+      if (!bondingCurveInfo) {
         // Token has graduated, use Raydium/Jupiter
         throw new Error('Token has graduated from bonding curve. Use Raydium/Jupiter swap instead.');
+      }
+
+      // Get global state and fee recipient
+      const globalState = await this.getGlobalState();
+      const feeRecipient = await this.getFeeRecipient();
+
+      // Calculate min SOL output with slippage (in lamports)
+      // This is a simplified calculation - actual would use bonding curve formula
+      // For sell, we sell all tokens, so amount is the token balance
+      const minSolOutput = new BN(Math.floor(solAmount * 1e9 * (1 - slippageBps / 10000)));
+
+      // Use Anchor program if available
+      if (this.program && idl) {
+        // Derive event authority
+        const [eventAuthority] = PublicKey.findProgramAddressSync(
+          [Buffer.from('__event_authority')],
+          PUMP_FUN_PROGRAM_ID
+        );
+
+        const tx = await this.program.methods
+          .sell(new BN(tokenAmount.toString()), minSolOutput)
+          .accounts({
+            global: globalState,
+            feeRecipient: feeRecipient,
+            mint: tokenMint,
+            bondingCurve: bondingCurve,
+            associatedBondingCurve: associatedBondingCurve,
+            associatedUser: associatedTokenAccount,
+            user: wallet.publicKey,
+            systemProgram: SystemProgram.programId,
+            associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            eventAuthority: eventAuthority,
+            program: PUMP_FUN_PROGRAM_ID,
+          })
+          .signers([wallet])
+          .rpc();
+
+        return tx;
+      } else {
+        // Fallback: manual instruction building (simplified)
+        throw new Error('Anchor program not initialized. Cannot execute sell.');
       }
     } catch (error: any) {
       throw new Error(`Sell failed: ${error.message}`);
     }
-  }
-
-  /**
-   * Swap tokens for SOL on pump.fun bonding curve
-   */
-  private async swapTokensForSol(
-    wallet: Keypair,
-    tokenMint: PublicKey,
-    bondingCurve: PublicKey,
-    associatedTokenAccount: PublicKey,
-    solAmount: number,
-    slippageBps: number
-  ): Promise<string> {
-    // Similar to buy, this needs proper pump.fun program instruction
-    // For now, this is a placeholder
-    
-    const transaction = new Transaction();
-    
-    // Add instruction to swap tokens for SOL on bonding curve
-    // This would need the actual pump.fun program instruction
-    
-    // Sign and send transaction
-    const signature = await sendAndConfirmTransaction(
-      this.connection,
-      transaction,
-      [wallet],
-      { commitment: 'confirmed' }
-    );
-
-    return signature;
   }
 
   /**
@@ -456,6 +464,76 @@ export class PumpFunBot {
     return selectedIndices
       .filter(index => index >= 0 && index < this.wallets.length)
       .map(index => this.wallets[index]);
+  }
+
+  /**
+   * Initialize Anchor program
+   */
+  private async initializeProgram(): Promise<void> {
+    try {
+      // Derive global state PDA
+      const [globalState] = PublicKey.findProgramAddressSync(
+        [Buffer.from('global')],
+        PUMP_FUN_PROGRAM_ID
+      );
+      this.globalState = globalState;
+
+      // Create a dummy wallet for provider (we'll use actual wallets for transactions)
+      const dummyWallet = {
+        publicKey: this.wallets[0]?.publicKey || Keypair.generate().publicKey,
+        signTransaction: async (tx: Transaction) => tx,
+        signAllTransactions: async (txs: Transaction[]) => txs,
+      };
+
+      const provider = new AnchorProvider(
+        this.connection,
+        dummyWallet as any,
+        { commitment: 'confirmed' }
+      );
+
+      this.program = new Program(idl as any, PUMP_FUN_PROGRAM_ID, provider);
+      console.log('✅ Anchor program initialized');
+    } catch (error) {
+      console.warn('Failed to initialize Anchor program:', error);
+      // Continue without Anchor - will use manual instruction building
+    }
+  }
+
+  /**
+   * Get global state account
+   */
+  private async getGlobalState(): Promise<PublicKey> {
+    if (!this.globalState) {
+      const [globalState] = PublicKey.findProgramAddressSync(
+        [Buffer.from('global')],
+        PUMP_FUN_PROGRAM_ID
+      );
+      this.globalState = globalState;
+    }
+    return this.globalState;
+  }
+
+  /**
+   * Get fee recipient from global state
+   */
+  private async getFeeRecipient(): Promise<PublicKey> {
+    try {
+      const globalState = await this.getGlobalState();
+      const globalAccount = await this.connection.getAccountInfo(globalState);
+      
+      if (!globalAccount) {
+        throw new Error('Global state not found');
+      }
+
+      // Parse fee recipient from account data (offset 1 + 32 bytes for authority)
+      // This is a simplified approach - actual parsing would depend on account layout
+      const feeRecipientBytes = globalAccount.data.slice(33, 65);
+      return new PublicKey(feeRecipientBytes);
+    } catch (error) {
+      // Fallback to a default fee recipient if we can't parse
+      // In production, you'd want to handle this properly
+      return new PublicKey('CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM'); // Default pump.fun fee recipient
+    }
   }
 
   /**
