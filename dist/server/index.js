@@ -8,8 +8,11 @@ const cors_1 = __importDefault(require("cors"));
 const http_1 = require("http");
 const socket_io_1 = require("socket.io");
 const path_1 = __importDefault(require("path"));
-// Resolve paths relative to project root (works with both ts-node and node)
-const projectRoot = path_1.default.resolve(__dirname, '..');
+// Resolve paths - detect if running from dist/ or source
+const isRunningFromDist = __dirname.includes('dist');
+const projectRoot = isRunningFromDist
+    ? path_1.default.resolve(__dirname, '../..') // dist/server -> project root
+    : path_1.default.resolve(__dirname, '..'); // server -> project root
 const distPath = path_1.default.join(projectRoot, 'dist');
 // Import from compiled dist/ (source files were removed)
 // Note: Some modules may not exist - we'll handle gracefully

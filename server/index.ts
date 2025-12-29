@@ -4,8 +4,11 @@ import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import path from 'path';
 
-// Resolve paths relative to project root (works with both ts-node and node)
-const projectRoot = path.resolve(__dirname, '..');
+// Resolve paths - detect if running from dist/ or source
+const isRunningFromDist = __dirname.includes('dist');
+const projectRoot = isRunningFromDist
+  ? path.resolve(__dirname, '../..') // dist/server -> project root
+  : path.resolve(__dirname, '..');    // server -> project root
 const distPath = path.join(projectRoot, 'dist');
 
 // Import from compiled dist/ (source files were removed)
