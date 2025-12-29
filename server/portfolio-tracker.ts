@@ -301,10 +301,9 @@ class PortfolioTracker {
       openPositions: openPositions.length || 0,
       totalInvested: totalInvested || 0,
       totalValue: totalValue || 0,
-      totalPnl: totalPnl || 0,
+      totalPnl: (totalPnl || 0) + (realizedPnl || 0), // Total PnL including realized
       totalPnlPercent: totalPnlPercent || 0,
       realizedPnl: realizedPnl || 0,
-      totalPnl: (totalPnl || 0) + (realizedPnl || 0),
     };
   }
 }
