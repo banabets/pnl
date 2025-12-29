@@ -2,6 +2,7 @@ import {
   Connection,
   PublicKey,
   ParsedTransactionWithMeta,
+  VersionedTransactionResponse,
 } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
@@ -73,7 +74,7 @@ export class TradesListener {
               });
               
               if (tx?.meta) {
-                await this.processTransaction(tx, logs.signature, tokenMint);
+                await this.processTransaction(tx as any, logs.signature, tokenMint);
               }
             } catch (error) {
               // Ignore errors
@@ -120,7 +121,7 @@ export class TradesListener {
           });
 
           if (tx?.meta) {
-            await this.processTransaction(tx, sig.signature, tokenMint);
+            await this.processTransaction(tx as any, sig.signature, tokenMint);
           }
 
           // Small delay to avoid rate limiting
@@ -138,14 +139,36 @@ export class TradesListener {
    * Process a transaction to extract trade information
    */
   private async processTransaction(
-    tx: ParsedTransactionWithMeta,
+    tx: any, // Accept any transaction type to avoid type errors
     signature: string,
     tokenMint: string
   ): Promise<void> {
     try {
-      if (!tx.meta) return;
+      if (!tx?.meta) return;
 
       const mintPubkey = new PublicKey(tokenMint);
+      
+      // Get signer account from transaction
+      let signerAccount = '';
+      try {
+        if (tx.transaction) {
+          const message = tx.transaction.message;
+          if (message.accountKeys && message.accountKeys.length > 0) {
+            // Versioned transaction
+            const firstKey = message.accountKeys[0];
+            signerAccount = typeof firstKey === 'string' ? firstKey : (firstKey?.toString() || '');
+          } else if (message.staticAccountKeys && message.staticAccountKeys.length > 0) {
+            // Parsed transaction
+            signerAccount = message.staticAccountKeys[0]?.toString() || '';
+          } else if ((message as any).accountKeys && (message as any).accountKeys.length > 0) {
+            // Alternative format
+            const firstKey = (message as any).accountKeys[0];
+            signerAccount = typeof firstKey === 'string' ? firstKey : (firstKey?.toString() || '');
+          }
+        }
+      } catch (e) {
+        // Ignore errors getting signer
+      }
       
       // Get token balances from transaction
       const preTokenBalances = tx.meta.preTokenBalances || [];
@@ -271,15 +294,31 @@ export class TradesListener {
       let finalSeller = '';
       let finalSolAmount = 0;
       
+      // Get signer if not already set
+      if (!signerAccount) {
+        if ('transaction' in tx && tx.transaction) {
+          const message = tx.transaction.message;
+          if ('accountKeys' in message && message.accountKeys && message.accountKeys.length > 0) {
+            const firstKey = message.accountKeys[0];
+            signerAccount = typeof firstKey === 'string' ? firstKey : firstKey.toString();
+          } else if ('instructions' in message) {
+            const staticKeys = (message as any).staticAccountKeys;
+            if (staticKeys && staticKeys.length > 0) {
+              signerAccount = staticKeys[0].toString();
+            }
+          }
+        }
+      }
+      
       if (isBuy) {
         // This is a BUY trade: user is buying tokens with SOL
-        finalBuyer = signerAccount || accountOwner;
-        finalSeller = accountOwner || signerAccount; // Usually the bonding curve
+        finalBuyer = signerAccount || accountOwner || '';
+        finalSeller = accountOwner || signerAccount || ''; // Usually the bonding curve
         finalSolAmount = buyerSolChange || solAmount;
       } else if (isSell) {
         // This is a SELL trade: user is selling tokens for SOL
-        finalBuyer = accountOwner || signerAccount; // Usually the bonding curve
-        finalSeller = signerAccount || accountOwner;
+        finalBuyer = accountOwner || signerAccount || ''; // Usually the bonding curve
+        finalSeller = signerAccount || accountOwner || '';
         finalSolAmount = sellerSolChange || solAmount;
       } else {
         // Should not happen
