@@ -17,8 +17,7 @@ let WalletManager;
 let FundManager;
 let VolumeBot;
 let MasterWalletManager;
-let PumpFunBot;
-let PumpFunOnChainSearch;
+// PumpFunBot and PumpFunOnChainSearch modules don't exist - removed
 let configManager;
 try {
     WalletManager = require(path_1.default.join(distPath, 'wallet')).WalletManager;
@@ -44,8 +43,11 @@ try {
 catch (e) {
     console.warn('MasterWalletManager not found');
 }
+// Load PumpFunBot and PumpFunOnChainSearch from source
+let PumpFunBot;
+let PumpFunOnChainSearch;
 try {
-    PumpFunBot = require(path_1.default.join(distPath, 'pumpfun')).PumpFunBot;
+    PumpFunBot = require(path_1.default.join(projectRoot, 'src/pumpfun/pumpfun-bot')).PumpFunBot;
 }
 catch (e) {
     console.warn('PumpFunBot not found');
@@ -98,6 +100,19 @@ const userSessionManager = new user_session_1.UserSessionManager();
 // User Auth Manager
 const user_auth_1 = require("./user-auth");
 const userAuthManager = new user_auth_1.UserAuthManager();
+// Auth Middleware
+const auth_middleware_1 = require("./auth-middleware");
+// Rate limiting for auth endpoints
+// Use dynamic require for Railway compatibility
+const rateLimitModule = require('express-rate-limit');
+const rateLimit = rateLimitModule.default || rateLimitModule;
+const authRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 requests per window
+    message: 'Too many authentication attempts, please try again later',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 // WebSocket API Comparison (optional - only if dependencies available)
 let compareWebSocketAPIs = null;
 try {
@@ -129,6 +144,7 @@ const walletManager = WalletManager ? new WalletManager() : null;
 const fundManager = FundManager ? new FundManager() : null;
 const volumeBot = VolumeBot ? new VolumeBot() : null;
 const masterWalletManager = MasterWalletManager ? new MasterWalletManager() : null;
+// Initialize PumpFunBot and PumpFunOnChainSearch if available
 const pumpFunBot = PumpFunBot ? new PumpFunBot() : null;
 const onChainSearch = PumpFunOnChainSearch ? new PumpFunOnChainSearch() : null;
 const wsListener = new websocket_listener_1.PumpFunWebSocketListener();
@@ -223,19 +239,17 @@ app.get('/api/transactions', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-// User Authentication Endpoints
-app.post('/api/auth/register', async (req, res) => {
+// ============================================
+// USER AUTHENTICATION & MANAGEMENT ENDPOINTS
+// ============================================
+// Register (with rate limiting)
+app.post('/api/auth/register', authRateLimiter, async (req, res) => {
     try {
         const { username, email, password } = req.body;
-        if (!username || !email || !password) {
-            return res.status(400).json({ error: 'Username, email, and password are required' });
-        }
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters' });
-        }
-        const result = userAuthManager.register(username, email, password);
+        const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+        const result = userAuthManager.register(username, email, password, ipAddress);
         if (result.success) {
-            res.json({ success: true, user: result.user });
+            res.json({ success: true, user: result.user, token: result.token });
         }
         else {
             res.status(400).json({ error: result.error });
@@ -245,13 +259,13 @@ app.post('/api/auth/register', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.post('/api/auth/login', async (req, res) => {
+// Login (with rate limiting)
+app.post('/api/auth/login', authRateLimiter, async (req, res) => {
     try {
         const { usernameOrEmail, password } = req.body;
-        if (!usernameOrEmail || !password) {
-            return res.status(400).json({ error: 'Username/email and password are required' });
-        }
-        const result = userAuthManager.login(usernameOrEmail, password);
+        const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+        const userAgent = req.headers['user-agent'];
+        const result = userAuthManager.login(usernameOrEmail, password, ipAddress, userAgent);
         if (result.success) {
             res.json({ success: true, user: result.user, token: result.token });
         }
@@ -263,12 +277,50 @@ app.post('/api/auth/login', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.get('/api/auth/user/:userId', async (req, res) => {
+// Logout
+app.post('/api/auth/logout', auth_middleware_1.authenticateToken, async (req, res) => {
+    try {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        if (token) {
+            userAuthManager.logout(token);
+        }
+        res.json({ success: true });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Verify token / Get current user
+app.get('/api/auth/me', auth_middleware_1.authenticateToken, async (req, res) => {
+    try {
+        res.json({ success: true, user: req.user });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Get user by ID (public info only)
+app.get('/api/auth/user/:userId', auth_middleware_1.optionalAuth, async (req, res) => {
     try {
         const { userId } = req.params;
         const user = userAuthManager.getUserById(userId);
         if (user) {
-            res.json({ success: true, user });
+            // If requesting own profile or authenticated, return full info
+            if (req.userId === userId || req.user) {
+                res.json({ success: true, user });
+            }
+            else {
+                // Return public info only
+                const publicUser = {
+                    id: user.id,
+                    username: user.username,
+                    profile: user.profile,
+                    stats: user.stats,
+                    createdAt: user.createdAt
+                };
+                res.json({ success: true, user: publicUser });
+            }
         }
         else {
             res.status(404).json({ error: 'User not found' });
@@ -278,17 +330,132 @@ app.get('/api/auth/user/:userId', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.put('/api/auth/user/:userId/profile', async (req, res) => {
+// Update profile (authenticated)
+app.put('/api/auth/user/:userId/profile', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
         const { userId } = req.params;
-        const { username, displayName, bio } = req.body;
-        const result = userAuthManager.updateProfile(userId, { username, displayName, bio });
+        // Users can only update their own profile (unless admin)
+        if (req.userId !== userId && req.user?.role !== 'admin') {
+            return res.status(403).json({ error: 'You can only update your own profile' });
+        }
+        const { username, displayName, bio, avatar, timezone, language } = req.body;
+        const result = userAuthManager.updateProfile(userId, {
+            username,
+            displayName,
+            bio,
+            avatar,
+            timezone,
+            language
+        });
         if (result.success) {
             res.json({ success: true, user: result.user });
         }
         else {
             res.status(400).json({ error: result.error });
         }
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Update settings (authenticated)
+app.put('/api/auth/user/:userId/settings', auth_middleware_1.authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        if (req.userId !== userId && req.user?.role !== 'admin') {
+            return res.status(403).json({ error: 'You can only update your own settings' });
+        }
+        const result = userAuthManager.updateSettings(userId, req.body);
+        if (result.success) {
+            res.json({ success: true, user: result.user });
+        }
+        else {
+            res.status(400).json({ error: result.error });
+        }
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Change password (authenticated)
+app.post('/api/auth/user/:userId/change-password', auth_middleware_1.authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        if (req.userId !== userId) {
+            return res.status(403).json({ error: 'You can only change your own password' });
+        }
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Current password and new password are required' });
+        }
+        const result = userAuthManager.changePassword(userId, currentPassword, newPassword);
+        if (result.success) {
+            res.json({ success: true });
+        }
+        else {
+            res.status(400).json({ error: result.error });
+        }
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Request password reset
+app.post('/api/auth/forgot-password', authRateLimiter, async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+        const result = userAuthManager.requestPasswordReset(email);
+        // Always return success for security (don't reveal if email exists)
+        res.json({ success: true, message: 'If the email exists, a reset link has been sent' });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Get user sessions (authenticated)
+app.get('/api/auth/user/:userId/sessions', auth_middleware_1.authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        if (req.userId !== userId && req.user?.role !== 'admin') {
+            return res.status(403).json({ error: 'You can only view your own sessions' });
+        }
+        const sessions = userAuthManager.getUserSessions(userId);
+        res.json({ success: true, sessions });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Get activity logs (authenticated)
+app.get('/api/auth/user/:userId/activity', auth_middleware_1.authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const limit = parseInt(req.query.limit) || 100;
+        if (req.userId !== userId && req.user?.role !== 'admin') {
+            return res.status(403).json({ error: 'You can only view your own activity' });
+        }
+        const logs = userAuthManager.getActivityLogs(userId, limit);
+        res.json({ success: true, logs });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+// Get user stats (authenticated)
+app.get('/api/auth/user/:userId/stats', auth_middleware_1.authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = userAuthManager.getUserById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        if (req.userId !== userId && req.user?.role !== 'admin') {
+            return res.status(403).json({ error: 'You can only view your own stats' });
+        }
+        res.json({ success: true, stats: user.stats || {} });
     }
     catch (error) {
         res.status(500).json({ error: String(error) });

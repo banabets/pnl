@@ -8,7 +8,7 @@ const USERS_FILE = path.join(__dirname, '../data/users.json');
 const SESSIONS_FILE = path.join(__dirname, '../data/sessions.json');
 const ACTIVITY_LOG_FILE = path.join(__dirname, '../data/user-activity.json');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
+const JWT_EXPIRY: string = process.env.JWT_EXPIRY || '7d';
 
 // Ensure data directory exists
 const dataDir = path.join(__dirname, '../data');
@@ -177,7 +177,7 @@ export class UserAuthManager {
     return jwt.sign(
       { userId, iat: Math.floor(Date.now() / 1000) },
       JWT_SECRET,
-      { expiresIn: JWT_EXPIRY }
+      { expiresIn: JWT_EXPIRY } as any
     );
   }
 
