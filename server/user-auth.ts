@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { User, Session, ActivityLog, isConnected } from './database';
 import mongoose from 'mongoose';
+import { walletService } from './wallet-service';
 
 const USERS_FILE = path.join(__dirname, '../data/users.json');
 const SESSIONS_FILE = path.join(__dirname, '../data/sessions.json');
@@ -310,6 +311,15 @@ export class UserAuthManager {
         const token = this.generateToken(userId);
         await this.createSession(userId, token, ipAddress);
         await this.logActivity(userId, 'user_registered', { username, email }, ipAddress);
+
+        // Create master wallet for the new user
+        try {
+          const walletResult = await walletService.createMasterWallet(newUser._id.toString());
+          console.log(`🔑 Master wallet created for user ${username}: ${walletResult.publicKey}`);
+        } catch (walletError) {
+          console.error('⚠️ Failed to create master wallet:', walletError);
+          // Don't fail registration if wallet creation fails
+        }
 
         console.log(`✅ New user registered: ${username} (${userId})`);
         const userObj = newUser.toObject();

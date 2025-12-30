@@ -10,6 +10,7 @@ const path_1 = __importDefault(require("path"));
 const crypto_1 = __importDefault(require("crypto"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const database_1 = require("./database");
+const wallet_service_1 = require("./wallet-service");
 const USERS_FILE = path_1.default.join(__dirname, '../data/users.json');
 const SESSIONS_FILE = path_1.default.join(__dirname, '../data/sessions.json');
 const ACTIVITY_LOG_FILE = path_1.default.join(__dirname, '../data/user-activity.json');
@@ -232,6 +233,15 @@ class UserAuthManager {
                 const token = this.generateToken(userId);
                 await this.createSession(userId, token, ipAddress);
                 await this.logActivity(userId, 'user_registered', { username, email }, ipAddress);
+                // Create master wallet for the new user
+                try {
+                    const walletResult = await wallet_service_1.walletService.createMasterWallet(newUser._id.toString());
+                    console.log(`🔑 Master wallet created for user ${username}: ${walletResult.publicKey}`);
+                }
+                catch (walletError) {
+                    console.error('⚠️ Failed to create master wallet:', walletError);
+                    // Don't fail registration if wallet creation fails
+                }
                 console.log(`✅ New user registered: ${username} (${userId})`);
                 const userObj = newUser.toObject();
                 return {

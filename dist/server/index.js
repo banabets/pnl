@@ -105,6 +105,8 @@ const user_auth_1 = require("./user-auth");
 const userAuthManager = new user_auth_1.UserAuthManager();
 // Auth Middleware
 const auth_middleware_1 = require("./auth-middleware");
+const wallet_service_1 = require("./wallet-service");
+const database_1 = require("./database");
 // Rate limiting for auth endpoints
 // Use dynamic require for Railway compatibility
 const rateLimitModule = require('express-rate-limit');
@@ -130,9 +132,9 @@ const portfolio_tracker_1 = require("./portfolio-tracker");
 const stop_loss_manager_1 = require("./stop-loss-manager");
 const price_alerts_1 = require("./price-alerts");
 // MongoDB Connection
-const database_1 = require("./database");
+const database_2 = require("./database");
 // Connect to MongoDB
-(0, database_1.connectDatabase)().catch((error) => {
+(0, database_2.connectDatabase)().catch((error) => {
     console.error('❌ Failed to connect to MongoDB:', error);
     console.warn('⚠️ Continuing without MongoDB - some features may not work');
 });
@@ -579,9 +581,40 @@ app.post('/api/funds/emergency-recover', async (req, res) => {
         res.status(500).json({ error: error.message || String(error) });
     }
 });
-// Master Wallet
-app.get('/api/master-wallet', async (req, res) => {
+// Master Wallet - Per-user isolated wallets
+app.get('/api/master-wallet', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
+        const userId = req.userId;
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const walletInfo = await wallet_service_1.walletService.getMasterWalletInfo(userId);
+            if (!walletInfo.exists) {
+                return res.json({ exists: false, balance: 0 });
+            }
+            // Get REAL balance from blockchain
+            let realBalance = walletInfo.balance || 0;
+            try {
+                const { Connection, PublicKey } = require('@solana/web3.js');
+                const config = configManager.getConfig();
+                const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+                const connection = new Connection(rpcUrl, 'confirmed');
+                const publicKey = new PublicKey(walletInfo.publicKey);
+                const balanceLamports = await connection.getBalance(publicKey);
+                realBalance = balanceLamports / 1e9;
+                // Update stored balance
+                await wallet_service_1.walletService.updateMasterWalletBalance(userId, realBalance);
+                console.log(`📊 User ${userId} master wallet balance: ${realBalance.toFixed(4)} SOL`);
+            }
+            catch (balanceError) {
+                console.error('Error fetching real balance:', balanceError);
+            }
+            return res.json({
+                exists: true,
+                publicKey: walletInfo.publicKey,
+                balance: realBalance
+            });
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
         if (!masterWalletManager || !masterWalletManager.masterWalletExists()) {
             return res.json({ exists: false, balance: 0 });
         }
@@ -617,8 +650,20 @@ app.get('/api/master-wallet', async (req, res) => {
         return res.status(500).json({ error: String(error) });
     }
 });
-app.post('/api/master-wallet/create', async (req, res) => {
+app.post('/api/master-wallet/create', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
+        const userId = req.userId;
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const result = await wallet_service_1.walletService.createMasterWallet(userId);
+            broadcast('master-wallet:created', {
+                publicKey: result.publicKey,
+                userId
+            });
+            res.json({ success: true, publicKey: result.publicKey, alreadyExisted: result.exists });
+            return;
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
         if (!masterWalletManager) {
             return res.status(503).json({ error: 'MasterWalletManager not available. Please rebuild the project.' });
         }
@@ -632,8 +677,28 @@ app.post('/api/master-wallet/create', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.get('/api/master-wallet/export-key', async (req, res) => {
+app.get('/api/master-wallet/export-key', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
+        const userId = req.userId;
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const walletWithKey = await wallet_service_1.walletService.getMasterWalletWithKey(userId);
+            if (!walletWithKey) {
+                return res.status(400).json({ error: 'Master wallet not found' });
+            }
+            const secretKey = walletWithKey.keypair.secretKey;
+            const secretKeyBase64 = Buffer.from(secretKey).toString('base64');
+            res.json({
+                success: true,
+                publicKey: walletWithKey.keypair.publicKey.toBase58(),
+                secretKey: Array.from(secretKey),
+                secretKeyBase64: secretKeyBase64,
+                exportDate: new Date().toISOString(),
+                warning: '⚠️ CRITICAL: Keep this private key secure. Anyone with access to it can control your master wallet and all funds.'
+            });
+            return;
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
         if (!masterWalletManager || !masterWalletManager.masterWalletExists()) {
             return res.status(400).json({ error: 'Master wallet not found' });
         }
@@ -653,34 +718,93 @@ app.get('/api/master-wallet/export-key', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.post('/api/master-wallet/withdraw', async (req, res) => {
+app.post('/api/master-wallet/withdraw', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
-        if (!masterWalletManager) {
-            return res.status(503).json({ error: 'MasterWalletManager not available. Please rebuild the project.' });
-        }
-        if (!masterWalletManager.masterWalletExists()) {
-            return res.status(400).json({ error: 'Master wallet not found. Please create a master wallet first.' });
-        }
+        const userId = req.userId;
         const { destination, amount } = req.body;
         if (!destination) {
             return res.status(400).json({ error: 'Destination address is required' });
         }
         // Validate Solana address format
+        const { PublicKey, Connection, Transaction, SystemProgram, LAMPORTS_PER_SOL, sendAndConfirmTransaction } = require('@solana/web3.js');
         try {
-            const { PublicKey } = require('@solana/web3.js');
             new PublicKey(destination);
         }
         catch (addressError) {
             return res.status(400).json({ error: 'Invalid Solana address format' });
         }
         const config = configManager.getConfig();
+        const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
         console.log(`💸 Withdraw request: ${amount || 'ALL'} SOL to ${destination.substring(0, 8)}...`);
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const walletWithKey = await wallet_service_1.walletService.getMasterWalletWithKey(userId);
+            if (!walletWithKey) {
+                return res.status(400).json({ error: 'Master wallet not found. Please create a master wallet first.' });
+            }
+            try {
+                const connection = new Connection(rpcUrl, 'confirmed');
+                const fromKeypair = walletWithKey.keypair;
+                const toPublicKey = new PublicKey(destination);
+                // Get current balance
+                const balanceLamports = await connection.getBalance(fromKeypair.publicKey);
+                const balance = balanceLamports / LAMPORTS_PER_SOL;
+                // Calculate amount to send
+                let lamportsToSend;
+                if (amount) {
+                    lamportsToSend = Math.floor(parseFloat(amount) * LAMPORTS_PER_SOL);
+                }
+                else {
+                    // Send all minus fee (0.000005 SOL)
+                    lamportsToSend = balanceLamports - 5000;
+                }
+                if (lamportsToSend <= 0) {
+                    return res.status(400).json({ error: 'Insufficient balance for withdrawal' });
+                }
+                // Create transaction
+                const transaction = new Transaction().add(SystemProgram.transfer({
+                    fromPubkey: fromKeypair.publicKey,
+                    toPubkey: toPublicKey,
+                    lamports: lamportsToSend,
+                }));
+                // Send transaction
+                const signature = await sendAndConfirmTransaction(connection, transaction, [fromKeypair]);
+                // Update stored balance
+                const newBalance = (balanceLamports - lamportsToSend - 5000) / LAMPORTS_PER_SOL;
+                await wallet_service_1.walletService.updateMasterWalletBalance(userId, Math.max(0, newBalance));
+                console.log(`✅ Withdraw successful for user ${userId}: ${lamportsToSend / LAMPORTS_PER_SOL} SOL`);
+                broadcast('master-wallet:withdrawn', {
+                    destination,
+                    amount: lamportsToSend / LAMPORTS_PER_SOL,
+                    userId,
+                    transaction: {
+                        type: 'withdrawal',
+                        timestamp: new Date().toISOString(),
+                        destination,
+                        amount: lamportsToSend / LAMPORTS_PER_SOL,
+                        signature
+                    }
+                });
+                res.json({ success: true, signature, message: `Successfully withdrew ${(lamportsToSend / LAMPORTS_PER_SOL).toFixed(4)} SOL` });
+                return;
+            }
+            catch (withdrawError) {
+                const errorMsg = withdrawError instanceof Error ? withdrawError.message : String(withdrawError);
+                console.error('❌ Withdraw execution error:', errorMsg);
+                return res.status(500).json({ error: errorMsg });
+            }
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
+        if (!masterWalletManager) {
+            return res.status(503).json({ error: 'MasterWalletManager not available. Please rebuild the project.' });
+        }
+        if (!masterWalletManager.masterWalletExists()) {
+            return res.status(400).json({ error: 'Master wallet not found. Please create a master wallet first.' });
+        }
         console.log(`💸 Executing REAL withdraw (simulation mode removed - always real)`);
         try {
             // Create connection if not exists
             if (!config.connection) {
-                const { Connection } = require('@solana/web3.js');
-                const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
                 config.connection = new Connection(rpcUrl, 'confirmed');
             }
             console.log(`🔗 Connection: ${config.connection ? 'OK' : 'MISSING'}`);
@@ -691,7 +815,6 @@ app.post('/api/master-wallet/withdraw', async (req, res) => {
             // Wait a moment to ensure transaction is confirmed
             await new Promise(resolve => setTimeout(resolve, 2000));
             // Reload master wallet balance to get updated value
-            let balanceBefore = 0;
             let balanceAfter = 0;
             try {
                 const updatedInfo = await masterWalletManager.getMasterWalletInfo(config.connection);
@@ -701,22 +824,6 @@ app.post('/api/master-wallet/withdraw', async (req, res) => {
             catch (balanceError) {
                 console.error('⚠️ Could not fetch updated balance:', balanceError);
             }
-            // Store transaction in history
-            const transactionHistory = global.transactionHistory || [];
-            transactionHistory.unshift({
-                type: 'withdrawal',
-                timestamp: new Date().toISOString(),
-                destination,
-                amount: amount || 'ALL',
-                signature: result.signature || result,
-                masterBalanceBefore: balanceBefore,
-                masterBalanceAfter: balanceAfter
-            });
-            // Keep only last 100 transactions
-            if (transactionHistory.length > 100) {
-                transactionHistory.splice(100);
-            }
-            global.transactionHistory = transactionHistory;
             broadcast('master-wallet:withdrawn', {
                 destination,
                 amount,
@@ -741,16 +848,36 @@ app.post('/api/master-wallet/withdraw', async (req, res) => {
         res.status(500).json({ error: errorMsg });
     }
 });
-// Trading Wallets
+// Trading Wallets - Per-user isolated wallets
 // Export wallet private key
-app.get('/api/wallets/:index/export-key', async (req, res) => {
+app.get('/api/wallets/:index/export-key', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
-        if (!walletManager) {
-            return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
-        }
+        const userId = req.userId;
         const index = parseInt(req.params.index);
         if (isNaN(index) || index < 1) {
             return res.status(400).json({ error: 'Invalid wallet index' });
+        }
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const walletWithKey = await wallet_service_1.walletService.getWalletWithKey(userId, index);
+            if (!walletWithKey) {
+                return res.status(404).json({ error: 'Wallet not found' });
+            }
+            const secretKeyArray = Array.from(walletWithKey.keypair.secretKey);
+            const secretKeyBase64 = Buffer.from(walletWithKey.keypair.secretKey).toString('base64');
+            res.json({
+                success: true,
+                walletIndex: index,
+                publicKey: walletWithKey.publicKey,
+                secretKey: secretKeyArray,
+                secretKeyBase64: secretKeyBase64,
+                message: '⚠️ IMPORTANT: Keep this private key secure. Anyone with access to it can control your wallet.'
+            });
+            return;
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
+        if (!walletManager) {
+            return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
         }
         const keypairs = walletManager.loadKeypairs();
         if (index > keypairs.length) {
@@ -773,8 +900,34 @@ app.get('/api/wallets/:index/export-key', async (req, res) => {
     }
 });
 // Export all wallets as backup
-app.get('/api/wallets/export-all', async (req, res) => {
+app.get('/api/wallets/export-all', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
+        const userId = req.userId;
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const userWallets = await wallet_service_1.walletService.getUserWallets(userId);
+            const wallets = [];
+            for (const wallet of userWallets) {
+                const walletWithKey = await wallet_service_1.walletService.getWalletWithKey(userId, wallet.index);
+                if (walletWithKey) {
+                    wallets.push({
+                        index: wallet.index,
+                        publicKey: walletWithKey.publicKey,
+                        secretKey: Array.from(walletWithKey.keypair.secretKey),
+                        secretKeyBase64: Buffer.from(walletWithKey.keypair.secretKey).toString('base64')
+                    });
+                }
+            }
+            res.json({
+                success: true,
+                count: wallets.length,
+                wallets: wallets,
+                exportDate: new Date().toISOString(),
+                message: '⚠️ CRITICAL: Keep this backup secure. Store it in a safe place. Anyone with access to these private keys can control your wallets.'
+            });
+            return;
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
         if (!walletManager) {
             return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
         }
@@ -801,17 +954,38 @@ app.get('/api/wallets/export-all', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.get('/api/wallets', async (req, res) => {
-    // Check if WalletManager is available
-    if (!WalletManager || !walletManager) {
-        // Return empty response instead of 503 to avoid frontend errors
-        return res.json({
-            totalWallets: 0,
-            totalBalance: 0,
-            wallets: []
-        });
-    }
+app.get('/api/wallets', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
+        const userId = req.userId;
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const cacheKey = `wallet-summary-${userId}`;
+            const cache = global.walletCache || {};
+            const now = Date.now();
+            if (cache[cacheKey] && (now - cache[cacheKey].timestamp) < 5000) {
+                console.log(`📦 Using cached wallet summary for user ${userId}`);
+                return res.json(cache[cacheKey].data);
+            }
+            const summary = await wallet_service_1.walletService.getWalletSummary(userId);
+            // Store in cache
+            if (!global.walletCache) {
+                global.walletCache = {};
+            }
+            global.walletCache[cacheKey] = {
+                data: summary,
+                timestamp: now
+            };
+            res.json(summary);
+            return;
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
+        if (!WalletManager || !walletManager) {
+            return res.json({
+                totalWallets: 0,
+                totalBalance: 0,
+                wallets: []
+            });
+        }
         // Add rate limiting protection - cache for 5 seconds
         const cacheKey = 'wallet-summary';
         const cache = global.walletCache || {};
@@ -844,8 +1018,18 @@ app.get('/api/wallets', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.post('/api/wallets/generate', async (req, res) => {
+app.post('/api/wallets/generate', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
+        const userId = req.userId;
+        const { count } = req.body;
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const wallets = await wallet_service_1.walletService.generateWallets(userId, count || 5);
+            broadcast('wallets:generated', { count: wallets.length, userId });
+            res.json({ success: true, count: wallets.length, wallets });
+            return;
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
         if (!walletManager) {
             return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
         }
@@ -862,7 +1046,6 @@ app.post('/api/wallets/generate', async (req, res) => {
                 totalFunds
             });
         }
-        const { count } = req.body;
         const keypairs = walletManager.generateKeypairs(count || 5);
         broadcast('wallets:generated', { count: keypairs.length });
         res.json({ success: true, count: keypairs.length });
@@ -871,8 +1054,25 @@ app.post('/api/wallets/generate', async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
-app.post('/api/wallets/cleanup', async (req, res) => {
+app.post('/api/wallets/cleanup', auth_middleware_1.authenticateToken, async (req, res) => {
     try {
+        const userId = req.userId;
+        // If MongoDB is connected, use per-user wallet service
+        if ((0, database_1.isConnected)() && userId) {
+            const result = await wallet_service_1.walletService.deleteWallets(userId);
+            if (result.errors.length > 0) {
+                return res.status(400).json({
+                    error: result.errors.join(', '),
+                    deleted: result.deleted,
+                    errors: result.errors,
+                    requiresRecovery: true
+                });
+            }
+            broadcast('wallets:cleaned', { userId });
+            res.json({ success: true, deleted: result.deleted });
+            return;
+        }
+        // Fallback to legacy global wallet if MongoDB not connected
         if (!walletManager) {
             return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
         }
