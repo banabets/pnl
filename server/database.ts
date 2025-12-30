@@ -207,6 +207,56 @@ const ReferralSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
+// Token Index Schema - Persist tokens discovered on-chain
+const TokenIndexSchema = new mongoose.Schema({
+  mint: { type: String, required: true, unique: true, index: true },
+  name: String,
+  symbol: String,
+  imageUrl: String,
+  // Datos on-chain (siempre disponibles)
+  createdAt: { type: Date, required: true, index: true },
+  creator: String,
+  bondingCurve: String,
+  source: { type: String, enum: ['pumpfun', 'raydium', 'unknown'], default: 'unknown' },
+  // Datos de APIs (pueden estar desactualizados)
+  price: Number,
+  marketCap: Number,
+  liquidity: Number,
+  volume24h: Number,
+  volume1h: Number,
+  volume5m: Number,
+  holders: Number,
+  supply: Number,
+  // Price changes
+  priceChange5m: Number,
+  priceChange1h: Number,
+  priceChange24h: Number,
+  // Transaction counts
+  txns5m: { buys: Number, sells: Number },
+  txns1h: { buys: Number, sells: Number },
+  txns24h: { buys: Number, sells: Number },
+  // Metadata de enriquecimiento
+  lastEnrichedAt: Date,
+  enrichmentSource: String, // 'dexscreener', 'onchain', 'pumpfun'
+  // Flags calculados
+  isNew: { type: Boolean, index: true, default: false },
+  isGraduating: { type: Boolean, index: true, default: false },
+  isTrending: { type: Boolean, index: true, default: false },
+  riskScore: Number,
+  // Pair info
+  pairAddress: String,
+  dexId: String,
+  // Calculated age in minutes
+  age: Number,
+}, { timestamps: true });
+
+// Compound indexes for performance
+TokenIndexSchema.index({ createdAt: -1, isNew: 1 }); // For new tokens query
+TokenIndexSchema.index({ isTrending: 1, createdAt: -1 }); // For trending query
+TokenIndexSchema.index({ isGraduating: 1, createdAt: -1 }); // For graduating query
+TokenIndexSchema.index({ liquidity: -1 }); // For liquidity sorting
+TokenIndexSchema.index({ lastEnrichedAt: 1 }); // For enrichment priority
+
 // Create compound indexes for performance (simple indexes already defined in schema)
 WalletSchema.index({ userId: 1, index: 1 });
 TradingFeeSchema.index({ userId: 1, timestamp: -1 });
@@ -229,6 +279,7 @@ export const ActivityLog = mongoose.model('ActivityLog', ActivityLogSchema);
 export const TradingFee = mongoose.model('TradingFee', TradingFeeSchema);
 export const Subscription = mongoose.model('Subscription', SubscriptionSchema);
 export const Referral = mongoose.model('Referral', ReferralSchema);
+export const TokenIndex = mongoose.model('TokenIndex', TokenIndexSchema);
 
 // Export connection status helper
 export function isConnected(): boolean {

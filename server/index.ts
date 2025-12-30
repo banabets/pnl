@@ -165,14 +165,34 @@ import { CopyTradingService, initCopyTrading, getCopyTrading, FollowedWallet, Co
 
 // Token Feed Service
 import { tokenFeed } from './token-feed';
+import { tokenEnricherWorker } from './token-enricher-worker';
 
 // MongoDB Connection
 import { connectDatabase, isConnected } from './database';
 
 // Connect to MongoDB
-connectDatabase().catch((error) => {
+connectDatabase().then(() => {
+  // Initialize token feed after MongoDB connection
+  tokenFeed.start().then(() => {
+    // Start enricher worker after token feed is ready
+    tokenEnricherWorker.start().catch((error) => {
+      console.error('❌ Failed to start token enricher worker:', error);
+    });
+  }).catch((error) => {
+    console.error('❌ Failed to start token feed:', error);
+  });
+}).catch((error) => {
   console.error('❌ Failed to connect to MongoDB:', error);
   console.warn('⚠️ Continuing without MongoDB - some features may not work');
+  // Still try to start token feed even without MongoDB
+  tokenFeed.start().then(() => {
+    // Start enricher worker even without MongoDB
+    tokenEnricherWorker.start().catch((error) => {
+      console.error('❌ Failed to start token enricher worker:', error);
+    });
+  }).catch((error) => {
+    console.error('❌ Failed to start token feed:', error);
+  });
 });
 
 const app = express();
