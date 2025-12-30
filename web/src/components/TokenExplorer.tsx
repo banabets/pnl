@@ -33,6 +33,22 @@ interface Token {
     associated_bonding_curve: string;
     associated_market: string;
   };
+  // New fields from DexScreener
+  price?: number;
+  priceChange5m?: number;
+  priceChange1h?: number;
+  priceChange24h?: number;
+  volume5m?: number;
+  volume1h?: number;
+  txns5m?: { buys: number; sells: number };
+  txns1h?: { buys: number; sells: number };
+  txns24h?: { buys: number; sells: number };
+  age?: number;
+  isNew?: boolean;
+  isGraduating?: boolean;
+  isTrending?: boolean;
+  riskScore?: number;
+  dexId?: string;
 }
 
 // Candlestick Chart Component using custom SVG rendering
@@ -262,10 +278,11 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   const [trades, setTrades] = useState<any[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [chartType, setChartType] = useState<'1H' | '4H' | '1D' | '1W'>('1D');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'new' | 'graduating' | 'trending'>('all');
 
   useEffect(() => {
     loadTokens();
-    
+
     // Listen for real-time token updates via WebSocket
     if (socket) {
       socket.on('token:new', (token: any) => {
@@ -282,16 +299,16 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
             complete: false,
             market_cap: 0,
             usd_market_cap: 0,
-          }, ...prev].slice(0, 50);
+          } as Token, ...prev].slice(0, 50);
         });
       });
     }
-    
+
     let interval: NodeJS.Timeout;
     if (autoRefresh) {
       interval = setInterval(() => {
         loadTokens();
-      }, 25000); // Refresh every 25 seconds for frequent updates
+      }, 15000); // Refresh every 15 seconds
     }
 
     return () => {
@@ -300,7 +317,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         socket.off('token:new');
       }
     };
-  }, [autoRefresh, socket]);
+  }, [autoRefresh, socket, activeFilter]);
 
   useEffect(() => {
     if (selectedToken) {
@@ -431,123 +448,92 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   const loadTokens = async () => {
     setLoading(true);
     try {
-      // Fetch recent tokens via backend proxy (to avoid CORS)
-      const response = await api.get('/pumpfun/tokens?offset=0&limit=100&sort=created_timestamp&order=DESC');
-      if (response.data) {
-        // Handle both array and object responses
-        const data = Array.isArray(response.data) ? response.data : (response.data.coins || response.data.data || []);
-        if (data.length > 0) {
-          // Filter and prioritize: last 6 hours, prioritize last 2 hours
-          const now = Date.now() / 1000;
-          const sixHoursAgo = now - (6 * 60 * 60);
-          const twoHoursAgo = now - (2 * 60 * 60);
-          const oneHourAgo = now - (60 * 60);
-          const thirtyMinutesAgo = now - (30 * 60);
-          
-          // Get tokens from last 6 hours (more flexible)
-          const recentTokens = data.filter((token: Token) => {
-            const tokenTime = token.created_timestamp || 0;
-            return tokenTime > 0 && tokenTime >= sixHoursAgo;
-          });
-          
-          if (recentTokens.length > 0) {
-            // Separate by recency - prioritize very recent
-            const last30min = recentTokens.filter((token: Token) => {
-              const tokenTime = token.created_timestamp || 0;
-              return tokenTime >= thirtyMinutesAgo;
-            });
-            const lastHour = recentTokens.filter((token: Token) => {
-              const tokenTime = token.created_timestamp || 0;
-              return tokenTime >= oneHourAgo && tokenTime < thirtyMinutesAgo;
-            });
-            const lastTwoHours = recentTokens.filter((token: Token) => {
-              const tokenTime = token.created_timestamp || 0;
-              return tokenTime >= twoHoursAgo && tokenTime < oneHourAgo;
-            });
-            const lastSixHours = recentTokens.filter((token: Token) => {
-              const tokenTime = token.created_timestamp || 0;
-              return tokenTime >= sixHoursAgo && tokenTime < twoHoursAgo;
-            });
-            
-            // Prioritize: last 30min first, then last 1h, then last 2h, then last 6h
-            const sortedTokens = [...last30min, ...lastHour, ...lastTwoHours, ...lastSixHours]
-              .sort((a: Token, b: Token) => {
-                const timeA = a.created_timestamp || 0;
-                const timeB = b.created_timestamp || 0;
-                return timeB - timeA;
-              })
-              // Filter only truly generic pump.fun placeholder tokens
-              .filter((token: Token) => {
-                const name = (token.name || '').toLowerCase().trim();
-                const symbol = (token.symbol || '').toLowerCase().trim();
+      // Use new token feed API based on active filter
+      let endpoint = '/tokens/feed';
+      const params = new URLSearchParams();
+      params.set('limit', '50');
 
-                const isGeneric =
-                  name === 'pump.fun' ||
-                  name === 'pump fun' ||
-                  name === 'pumpfun' ||
-                  symbol === 'pump.fun' ||
-                  symbol === 'pumpfun';
+      switch (activeFilter) {
+        case 'new':
+          endpoint = '/tokens/new';
+          break;
+        case 'graduating':
+          endpoint = '/tokens/graduating';
+          break;
+        case 'trending':
+          endpoint = '/tokens/trending';
+          break;
+        default:
+          params.set('filter', 'all');
+          params.set('minLiquidity', '1000');
+      }
 
-                if (isGeneric) {
-                  console.log(`🚫 Frontend: Rejected ${token.name} (${token.symbol})`);
-                  return false;
-                }
-                return true;
-              })
-              // Ensure all required fields are present
-              .map((token: Token) => ({
-                ...token,
-                liquidity: typeof token.liquidity === 'number' ? token.liquidity : 0,
-                holders: typeof token.holders === 'number' ? token.holders : 0,
-                volume_24h: typeof token.volume_24h === 'number' ? token.volume_24h : 0,
-                dev_holdings: typeof token.dev_holdings === 'number' ? token.dev_holdings : 0,
-                dev_holdings_percent: typeof token.dev_holdings_percent === 'number' ? token.dev_holdings_percent : 0,
-                sniper_holdings: typeof token.sniper_holdings === 'number' ? token.sniper_holdings : 0,
-                sniper_holdings_percent: typeof token.sniper_holdings_percent === 'number' ? token.sniper_holdings_percent : 0,
-                insider_holdings: typeof token.insider_holdings === 'number' ? token.insider_holdings : 0,
-                insider_holdings_percent: typeof token.insider_holdings_percent === 'number' ? token.insider_holdings_percent : 0,
-                dex_is_paid: typeof token.dex_is_paid === 'boolean' ? token.dex_is_paid : false,
-              }))
-              .slice(0, 50);
-            
-            console.log(`✅ Loaded ${sortedTokens.length} tokens (${last30min.length} last 30min, ${lastHour.length} last 1h, ${lastTwoHours.length} last 2h, ${lastSixHours.length} last 6h)`);
-            // Log token ages for debugging
-            sortedTokens.slice(0, 10).forEach((token: Token) => {
-              const ageMinutes = ((now - (token.created_timestamp || 0)) / 60).toFixed(0);
-              const ageHours = ((now - (token.created_timestamp || 0)) / 3600).toFixed(1);
-              console.log(`   • ${token.name} - ${ageMinutes}min / ${ageHours}h ago (ts: ${token.created_timestamp})`);
-            });
-            setTokens(sortedTokens);
-          } else {
-            // If no tokens in last 6h, show newest available (up to 24h)
-            const oneDayAgo = now - (24 * 60 * 60);
-            const fallbackTokens = data.filter((token: Token) => {
-              const tokenTime = token.created_timestamp || 0;
-              return tokenTime > 0 && tokenTime >= oneDayAgo;
-            });
-            if (fallbackTokens.length > 0) {
-              const sorted = fallbackTokens
-                .sort((a: Token, b: Token) => {
-                  const timeA = a.created_timestamp || 0;
-                  const timeB = b.created_timestamp || 0;
-                  return timeB - timeA;
-                })
-                .slice(0, 30);
-              console.log(`⚠️ No tokens in last 6h, showing ${sorted.length} newest from last 24h`);
-              setTokens(sorted);
-            } else {
-              console.log(`⚠️ No tokens found in last 24 hours`);
-              setTokens([]);
-            }
-          }
-        } else {
-          // If empty, show message
-          setTokens([]);
-        }
+      const response = await api.get(`${endpoint}?${params.toString()}`);
+
+      if (response.data && Array.isArray(response.data)) {
+        // Map TokenData from API to Token interface
+        const mappedTokens: Token[] = response.data.map((t: any) => ({
+          mint: t.mint,
+          name: t.name || 'Unknown',
+          symbol: t.symbol || 'UNK',
+          description: '',
+          image_uri: t.imageUrl || '',
+          market_cap: t.marketCap || 0,
+          usd_market_cap: t.marketCap || 0,
+          creator: '',
+          created_timestamp: Math.floor(t.createdAt / 1000),
+          complete: t.dexId !== 'pumpfun', // Non-pumpfun = graduated
+          liquidity: t.liquidity || 0,
+          holders: t.holders || 0,
+          volume_24h: t.volume24h || 0,
+          dev_holdings: 0,
+          dev_holdings_percent: 0,
+          sniper_holdings: 0,
+          sniper_holdings_percent: 0,
+          insider_holdings: 0,
+          insider_holdings_percent: 0,
+          dex_is_paid: false,
+          pumpfun: {
+            bonding_curve: '',
+            associated_bonding_curve: '',
+            associated_market: '',
+          },
+          // Extra fields from new API
+          priceChange5m: t.priceChange5m,
+          priceChange1h: t.priceChange1h,
+          priceChange24h: t.priceChange24h,
+          volume5m: t.volume5m,
+          volume1h: t.volume1h,
+          txns5m: t.txns5m,
+          txns1h: t.txns1h,
+          txns24h: t.txns24h,
+          age: t.age,
+          isNew: t.isNew,
+          isGraduating: t.isGraduating,
+          isTrending: t.isTrending,
+          riskScore: t.riskScore,
+          dexId: t.dexId,
+          price: t.price,
+        }));
+
+        console.log(`✅ Loaded ${mappedTokens.length} tokens with filter: ${activeFilter}`);
+        setTokens(mappedTokens);
+      } else {
+        console.log('No tokens returned from API');
+        setTokens([]);
       }
     } catch (error) {
       console.error('Failed to load tokens:', error);
-      setTokens([]);
+      // Try fallback to old pumpfun endpoint
+      try {
+        const fallbackResponse = await api.get('/pumpfun/tokens?offset=0&limit=50&sort=created_timestamp&order=DESC');
+        if (fallbackResponse.data) {
+          const data = Array.isArray(fallbackResponse.data) ? fallbackResponse.data : (fallbackResponse.data.coins || []);
+          setTokens(data.slice(0, 50));
+        }
+      } catch {
+        setTokens([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -607,7 +593,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-black rounded-2xl p-6 border border-white/5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
           <h2 className="text-3xl font-bold text-white">Token Explorer</h2>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-white/70">
@@ -617,7 +603,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
                 onChange={(e) => setAutoRefresh(e.target.checked)}
                 className="rounded accent-primary-500"
               />
-              <span className="text-sm">Auto-refresh (10s)</span>
+              <span className="text-sm">Auto-refresh (15s)</span>
             </label>
             <button
               onClick={loadTokens}
@@ -629,6 +615,28 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
           </div>
         </div>
 
+        {/* Filter Tabs */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { key: 'all', label: 'All Tokens', icon: '📊' },
+            { key: 'new', label: 'New (< 30m)', icon: '🆕' },
+            { key: 'graduating', label: 'Graduating', icon: '🎓' },
+            { key: 'trending', label: 'Trending', icon: '🔥' },
+          ].map((filter) => (
+            <button
+              key={filter.key}
+              onClick={() => setActiveFilter(filter.key as typeof activeFilter)}
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 ${
+                activeFilter === filter.key
+                  ? 'bg-gradient-to-r from-primary-500 to-accent-pink text-white shadow-lg shadow-primary-500/25'
+                  : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white border border-white/10'
+              }`}
+            >
+              <span className="mr-2">{filter.icon}</span>
+              {filter.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Token List */}
@@ -718,35 +726,64 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
           </div>
         ) : (
           <>
-            <div className="mb-4 space-y-2">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div className="text-white/60 text-sm">
-                Mostrando {tokens.length} token{tokens.length !== 1 ? 's' : ''} encontrado{tokens.length !== 1 ? 's' : ''} en DexScreener
+                {activeFilter === 'all' && `Mostrando ${tokens.length} tokens`}
+                {activeFilter === 'new' && `${tokens.length} tokens nuevos (< 30 min)`}
+                {activeFilter === 'graduating' && `${tokens.length} tokens a punto de graduar`}
+                {activeFilter === 'trending' && `${tokens.length} tokens en tendencia`}
               </div>
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
-                <p className="text-yellow-400 text-xs mb-2">
-                  ⚠️ <strong>Limitación de APIs:</strong> DexScreener solo muestra tokens que ya tienen liquidez en pares de trading.
-                </p>
-                <p className="text-white/70 text-xs mb-2">
-                  Tokens muy nuevos (recién creados en pump.fun) pueden tardar varios minutos en aparecer aquí.
-                </p>
-                <p className="text-primary-400 text-xs">
-                  💡 <strong>Recomendación:</strong> Usa la pestaña "pnl.onl" y pega directamente el mint address del token que quieras tradear.
-                </p>
+              <div className="flex gap-2 text-xs">
+                <span className="px-2 py-1 bg-green-500/10 text-green-400 rounded">
+                  DexScreener API
+                </span>
+                <span className="px-2 py-1 bg-white/5 text-white/50 rounded">
+                  Auto-refresh: 15s
+                </span>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {tokens.map((token) => {
-                const tokenAge = token.created_timestamp ? Math.floor((Date.now() / 1000 - token.created_timestamp) / 60) : null;
+                const tokenAge = token.age ?? (token.created_timestamp ? Math.floor((Date.now() / 1000 - token.created_timestamp) / 60) : null);
                 return (
                 <div
                 key={token.mint}
                 onClick={() => setSelectedToken(token)}
                 className={`bg-black rounded-lg p-4 cursor-pointer border border-white/15 shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.12)] transition-all duration-200 ${
-                  selectedToken?.mint === token.mint 
-                    ? 'border-primary-500 ring-2 ring-primary-500/50' 
+                  selectedToken?.mint === token.mint
+                    ? 'border-primary-500 ring-2 ring-primary-500/50'
                     : 'border-white/5 hover:border-white/20'
                 }`}
               >
+                {/* Badges */}
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {token.isNew && (
+                    <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] font-semibold rounded-full border border-green-500/30">
+                      NEW
+                    </span>
+                  )}
+                  {token.isGraduating && (
+                    <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-[10px] font-semibold rounded-full border border-yellow-500/30">
+                      GRADUATING
+                    </span>
+                  )}
+                  {token.isTrending && (
+                    <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-semibold rounded-full border border-orange-500/30">
+                      TRENDING
+                    </span>
+                  )}
+                  {token.riskScore !== undefined && token.riskScore < 30 && (
+                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-semibold rounded-full border border-blue-500/30">
+                      SAFE
+                    </span>
+                  )}
+                  {token.dexId && (
+                    <span className="px-2 py-0.5 bg-white/10 text-white/60 text-[10px] font-medium rounded-full">
+                      {token.dexId}
+                    </span>
+                  )}
+                </div>
+
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
                     <div className="text-white font-bold text-sm">{token.name || 'N/A'}</div>
@@ -763,46 +800,77 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
                     />
                   )}
                 </div>
-                <div className="mt-2 space-y-1">
+
+                {/* Price and Change */}
+                {token.price !== undefined && (
+                  <div className="mb-2 pb-2 border-b border-white/5">
+                    <div className="text-lg font-bold text-white">
+                      ${token.price < 0.01 ? token.price.toFixed(8) : token.price.toFixed(4)}
+                    </div>
+                    <div className="flex gap-2 text-[10px]">
+                      {token.priceChange5m !== undefined && (
+                        <span className={token.priceChange5m >= 0 ? 'text-green-400' : 'text-red-400'}>
+                          5m: {token.priceChange5m >= 0 ? '+' : ''}{token.priceChange5m.toFixed(1)}%
+                        </span>
+                      )}
+                      {token.priceChange1h !== undefined && (
+                        <span className={token.priceChange1h >= 0 ? 'text-green-400' : 'text-red-400'}>
+                          1h: {token.priceChange1h >= 0 ? '+' : ''}{token.priceChange1h.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/60">Market Cap:</span>
+                    <span className="text-white/60">MC:</span>
                     <span className="text-primary-400 font-medium">
                       {token.usd_market_cap ? formatMarketCap(token.usd_market_cap) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/60">Liquidez:</span>
+                    <span className="text-white/60">Liq:</span>
                     <span className="text-green-400 font-medium">
                       {token.liquidity ? formatMarketCap(token.liquidity) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/60">Holders:</span>
-                    <span className="text-blue-400 font-medium">
-                      {token.holders ? token.holders.toLocaleString() : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-white/60">Volumen 24h:</span>
+                    <span className="text-white/60">Vol 1h:</span>
                     <span className="text-purple-400 font-medium">
-                      {token.volume_24h ? formatMarketCap(token.volume_24h) : 'N/A'}
+                      {token.volume1h ? formatMarketCap(token.volume1h) : (token.volume_24h ? formatMarketCap(token.volume_24h) : 'N/A')}
                     </span>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-white/60">Estado:</span>
-                    <span className={token.complete ? 'text-green-400' : 'text-yellow-400'}>
-                      {token.complete ? 'Graduado' : 'Activo'}
-                    </span>
-                  </div>
+                  {token.txns1h && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-white/60">Txns 1h:</span>
+                      <span className="font-medium">
+                        <span className="text-green-400">{token.txns1h.buys}B</span>
+                        <span className="text-white/40">/</span>
+                        <span className="text-red-400">{token.txns1h.sells}S</span>
+                      </span>
+                    </div>
+                  )}
                   {tokenAge !== null && (
                     <div className="flex justify-between text-xs">
-                      <span className="text-white/60">Creado hace:</span>
+                      <span className="text-white/60">Age:</span>
                       <span className="text-white/80 font-medium">
-                        {tokenAge < 60 
-                          ? `${tokenAge} min` 
-                          : tokenAge < 1440 
+                        {tokenAge < 60
+                          ? `${tokenAge}m`
+                          : tokenAge < 1440
                           ? `${Math.floor(tokenAge / 60)}h ${tokenAge % 60}m`
                           : `${Math.floor(tokenAge / 1440)}d`}
+                      </span>
+                    </div>
+                  )}
+                  {token.riskScore !== undefined && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-white/60">Risk:</span>
+                      <span className={`font-medium ${
+                        token.riskScore < 30 ? 'text-green-400' :
+                        token.riskScore < 60 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>
+                        {token.riskScore < 30 ? 'Low' : token.riskScore < 60 ? 'Medium' : 'High'}
                       </span>
                     </div>
                   )}
@@ -811,7 +879,6 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Copy mint to clipboard
                       navigator.clipboard.writeText(token.mint);
                       alert('Mint address copiado!');
                     }}

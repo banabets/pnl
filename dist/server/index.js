@@ -148,6 +148,8 @@ const database_2 = require("./database");
 const sniper_bot_1 = require("./sniper-bot");
 const dca_bot_1 = require("./dca-bot");
 const copy_trading_1 = require("./copy-trading");
+// Token Feed Service
+const token_feed_1 = require("./token-feed");
 // MongoDB Connection
 const database_3 = require("./database");
 // Connect to MongoDB
@@ -4529,6 +4531,76 @@ app.get('/api/subscription/plans', (req, res) => {
             features: { copyTrading: true, sniperBot: true, dcaBot: true, advancedAnalytics: true, prioritySupport: true }
         }
     });
+});
+// ==================== TOKEN FEED ENDPOINTS (Like Axiom/GMGN) ====================
+// Get all tokens with filters
+app.get('/api/tokens/feed', async (req, res) => {
+    try {
+        const filter = req.query.filter || 'all';
+        const minLiquidity = parseInt(req.query.minLiquidity) || 1000;
+        const maxAge = parseInt(req.query.maxAge) || 1440;
+        const limit = parseInt(req.query.limit) || 50;
+        const tokens = await token_feed_1.tokenFeed.fetchTokens({
+            filter: filter,
+            minLiquidity,
+            maxAge,
+            limit
+        });
+        res.json({
+            success: true,
+            count: tokens.length,
+            tokens
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Get NEW tokens (< 30 min old)
+app.get('/api/tokens/new', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 20;
+        const tokens = await token_feed_1.tokenFeed.getNew(limit);
+        res.json({ success: true, count: tokens.length, tokens });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Get GRADUATING tokens (about to complete bonding curve)
+app.get('/api/tokens/graduating', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 20;
+        const tokens = await token_feed_1.tokenFeed.getGraduating(limit);
+        res.json({ success: true, count: tokens.length, tokens });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Get TRENDING tokens (high volume/liquidity ratio)
+app.get('/api/tokens/trending', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 20;
+        const tokens = await token_feed_1.tokenFeed.getTrending(limit);
+        res.json({ success: true, count: tokens.length, tokens });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Get specific token by mint
+app.get('/api/tokens/:mint', async (req, res) => {
+    try {
+        const token = await token_feed_1.tokenFeed.getToken(req.params.mint);
+        if (!token) {
+            return res.status(404).json({ error: 'Token not found' });
+        }
+        res.json({ success: true, token });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 // Catch all handler: send back React's index.html file
 app.get('*', (req, res) => {

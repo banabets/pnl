@@ -27,6 +27,8 @@ export default function PumpFun({ socket }: PumpFunProps) {
   const [loadingTokenInfo, setLoadingTokenInfo] = useState(false);
   const [selectedPercentage, setSelectedPercentage] = useState<number | null>(null);
   const [selectedWallets, setSelectedWallets] = useState<Set<number>>(new Set());
+  const [tradingMethod, setTradingMethod] = useState<'pumpfun' | 'jupiter'>('pumpfun');
+  const [jupiterQuote, setJupiterQuote] = useState<any>(null);
 
   useEffect(() => {
     loadWallets();
@@ -161,15 +163,59 @@ export default function PumpFun({ socket }: PumpFunProps) {
     setLoading(true);
     setResult(null);
     try {
-      const executeConfig = {
-        ...config,
-        tradeType,
-        selectedWalletIndices: Array.from(selectedWallets),
-      };
-      await api.post('/pumpfun/execute', executeConfig);
+      if (tradingMethod === 'jupiter') {
+        // Use Jupiter for trading
+        const jupiterConfig = {
+          tokenMint: config.tokenMint,
+          amount: config.totalBuyAmount,
+          action: tradeType,
+          slippage: config.slippagePercent * 100, // Convert to bps
+          walletIndex: Array.from(selectedWallets)[0] || 0, // Use first selected wallet
+        };
+        const res = await api.post('/jupiter/swap', jupiterConfig);
+        setResult({
+          success: res.data.success,
+          signature: res.data.signature,
+          inputAmount: res.data.inputAmount,
+          outputAmount: res.data.outputAmount,
+          priceImpact: res.data.priceImpact,
+          feePaid: res.data.feePaid,
+          method: 'Jupiter Aggregator',
+        });
+        setLoading(false);
+      } else {
+        // Use PumpFun for trading
+        const executeConfig = {
+          ...config,
+          tradeType,
+          selectedWalletIndices: Array.from(selectedWallets),
+        };
+        await api.post('/pumpfun/execute', executeConfig);
+      }
     } catch (error: any) {
       alert(`Error: ${error.response?.data?.error || error.message}`);
       setLoading(false);
+    }
+  };
+
+  // Get Jupiter quote when amount or token changes
+  const getJupiterQuote = async () => {
+    if (!config.tokenMint || config.totalBuyAmount <= 0) return;
+
+    try {
+      const SOL_MINT = 'So11111111111111111111111111111111111111112';
+      const inputMint = config.tradeType === 'buy' ? SOL_MINT : config.tokenMint;
+      const outputMint = config.tradeType === 'buy' ? config.tokenMint : SOL_MINT;
+      const amount = config.tradeType === 'buy'
+        ? Math.floor(config.totalBuyAmount * 1e9)
+        : Math.floor(config.totalBuyAmount * 1e6); // Assuming 6 decimals for token
+
+      const res = await api.get('/jupiter/quote', {
+        params: { inputMint, outputMint, amount, slippage: config.slippagePercent * 100 }
+      });
+      setJupiterQuote(res.data);
+    } catch {
+      setJupiterQuote(null);
     }
   };
 
@@ -216,7 +262,11 @@ export default function PumpFun({ socket }: PumpFunProps) {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0 mb-6 sm:mb-8 pb-4 sm:pb-6 border-b border-white/10">
           <div>
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Trade Bot</h2>
-            <p className="text-white/50 text-xs sm:text-sm">Ejecuta operaciones de compra y venta en pump.fun</p>
+            <p className="text-white/50 text-xs sm:text-sm">
+              {tradingMethod === 'jupiter'
+                ? 'Trading con Jupiter Aggregator - Mejor precio en todos los DEXs'
+                : 'Trading en PumpFun Bonding Curve'}
+            </p>
           </div>
           <div className="bg-black rounded-lg px-4 sm:px-5 py-2.5 sm:py-3 border border-white/15 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] w-full sm:w-auto">
             <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
@@ -231,6 +281,73 @@ export default function PumpFun({ socket }: PumpFunProps) {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Trading Method Selector */}
+        <div className="mb-6 p-4 bg-black/50 border border-white/10 rounded-lg">
+          <label className="block text-white/70 text-xs font-medium mb-3 uppercase tracking-wider">
+            Método de Trading
+          </label>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setTradingMethod('pumpfun')}
+              className={`flex-1 sm:flex-none px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
+                tradingMethod === 'pumpfun'
+                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black shadow-lg shadow-yellow-500/25'
+                  : 'bg-white/5 text-white/70 hover:bg-white/10 border border-white/10'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <span>🎰</span>
+                <span>PumpFun</span>
+              </div>
+              <div className="text-[10px] mt-1 opacity-70">Bonding Curve</div>
+            </button>
+            <button
+              onClick={() => {
+                setTradingMethod('jupiter');
+                getJupiterQuote();
+              }}
+              className={`flex-1 sm:flex-none px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
+                tradingMethod === 'jupiter'
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-black shadow-lg shadow-green-500/25'
+                  : 'bg-white/5 text-white/70 hover:bg-white/10 border border-white/10'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <span>🪐</span>
+                <span>Jupiter</span>
+              </div>
+              <div className="text-[10px] mt-1 opacity-70">Best Price DEX</div>
+            </button>
+          </div>
+          {tradingMethod === 'jupiter' && (
+            <div className="mt-3 text-xs text-green-400/80 bg-green-500/10 p-2 rounded">
+              Jupiter agrega liquidez de todos los DEXs para obtener el mejor precio. Ideal para tokens graduados.
+            </div>
+          )}
+          {tradingMethod === 'pumpfun' && (
+            <div className="mt-3 text-xs text-yellow-400/80 bg-yellow-500/10 p-2 rounded">
+              PumpFun opera directamente en la bonding curve. Solo funciona con tokens que aún no han graduado.
+            </div>
+          )}
+          {jupiterQuote && tradingMethod === 'jupiter' && (
+            <div className="mt-3 p-3 bg-black/30 rounded-lg border border-green-500/20">
+              <div className="text-xs text-white/60 mb-1">Jupiter Quote</div>
+              <div className="flex justify-between text-sm">
+                <span className="text-white/70">Output estimado:</span>
+                <span className="text-green-400 font-mono">
+                  {(parseInt(jupiterQuote.outAmount) / 1e9).toFixed(6)} tokens
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-white/70">Price Impact:</span>
+                <span className={`font-mono ${parseFloat(jupiterQuote.priceImpactPct) > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  {jupiterQuote.priceImpactPct}%
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Security Info */}
