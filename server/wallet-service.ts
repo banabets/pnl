@@ -1,5 +1,5 @@
 // Wallet Service - Gestión de wallets con MongoDB y encriptación
-import { Wallet, MasterWallet } from './database';
+import { Wallet, MasterWallet, User } from './database';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
@@ -64,7 +64,8 @@ export class WalletService {
     userId: string,
     count: number = 5
   ): Promise<WalletInfo[]> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) throw new Error('User not found');
     
     // Obtener último índice
     const lastWallet = await Wallet.findOne({ userId: userObjectId })
@@ -107,7 +108,9 @@ export class WalletService {
    * Obtener todas las wallets de un usuario
    */
   async getUserWallets(userId: string): Promise<WalletInfo[]> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return [];
+
     const wallets = await Wallet.find({ userId: userObjectId })
       .sort({ index: 1 })
       .exec();
@@ -125,7 +128,9 @@ export class WalletService {
    * Obtener wallet con private key (desencriptada)
    */
   async getWalletWithKey(userId: string, index: number): Promise<WalletWithKey | null> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return null;
+
     const wallet = await Wallet.findOne({ userId: userObjectId, index }).exec();
     
     if (!wallet) return null;
@@ -168,7 +173,9 @@ export class WalletService {
    * Actualizar balance de wallet
    */
   async updateWalletBalance(userId: string, index: number, balance: number): Promise<void> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return;
+
     await Wallet.updateOne(
       { userId: userObjectId, index },
       { balance, updatedAt: new Date() }
@@ -179,7 +186,9 @@ export class WalletService {
    * Actualizar balances de múltiples wallets
    */
   async updateWalletsBalances(userId: string, balances: Map<number, number>): Promise<void> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return;
+
     const updates = Array.from(balances.entries()).map(([index, balance]) => ({
       updateOne: {
         filter: { userId: userObjectId, index },
@@ -196,7 +205,9 @@ export class WalletService {
    * Eliminar wallets (solo si no tienen fondos)
    */
   async deleteWallets(userId: string, indices?: number[]): Promise<{ deleted: number; errors: string[] }> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return { deleted: 0, errors: ['User not found'] };
+
     const errors: string[] = [];
     let deleted = 0;
     
@@ -221,11 +232,32 @@ export class WalletService {
   }
   
   /**
+   * Helper to get MongoDB ObjectId from user UUID or ObjectId string
+   */
+  private async getUserObjectId(userId: string): Promise<mongoose.Types.ObjectId | null> {
+    // Check if it's already a valid ObjectId
+    if (mongoose.Types.ObjectId.isValid(userId) && userId.length === 24) {
+      return new mongoose.Types.ObjectId(userId);
+    }
+
+    // Otherwise, it's a UUID - look up the user
+    const user = await User.findOne({ id: userId }).exec();
+    if (user) {
+      return user._id as mongoose.Types.ObjectId;
+    }
+
+    return null;
+  }
+
+  /**
    * Crear master wallet para usuario
    */
   async createMasterWallet(userId: string): Promise<{ publicKey: string; exists: boolean }> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
-    
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) {
+      throw new Error('User not found');
+    }
+
     // Verificar si ya existe
     const existing = await MasterWallet.findOne({ userId: userObjectId }).exec();
     if (existing) {
@@ -234,20 +266,20 @@ export class WalletService {
         exists: true
       };
     }
-    
+
     // Crear nueva master wallet
     const keypair = Keypair.generate();
     const encryptedKey = encryptPrivateKey(keypair.secretKey, ENCRYPTION_KEY);
-    
+
     const masterWallet = new MasterWallet({
       userId: userObjectId,
       publicKey: keypair.publicKey.toBase58(),
       encryptedPrivateKey: encryptedKey,
       balance: 0
     });
-    
+
     await masterWallet.save();
-    
+
     return {
       publicKey: keypair.publicKey.toBase58(),
       exists: false
@@ -258,7 +290,9 @@ export class WalletService {
    * Obtener master wallet con key
    */
   async getMasterWalletWithKey(userId: string): Promise<{ keypair: Keypair; balance: number } | null> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return null;
+
     const masterWallet = await MasterWallet.findOne({ userId: userObjectId }).exec();
     
     if (!masterWallet) return null;
@@ -281,36 +315,42 @@ export class WalletService {
    * Obtener info de master wallet (sin key)
    */
   async getMasterWalletInfo(userId: string): Promise<{ exists: boolean; publicKey?: string; balance?: number }> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return { exists: false };
+
     const masterWallet = await MasterWallet.findOne({ userId: userObjectId }).exec();
-    
+
     if (!masterWallet) {
       return { exists: false };
     }
-    
+
     return {
       exists: true,
       publicKey: masterWallet.publicKey,
       balance: masterWallet.balance
     };
   }
-  
+
   /**
    * Actualizar balance de master wallet
    */
   async updateMasterWalletBalance(userId: string, balance: number): Promise<void> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return;
+
     await MasterWallet.updateOne(
       { userId: userObjectId },
       { balance, updatedAt: new Date() }
     ).exec();
   }
-  
+
   /**
    * Eliminar master wallet
    */
   async deleteMasterWallet(userId: string): Promise<boolean> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const userObjectId = await this.getUserObjectId(userId);
+    if (!userObjectId) return false;
+
     const result = await MasterWallet.deleteOne({ userId: userObjectId }).exec();
     return result.deletedCount > 0;
   }

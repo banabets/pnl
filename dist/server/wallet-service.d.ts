@@ -44,6 +44,10 @@ export declare class WalletService {
         errors: string[];
     }>;
     /**
+     * Helper to get MongoDB ObjectId from user UUID or ObjectId string
+     */
+    private getUserObjectId;
+    /**
      * Crear master wallet para usuario
      */
     createMasterWallet(userId: string): Promise<{
