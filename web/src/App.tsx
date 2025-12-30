@@ -42,6 +42,61 @@ function App() {
   const [withdrawPercentage, setWithdrawPercentage] = useState<number | null>(null);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  
+  // Auth state - persist session across page refreshes and navigation
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    // Check if token exists in localStorage on mount
+    return !!localStorage.getItem('authToken');
+  });
+
+  // Verify authentication on mount and when token changes
+  useEffect(() => {
+    const verifyAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        try {
+          // Verify token is still valid
+          const res = await api.get('/auth/me');
+          if (res.data.success) {
+            setIsAuthenticated(true);
+          } else {
+            setIsAuthenticated(false);
+          }
+        } catch (error: any) {
+          // Handle rate limit errors (429) - don't clear token, assume still authenticated
+          if (error.response?.status === 429) {
+            console.warn('Rate limit exceeded during auth check, keeping session');
+            setIsAuthenticated(true); // Assume still authenticated
+            return;
+          }
+          
+          // Only clear token if it's a real auth error, not network error
+          if (error.response?.status === 401 && error.response?.data?.error) {
+            setIsAuthenticated(false);
+            // Don't clear token here - let the component handle it
+          }
+          // For network errors, keep the token and assume we're still authenticated
+        }
+      } else {
+        setIsAuthenticated(false);
+      }
+    };
+
+    verifyAuth();
+    
+    // Listen for storage changes (e.g., token updated in another tab)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'authToken') {
+        setIsAuthenticated(!!e.newValue);
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
   useEffect(() => {
     // Listen for tab switch events

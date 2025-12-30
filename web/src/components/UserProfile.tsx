@@ -90,12 +90,36 @@ export default function UserProfile() {
           setUser(res.data.user);
           setIsLoggedIn(true);
           loadUserData(res.data.user);
+        } else {
+          // Only clear token if explicitly told to
+          setIsLoggedIn(false);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Auth check failed:', error);
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('userId');
+        
+        // Handle rate limit errors (429) - don't clear token, just wait
+        if (error.response?.status === 429) {
+          console.warn('Rate limit exceeded, keeping session but not updating user data');
+          // Keep the token and assume we're still logged in
+          // The rate limit will reset soon
+          return;
+        }
+        
+        // Only clear token if it's a real authentication error (401 with auth error message)
+        // Don't clear on network errors or other temporary issues
+        if (error.response?.status === 401 && 
+            (error.response?.data?.error?.includes('token') || 
+             error.response?.data?.error?.includes('Authentication') ||
+             error.response?.data?.error?.includes('expired'))) {
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('userId');
+          setIsLoggedIn(false);
+        }
+        // For network errors or other issues, keep the token and just mark as not logged in
+        // The token might still be valid, we just couldn't verify it right now
       }
+    } else {
+      setIsLoggedIn(false);
     }
   };
 

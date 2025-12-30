@@ -120,10 +120,20 @@ import { isConnected as isMongoConnected } from './database';
 const rateLimitModule = require('express-rate-limit');
 const rateLimit = rateLimitModule.default || rateLimitModule;
 
+// Rate limiter for login/register (more restrictive)
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per window
+  max: 10, // 10 requests per window (increased from 5)
   message: 'Too many authentication attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limiter for auth verification endpoints (more permissive - for checking auth status)
+const authVerifyRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 30, // 30 requests per minute (for checking auth status)
+  message: 'Too many requests, please wait a moment',
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -368,8 +378,8 @@ app.post('/api/auth/logout', authenticateToken, async (req: AuthenticatedRequest
   }
 });
 
-// Verify token / Get current user
-app.get('/api/auth/me', authenticateToken, async (req: AuthenticatedRequest, res) => {
+// Verify token / Get current user (with more permissive rate limiting)
+app.get('/api/auth/me', authVerifyRateLimiter, authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     res.json({ success: true, user: req.user });
   } catch (error) {
