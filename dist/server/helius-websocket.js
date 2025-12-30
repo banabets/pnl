@@ -34,6 +34,16 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         this.subscriptionIds = [];
         this.heartbeatInterval = null;
         this.tokenCache = new Map();
+        // Rate limiting for RPC calls
+        this.rpcCallQueue = [];
+        this.rpcCallInProgress = false;
+        this.lastRpcCallTime = 0;
+        this.minRpcCallInterval = 200; // Minimum 200ms between RPC calls
+        this.consecutive429Errors = 0;
+        this.max429Errors = 5;
+        this.rpcCircuitBreakerOpen = false;
+        this.rpcCircuitBreakerResetTime = 0;
+        this.CIRCUIT_BREAKER_RESET_DELAY = 60000; // 1 minute
         const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
         this.connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
     }
@@ -150,15 +160,19 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         }
     }
     /**
-     * Process PumpFun transactions
+     * Process PumpFun transactions (with rate limiting)
      */
     async processPumpFunTransaction(signature, logs) {
         const logsStr = logs.join(' ');
+        // Skip if circuit breaker is open
+        if (this.rpcCircuitBreakerOpen) {
+            return; // Silently skip to avoid more rate limit errors
+        }
         try {
             // Detect new token creation
             if (logsStr.includes('Program log: Instruction: Create') ||
                 logsStr.includes('Program log: Instruction: Initialize')) {
-                // Get transaction details
+                // Get transaction details (with rate limiting)
                 const txDetails = await this.getTransactionDetails(signature);
                 if (!txDetails)
                     return;
@@ -177,9 +191,10 @@ class HeliusWebSocketService extends events_1.EventEmitter {
                 this.emit('new_token', event);
                 this.emit('event', event);
             }
-            // Detect trades (buy/sell)
-            if (logsStr.includes('Program log: Instruction: Buy') ||
-                logsStr.includes('Program log: Instruction: Sell')) {
+            // Detect trades (buy/sell) - Skip if circuit breaker is open to reduce load
+            if (!this.rpcCircuitBreakerOpen &&
+                (logsStr.includes('Program log: Instruction: Buy') ||
+                    logsStr.includes('Program log: Instruction: Sell'))) {
                 const isBuy = logsStr.includes('Buy');
                 const txDetails = await this.getTransactionDetails(signature);
                 if (!txDetails)
@@ -201,14 +216,21 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             }
         }
         catch (error) {
-            console.error('Error processing PumpFun tx:', error);
+            // Don't log if it's a circuit breaker or rate limit error
+            if (!error?.message?.includes('circuit breaker') && !error?.message?.includes('429')) {
+                console.error('Error processing PumpFun tx:', error.message);
+            }
         }
     }
     /**
-     * Process Raydium transactions (detect graduations)
+     * Process Raydium transactions (detect graduations) - with rate limiting
      */
     async processRaydiumTransaction(signature, logs) {
         const logsStr = logs.join(' ');
+        // Skip if circuit breaker is open
+        if (this.rpcCircuitBreakerOpen) {
+            return;
+        }
         try {
             // Detect new pool creation (potential graduation)
             if (logsStr.includes('Program log: ray_log') ||
@@ -233,7 +255,10 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             }
         }
         catch (error) {
-            console.error('Error processing Raydium tx:', error);
+            // Don't log if it's a circuit breaker or rate limit error
+            if (!error?.message?.includes('circuit breaker') && !error?.message?.includes('429')) {
+                console.error('Error processing Raydium tx:', error.message);
+            }
         }
     }
     /**
@@ -306,14 +331,95 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         return result;
     }
     /**
-     * Fallback: Get basic transaction details from RPC
+     * Throttled RPC call with rate limiting and circuit breaker
+     */
+    async throttledRpcCall(fn) {
+        // Check circuit breaker
+        if (this.rpcCircuitBreakerOpen) {
+            const now = Date.now();
+            if (now < this.rpcCircuitBreakerResetTime) {
+                // Circuit breaker still open, reject immediately
+                throw new Error('RPC circuit breaker is open due to rate limiting');
+            }
+            else {
+                // Reset circuit breaker
+                this.rpcCircuitBreakerOpen = false;
+                this.consecutive429Errors = 0;
+                console.log('🔄 RPC circuit breaker reset');
+            }
+        }
+        return new Promise((resolve, reject) => {
+            this.rpcCallQueue.push({ resolve, reject, fn });
+            this.processRpcQueue();
+        });
+    }
+    /**
+     * Process RPC call queue with rate limiting
+     */
+    async processRpcQueue() {
+        if (this.rpcCallInProgress || this.rpcCallQueue.length === 0) {
+            return;
+        }
+        this.rpcCallInProgress = true;
+        while (this.rpcCallQueue.length > 0) {
+            const item = this.rpcCallQueue.shift();
+            if (!item)
+                break;
+            // Rate limiting: wait if needed
+            const now = Date.now();
+            const timeSinceLastCall = now - this.lastRpcCallTime;
+            if (timeSinceLastCall < this.minRpcCallInterval) {
+                await new Promise(resolve => setTimeout(resolve, this.minRpcCallInterval - timeSinceLastCall));
+            }
+            try {
+                this.lastRpcCallTime = Date.now();
+                const result = await item.fn();
+                this.consecutive429Errors = 0; // Reset on success
+                item.resolve(result);
+            }
+            catch (error) {
+                // Handle 429 errors
+                if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests')) {
+                    this.consecutive429Errors++;
+                    console.error(`❌ RPC 429 error (${this.consecutive429Errors}/${this.max429Errors}):`, error.message);
+                    // Open circuit breaker if too many 429 errors
+                    if (this.consecutive429Errors >= this.max429Errors) {
+                        this.rpcCircuitBreakerOpen = true;
+                        this.rpcCircuitBreakerResetTime = Date.now() + this.CIRCUIT_BREAKER_RESET_DELAY;
+                        console.error(`🚨 RPC circuit breaker opened due to ${this.consecutive429Errors} consecutive 429 errors. Will reset in ${this.CIRCUIT_BREAKER_RESET_DELAY / 1000}s`);
+                        // Reject remaining items in queue
+                        while (this.rpcCallQueue.length > 0) {
+                            const queuedItem = this.rpcCallQueue.shift();
+                            if (queuedItem) {
+                                queuedItem.reject(new Error('RPC circuit breaker is open'));
+                            }
+                        }
+                        item.reject(error);
+                        break;
+                    }
+                    // Exponential backoff for 429 errors
+                    const backoffDelay = Math.min(1000 * Math.pow(2, this.consecutive429Errors - 1), 10000);
+                    await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                    item.reject(error);
+                }
+                else {
+                    // Other errors, reject immediately
+                    item.reject(error);
+                }
+            }
+        }
+        this.rpcCallInProgress = false;
+    }
+    /**
+     * Fallback: Get basic transaction details from RPC (with rate limiting)
      */
     async getBasicTransactionDetails(signature) {
         try {
-            const tx = await this.connection.getParsedTransaction(signature, {
+            // Use throttled RPC call
+            const tx = await this.throttledRpcCall(() => this.connection.getParsedTransaction(signature, {
                 maxSupportedTransactionVersion: 0,
                 commitment: 'confirmed'
-            });
+            }));
             if (!tx)
                 return null;
             const result = {
@@ -347,7 +453,10 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             return result;
         }
         catch (error) {
-            console.error('Error getting basic tx details:', error);
+            // Don't log 429 errors here, already logged in throttledRpcCall
+            if (!error?.message?.includes('429') && !error?.message?.includes('Too Many Requests') && !error?.message?.includes('circuit breaker')) {
+                console.error('Error getting basic tx details:', error.message);
+            }
             return null;
         }
     }
