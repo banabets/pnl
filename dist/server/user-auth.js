@@ -21,27 +21,32 @@ const dataDir = path_1.default.join(__dirname, '../data');
 if (!fs_1.default.existsSync(dataDir)) {
     fs_1.default.mkdirSync(dataDir, { recursive: true });
 }
-// Flag to use MongoDB if available
-const USE_MONGODB = (0, database_1.isConnected)();
 class UserAuthManager {
     constructor() {
         this.users = new Map();
         this.sessions = new Map();
         this.activityLogs = [];
-        this.useMongoDB = false;
-        this.useMongoDB = (0, database_1.isConnected)();
-        if (this.useMongoDB) {
-            console.log('📊 Using MongoDB for user data');
-        }
-        else {
-            console.log('📂 Using JSON files for user data (MongoDB not connected)');
+        this.jsonLoaded = false;
+        // Don't check MongoDB here - it might not be connected yet
+        // Load JSON as fallback, but MongoDB will be used dynamically when available
+        console.log('📊 UserAuthManager initialized (will use MongoDB when connected)');
+    }
+    // Dynamically check if MongoDB is connected
+    usesMongoDB() {
+        return (0, database_1.isConnected)();
+    }
+    // Ensure JSON data is loaded (for fallback)
+    ensureJsonLoaded() {
+        if (!this.jsonLoaded && !this.usesMongoDB()) {
+            console.log('📂 Loading JSON fallback data...');
             this.loadUsers();
             this.loadSessions();
             this.loadActivityLogs();
+            this.jsonLoaded = true;
         }
     }
     async loadUsers() {
-        if (this.useMongoDB)
+        if (this.usesMongoDB())
             return; // MongoDB handles this automatically
         try {
             if (fs_1.default.existsSync(USERS_FILE)) {
@@ -59,7 +64,7 @@ class UserAuthManager {
         }
     }
     async saveUsers() {
-        if (this.useMongoDB)
+        if (this.usesMongoDB())
             return; // MongoDB handles this automatically
         try {
             const usersArray = Array.from(this.users.values());
@@ -135,7 +140,7 @@ class UserAuthManager {
         return jsonwebtoken_1.default.sign({ userId, iat: Math.floor(Date.now() / 1000) }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
     }
     async logActivity(userId, action, details, ipAddress) {
-        if (this.useMongoDB) {
+        if (this.usesMongoDB()) {
             try {
                 const user = await database_1.User.findOne({ id: userId }).exec();
                 if (user) {
@@ -170,6 +175,8 @@ class UserAuthManager {
         }
     }
     async register(username, email, password, ipAddress) {
+        // Ensure fallback data is loaded if not using MongoDB
+        this.ensureJsonLoaded();
         // Validation
         if (!username || !email || !password) {
             return { success: false, error: 'Username, email, and password are required' };
@@ -184,7 +191,7 @@ class UserAuthManager {
             return { success: false, error: 'Password must be at least 8 characters' };
         }
         try {
-            if (this.useMongoDB) {
+            if (this.usesMongoDB()) {
                 // Use MongoDB
                 // Check if username or email already exists
                 const existingUser = await database_1.User.findOne({
@@ -313,11 +320,13 @@ class UserAuthManager {
         }
     }
     async login(usernameOrEmail, password, ipAddress, userAgent) {
+        // Ensure fallback data is loaded if not using MongoDB
+        this.ensureJsonLoaded();
         if (!usernameOrEmail || !password) {
             return { success: false, error: 'Username/email and password are required' };
         }
         try {
-            if (this.useMongoDB) {
+            if (this.usesMongoDB()) {
                 // Use MongoDB
                 const userDoc = await database_1.User.findOne({
                     $or: [
@@ -403,12 +412,39 @@ class UserAuthManager {
         this.saveSessions();
         return { success: true };
     }
-    verifyToken(token) {
+    async verifyToken(token) {
         const decoded = this.verifyTokenInternal(token);
         if (!decoded) {
             return { success: false, error: 'Invalid or expired token' };
         }
-        // Check if session exists
+        if (this.usesMongoDB()) {
+            try {
+                // Check session in MongoDB
+                const session = await database_1.Session.findOne({ token, expiresAt: { $gt: new Date() } }).exec();
+                if (!session) {
+                    // Session not found in MongoDB, but token is valid - maybe it was created before MongoDB was ready
+                    // Verify user exists and allow access
+                    const user = await database_1.User.findOne({ id: decoded.userId }).exec();
+                    if (user) {
+                        console.log(`📊 Token valid for user ${decoded.userId}, creating session in MongoDB`);
+                        // Create a new session in MongoDB
+                        await this.createSession(decoded.userId, token);
+                        return { success: true, userId: decoded.userId };
+                    }
+                    return { success: false, error: 'Session not found' };
+                }
+                // Update last active
+                session.lastActive = new Date();
+                await session.save();
+                return { success: true, userId: decoded.userId };
+            }
+            catch (error) {
+                console.error('Error verifying token in MongoDB:', error);
+                // Fall back to in-memory check
+            }
+        }
+        // Fallback: Check in-memory session
+        this.ensureJsonLoaded();
         const session = this.sessions.get(token);
         if (!session) {
             return { success: false, error: 'Session not found' };
@@ -430,7 +466,7 @@ class UserAuthManager {
     async createSession(userId, token, ipAddress, userAgent) {
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
-        if (this.useMongoDB) {
+        if (this.usesMongoDB()) {
             try {
                 const user = await database_1.User.findOne({ id: userId }).exec();
                 if (user) {
@@ -464,18 +500,34 @@ class UserAuthManager {
             this.saveSessions();
         }
     }
-    getUserById(userId) {
+    async getUserById(userId) {
+        if (this.usesMongoDB()) {
+            try {
+                const userDoc = await database_1.User.findOne({ id: userId }).exec();
+                if (userDoc) {
+                    const userObj = userDoc.toObject();
+                    return { ...userObj, passwordHash: '' };
+                }
+                return null;
+            }
+            catch (error) {
+                console.error('Error getting user from MongoDB:', error);
+                // Fall through to in-memory check
+            }
+        }
+        // Fallback: Check in-memory
+        this.ensureJsonLoaded();
         const user = this.users.get(userId);
         if (user) {
             return { ...user, passwordHash: '' };
         }
         return null;
     }
-    getUserByToken(token) {
-        const decoded = this.verifyToken(token);
-        if (!decoded)
+    async getUserByToken(token) {
+        const result = await this.verifyToken(token);
+        if (!result.success || !result.userId)
             return null;
-        return this.getUserById(decoded.userId);
+        return this.getUserById(result.userId);
     }
     updateProfile(userId, updates) {
         const user = this.users.get(userId);

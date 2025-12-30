@@ -56,8 +56,10 @@ export declare class UserAuthManager {
     private users;
     private sessions;
     private activityLogs;
-    private useMongoDB;
+    private jsonLoaded;
     constructor();
+    private usesMongoDB;
+    private ensureJsonLoaded;
     private loadUsers;
     private saveUsers;
     private loadSessions;
@@ -83,15 +85,15 @@ export declare class UserAuthManager {
     logout(token: string): {
         success: boolean;
     };
-    verifyToken(token: string): {
+    verifyToken(token: string): Promise<{
         success: boolean;
         userId?: string;
         error?: string;
-    };
+    }>;
     private verifyTokenInternal;
     private createSession;
-    getUserById(userId: string): User | null;
-    getUserByToken(token: string): User | null;
+    getUserById(userId: string): Promise<User | null>;
+    getUserByToken(token: string): Promise<User | null>;
     updateProfile(userId: string, updates: {
         username?: string;
         displayName?: string;

@@ -394,7 +394,7 @@ app.get('/api/auth/me', authVerifyRateLimiter, authenticateToken, async (req: Au
 app.get('/api/auth/user/:userId', optionalAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { userId } = req.params;
-    const user = userAuthManager.getUserById(userId);
+    const user = await userAuthManager.getUserById(userId);
     
     if (user) {
       // If requesting own profile or authenticated, return full info
@@ -553,7 +553,7 @@ app.get('/api/auth/user/:userId/activity', authenticateToken, async (req: Authen
 app.get('/api/auth/user/:userId/stats', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const { userId } = req.params;
-    const user = userAuthManager.getUserById(userId);
+    const user = await userAuthManager.getUserById(userId);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

@@ -7,11 +7,11 @@ export interface AuthenticatedRequest extends Request {
   user?: any;
 }
 
-export const authenticateToken = (
+export const authenticateToken = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -20,39 +20,49 @@ export const authenticateToken = (
     return;
   }
 
-  const result = userAuthManager.verifyToken(token);
-  if (!result.success || !result.userId) {
-    res.status(401).json({ error: result.error || 'Invalid or expired token' });
-    return;
-  }
+  try {
+    const result = await userAuthManager.verifyToken(token);
+    if (!result.success || !result.userId) {
+      res.status(401).json({ error: result.error || 'Invalid or expired token' });
+      return;
+    }
 
-  const user = userAuthManager.getUserById(result.userId);
-  if (!user) {
-    res.status(401).json({ error: 'User not found' });
-    return;
-  }
+    const user = await userAuthManager.getUserById(result.userId);
+    if (!user) {
+      res.status(401).json({ error: 'User not found' });
+      return;
+    }
 
-  req.userId = result.userId;
-  req.user = user;
-  next();
+    req.userId = result.userId;
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
 };
 
-export const optionalAuth = (
+export const optionalAuth = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (token) {
-    const result = userAuthManager.verifyToken(token);
-    if (result.success && result.userId) {
-      const user = userAuthManager.getUserById(result.userId);
-      if (user) {
-        req.userId = result.userId;
-        req.user = user;
+    try {
+      const result = await userAuthManager.verifyToken(token);
+      if (result.success && result.userId) {
+        const user = await userAuthManager.getUserById(result.userId);
+        if (user) {
+          req.userId = result.userId;
+          req.user = user;
+        }
       }
+    } catch (error) {
+      // Ignore errors in optional auth
+      console.warn('Optional auth error:', error);
     }
   }
 
