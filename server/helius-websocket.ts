@@ -13,14 +13,29 @@ const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 
 // Helius WebSocket URL
 const getHeliusWsUrl = () => {
-  // Try to get API key from env, RPC URL, or use default Helius key
+  // Check if SOLANA_RPC_URL is a complete Helius URL
+  const rpcUrl = process.env.SOLANA_RPC_URL;
+  
+  if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+    // Extract API key from complete URL and convert to WebSocket URL
+    const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
+    if (apiKeyMatch) {
+      const apiKey = apiKeyMatch[1];
+      console.log(`✅ Using Helius WebSocket from SOLANA_RPC_URL, API key: ${apiKey.substring(0, 8)}...`);
+      return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
+    }
+  }
+  
+  // Try to get API key from env or extract from RPC URL
   const apiKey = process.env.HELIUS_API_KEY || 
-                 process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
+                 rpcUrl?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
                  '7b05747c-b100-4159-ba5f-c85e8c8d3997'; // Default Helius API key
+  
   if (!apiKey) {
     console.warn('⚠️ No Helius API key found, using public RPC (may have rate limits)');
     return 'wss://api.mainnet-beta.solana.com';
   }
+  
   console.log(`✅ Using Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
   return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
 };
@@ -97,13 +112,34 @@ class HeliusWebSocketService extends EventEmitter {
 
   constructor() {
     super();
-    // Use Helius RPC if API key is available, otherwise fallback to public RPC
-    const heliusApiKey = process.env.HELIUS_API_KEY || process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1] || '7b05747c-b100-4159-ba5f-c85e8c8d3997';
-    const rpcUrl = heliusApiKey 
-      ? `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`
-      : (process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
+    // Use SOLANA_RPC_URL if it's a complete Helius URL, otherwise construct it
+    let rpcUrl = process.env.SOLANA_RPC_URL;
+    
+    // If SOLANA_RPC_URL is a complete Helius URL, use it directly
+    if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+      // Already a complete Helius URL, use as-is
+    } else {
+      // Try to extract API key or use default
+      const heliusApiKey = process.env.HELIUS_API_KEY || 
+                          rpcUrl?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
+                          '7b05747c-b100-4159-ba5f-c85e8c8d3997';
+      
+      if (heliusApiKey) {
+        rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`;
+      } else {
+        rpcUrl = rpcUrl || 'https://api.mainnet-beta.solana.com';
+      }
+    }
+    
     this.connection = new Connection(rpcUrl, 'confirmed');
-    console.log(`🔗 Helius WebSocket: Using RPC ${rpcUrl.includes('helius') ? 'Helius (with API key)' : 'Public Solana RPC'}`);
+    const isHelius = rpcUrl.includes('helius-rpc.com');
+    console.log(`🔗 Helius WebSocket: Using ${isHelius ? 'Helius RPC (with API key)' : 'Public Solana RPC'}`);
+    if (isHelius) {
+      const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
+      if (apiKeyMatch) {
+        console.log(`   API Key: ${apiKeyMatch[1].substring(0, 8)}...`);
+      }
+    }
   }
 
   /**
@@ -358,9 +394,21 @@ class HeliusWebSocketService extends EventEmitter {
   private async getTransactionDetails(signature: string): Promise<any> {
     try {
       // Try to get API key from env or extract from RPC URL
-      const apiKey = process.env.HELIUS_API_KEY || 
-                     process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
-                     '7b05747c-b100-4159-ba5f-c85e8c8d3997'; // Fallback to default key
+      const rpcUrl = process.env.SOLANA_RPC_URL;
+      let apiKey = process.env.HELIUS_API_KEY;
+      
+      // If SOLANA_RPC_URL is a complete Helius URL, extract API key from it
+      if (!apiKey && rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+        const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
+        if (apiKeyMatch) {
+          apiKey = apiKeyMatch[1];
+        }
+      }
+      
+      // Fallback to default key if nothing found
+      if (!apiKey) {
+        apiKey = '7b05747c-b100-4159-ba5f-c85e8c8d3997';
+      }
       
       if (!apiKey || apiKey === '') {
         // Fallback to basic RPC
