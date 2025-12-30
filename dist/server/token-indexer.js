@@ -1,8 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.tokenIndexer = void 0;
 // Token Indexer Service - Persist tokens discovered on-chain to MongoDB
 const database_1 = require("./database");
+const mongoose_1 = __importDefault(require("mongoose"));
 class TokenIndexerService {
     constructor() {
         this.isEnabled = false;
@@ -26,9 +30,10 @@ class TokenIndexerService {
         if (!this.isEnabled) {
             return; // Silently skip if MongoDB not available
         }
-        // Double check that TokenIndex is available
-        if (!database_1.TokenIndex) {
-            console.warn('⚠️ TokenIndex model not available, skipping index');
+        // Get TokenIndex model - try exported one first, then from mongoose.models
+        const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
+        if (!TokenModel || !(0, database_1.isConnected)()) {
+            // Silently skip - MongoDB might not be fully initialized yet
             return;
         }
         try {
@@ -66,7 +71,10 @@ class TokenIndexerService {
                 age: data.age,
             };
             // Use upsert to update if exists, create if not
-            await database_1.TokenIndex.findOneAndUpdate({ mint: data.mint }, { $set: tokenDoc }, { upsert: true, new: true });
+            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
+            if (!TokenModel)
+                return;
+            await TokenModel.findOneAndUpdate({ mint: data.mint }, { $set: tokenDoc }, { upsert: true, new: true });
         }
         catch (error) {
             // Log but don't throw - indexing failures shouldn't break the app
@@ -165,12 +173,12 @@ class TokenIndexerService {
                     query.isTrending = true;
                     break;
             }
-            // Double check that TokenIndex is available
-            if (!database_1.TokenIndex) {
-                console.warn('⚠️ TokenIndex model not available, returning empty array');
+            // Get TokenIndex model - try exported one first, then from mongoose.models
+            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
+            if (!TokenModel || !(0, database_1.isConnected)()) {
                 return [];
             }
-            const tokens = await database_1.TokenIndex.find(query)
+            const tokens = await TokenModel.find(query)
                 .sort({ createdAt: -1 })
                 .limit(limit)
                 .lean();
@@ -222,7 +230,11 @@ class TokenIndexerService {
             return null;
         }
         try {
-            const token = await database_1.TokenIndex.findOne({ mint }).lean();
+            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
+            if (!TokenModel || !(0, database_1.isConnected)()) {
+                return null;
+            }
+            const token = await TokenModel.findOne({ mint }).lean();
             if (!token) {
                 return null;
             }
@@ -272,12 +284,13 @@ class TokenIndexerService {
         if (!this.isEnabled) {
             return;
         }
-        // Double check that TokenIndex is available
-        if (!database_1.TokenIndex) {
-            return; // Silently skip if model not available
+        // Get TokenIndex model - try exported one first, then from mongoose.models
+        const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
+        if (!TokenModel || !(0, database_1.isConnected)()) {
+            return; // Silently skip if model not available or not connected
         }
         try {
-            await database_1.TokenIndex.findOneAndUpdate({ mint }, {
+            await TokenModel.findOneAndUpdate({ mint }, {
                 $set: {
                     ...data,
                     lastEnrichedAt: new Date(),
@@ -298,8 +311,13 @@ class TokenIndexerService {
         }
         try {
             const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+            // Get TokenIndex model
+            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
+            if (!TokenModel || !(0, database_1.isConnected)()) {
+                return [];
+            }
             // Priority: tokens created in last hour without enrichment, or with old enrichment
-            const tokens = await database_1.TokenIndex.find({
+            const tokens = await TokenModel.find({
                 $or: [
                     { lastEnrichedAt: { $exists: false } },
                     { lastEnrichedAt: { $lt: oneHourAgo } }
