@@ -10,60 +10,36 @@ class TokenFeedService {
         this.callbacks = new Set();
     }
     /**
-     * Fetch latest tokens from DexScreener
+     * Fetch latest tokens from multiple sources
      */
     async fetchTokens(options = {}) {
-        const { filter = 'all', minLiquidity = 1000, maxAge = 1440, // 24 hours default
+        const { filter = 'all', minLiquidity = 500, maxAge = 1440, // 24 hours default
         limit = 50 } = options;
         try {
-            // Use DexScreener's token boosts API for recent tokens
-            const boostsResponse = await fetch('https://api.dexscreener.com/token-boosts/top/v1', {
-                headers: {
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0'
-                }
-            });
-            let mintAddresses = [];
-            if (boostsResponse.ok) {
-                const boostsData = await boostsResponse.json();
-                if (Array.isArray(boostsData)) {
-                    // Filter for Solana tokens
-                    mintAddresses = boostsData
-                        .filter((t) => t.chainId === 'solana')
-                        .map((t) => t.tokenAddress)
-                        .slice(0, 50);
+            const allTokens = [];
+            // 1. Fetch from DexScreener search for recent Solana memecoins
+            const searchPromises = [
+                this.fetchFromDexScreenerSearch('solana meme'),
+                this.fetchFromDexScreenerSearch('pump'),
+                this.fetchFromDexScreenerPairs(),
+            ];
+            const results = await Promise.allSettled(searchPromises);
+            for (const result of results) {
+                if (result.status === 'fulfilled' && result.value) {
+                    allTokens.push(...result.value);
                 }
             }
-            // Also fetch from latest pairs endpoint
-            const pairsResponse = await fetch('https://api.dexscreener.com/latest/dex/pairs/solana', {
-                headers: { 'Accept': 'application/json' }
-            });
-            if (pairsResponse.ok) {
-                const pairsData = await pairsResponse.json();
-                if (pairsData.pairs && Array.isArray(pairsData.pairs)) {
-                    // Get base token addresses from recent pairs
-                    const pairMints = pairsData.pairs
-                        .filter((p) => p.baseToken?.address)
-                        .map((p) => p.baseToken.address)
-                        .slice(0, 50);
-                    // Combine with boost addresses, remove duplicates
-                    const combined = [...new Set([...mintAddresses, ...pairMints])];
-                    mintAddresses = combined.slice(0, 100);
+            // Remove duplicates by mint address
+            const uniqueTokens = new Map();
+            for (const token of allTokens) {
+                if (!uniqueTokens.has(token.mint) ||
+                    (uniqueTokens.get(token.mint).liquidity < token.liquidity)) {
+                    uniqueTokens.set(token.mint, token);
                 }
             }
-            if (mintAddresses.length === 0) {
-                console.log('No tokens found from DexScreener, using fallback');
-                return this.fetchFromSearch(options);
-            }
-            // Fetch detailed pair data for all tokens
-            const tokens = [];
-            for (let i = 0; i < mintAddresses.length; i += 30) {
-                const batch = mintAddresses.slice(i, i + 30);
-                const pairData = await this.fetchPairData(batch);
-                tokens.push(...pairData);
-            }
-            // Apply filters
-            let filtered = tokens.filter(t => {
+            let tokens = Array.from(uniqueTokens.values());
+            // Apply base filters
+            tokens = tokens.filter(t => {
                 if (t.liquidity < minLiquidity)
                     return false;
                 if (t.age > maxAge)
@@ -73,26 +49,83 @@ class TokenFeedService {
             // Apply specific filter
             switch (filter) {
                 case 'new':
-                    filtered = filtered.filter(t => t.isNew);
+                    // For new tokens, be more lenient - anything under 60 min
+                    tokens = tokens.filter(t => t.age < 60);
                     break;
                 case 'graduating':
-                    filtered = filtered.filter(t => t.isGraduating);
+                    tokens = tokens.filter(t => t.isGraduating);
                     break;
                 case 'trending':
-                    filtered = filtered.filter(t => t.isTrending);
+                    tokens = tokens.filter(t => t.isTrending);
                     break;
                 case 'safe':
-                    filtered = filtered.filter(t => t.riskScore < 30);
+                    tokens = tokens.filter(t => t.riskScore < 30);
                     break;
             }
             // Sort by creation time (newest first)
-            filtered.sort((a, b) => b.createdAt - a.createdAt);
-            console.log(`TokenFeed: Found ${filtered.length} tokens with filter: ${filter}`);
-            return filtered.slice(0, limit);
+            tokens.sort((a, b) => b.createdAt - a.createdAt);
+            console.log(`TokenFeed: Found ${tokens.length} tokens with filter: ${filter}`);
+            return tokens.slice(0, limit);
         }
         catch (error) {
             console.error('Error fetching tokens:', error);
-            return this.fetchFromSearch(options);
+            return [];
+        }
+    }
+    /**
+     * Fetch from DexScreener search API
+     */
+    async fetchFromDexScreenerSearch(query) {
+        try {
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok)
+                return [];
+            const data = await response.json();
+            const pairs = data.pairs || [];
+            return pairs
+                .filter((p) => p.chainId === 'solana' && p.baseToken?.address)
+                .map((pair) => this.mapPairToToken(pair))
+                .filter((t) => t !== null);
+        }
+        catch (error) {
+            console.error('DexScreener search error:', error);
+            return [];
+        }
+    }
+    /**
+     * Fetch latest Solana pairs from DexScreener
+     */
+    async fetchFromDexScreenerPairs() {
+        try {
+            // Get pairs from multiple DEXs
+            const endpoints = [
+                'https://api.dexscreener.com/latest/dex/pairs/solana',
+            ];
+            const allPairs = [];
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint, {
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.pairs && Array.isArray(data.pairs)) {
+                            allPairs.push(...data.pairs);
+                        }
+                    }
+                }
+                catch (e) {
+                    console.error('Error fetching from', endpoint, e);
+                }
+            }
+            return allPairs
+                .filter((p) => p.chainId === 'solana' && p.baseToken?.address)
+                .map((pair) => this.mapPairToToken(pair))
+                .filter((t) => t !== null);
+        }
+        catch (error) {
+            console.error('DexScreener pairs error:', error);
+            return [];
         }
     }
     /**
@@ -167,12 +200,14 @@ class TokenFeedService {
             const volume1h = pair.volume?.h1 || 0;
             const volume5m = pair.volume?.m5 || 0;
             // Calculate if graduating (high volume relative to liquidity on pump.fun)
-            const isGraduating = pair.dexId === 'pumpfun' &&
-                liquidity > 30000 && liquidity < 69000 && // Near graduation threshold
-                volume1h > liquidity * 0.5; // High trading activity
-            // Calculate if trending (high volume/liquidity ratio)
-            const isTrending = volume1h > 0 && liquidity > 0 &&
-                (volume1h / liquidity) > 0.3;
+            // Pump.fun graduation happens around $69k market cap
+            const isGraduating = (pair.dexId === 'pumpfun' || pair.dexId === 'raydium') &&
+                liquidity > 20000 && liquidity < 100000 && // Near graduation threshold
+                volume1h > liquidity * 0.2; // Decent trading activity
+            // Calculate if trending (high volume/liquidity ratio or just high volume)
+            const isTrending = (volume1h > 0 && liquidity > 0 && (volume1h / liquidity) > 0.15) ||
+                volume1h > 50000 || // High absolute volume
+                (pair.priceChange?.h1 > 20 || pair.priceChange?.h1 < -20); // Big price movement
             // Simple risk score based on metrics
             let riskScore = 50;
             if (liquidity < 5000)

@@ -47,9 +47,17 @@ declare class TokenFeedService {
     private callbacks;
     constructor();
     /**
-     * Fetch latest tokens from DexScreener
+     * Fetch latest tokens from multiple sources
      */
     fetchTokens(options?: Partial<TokenFeedOptions>): Promise<TokenData[]>;
+    /**
+     * Fetch from DexScreener search API
+     */
+    private fetchFromDexScreenerSearch;
+    /**
+     * Fetch latest Solana pairs from DexScreener
+     */
+    private fetchFromDexScreenerPairs;
     /**
      * Fallback: Fetch from DexScreener search
      */
