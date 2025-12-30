@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ActivityLog = exports.PriceAlert = exports.StopLossOrder = exports.Trade = exports.Position = exports.MasterWallet = exports.Wallet = exports.Session = exports.User = void 0;
+exports.Referral = exports.Subscription = exports.TradingFee = exports.ActivityLog = exports.PriceAlert = exports.StopLossOrder = exports.Trade = exports.Position = exports.MasterWallet = exports.Wallet = exports.Session = exports.User = void 0;
 exports.connectDatabase = connectDatabase;
 exports.disconnectDatabase = disconnectDatabase;
 exports.isConnected = isConnected;
@@ -161,8 +161,51 @@ const ActivityLogSchema = new mongoose_1.default.Schema({
     ipAddress: String,
     userAgent: String
 }, { timestamps: true });
+// Trading Fee Schema - Track all fees collected
+const TradingFeeSchema = new mongoose_1.default.Schema({
+    userId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    tradeId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'Trade' },
+    tokenMint: { type: String, required: true },
+    tradeType: { type: String, enum: ['buy', 'sell'], required: true },
+    tradeAmount: { type: Number, required: true }, // SOL amount of trade
+    feePercent: { type: Number, required: true },
+    feeAmount: { type: Number, required: true }, // Fee in SOL
+    feeCollected: { type: Boolean, default: false },
+    signature: String,
+    timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
+// Subscription Schema - Premium plans
+const SubscriptionSchema = new mongoose_1.default.Schema({
+    userId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
+    plan: { type: String, enum: ['free', 'basic', 'premium', 'whale'], default: 'free' },
+    feeDiscount: { type: Number, default: 0 }, // % discount on trading fees
+    maxWallets: { type: Number, default: 5 },
+    features: {
+        copyTrading: { type: Boolean, default: false },
+        sniperBot: { type: Boolean, default: false },
+        dcaBot: { type: Boolean, default: false },
+        advancedAnalytics: { type: Boolean, default: false },
+        prioritySupport: { type: Boolean, default: false }
+    },
+    startDate: { type: Date, default: Date.now },
+    endDate: { type: Date },
+    autoRenew: { type: Boolean, default: false },
+    paymentMethod: String
+}, { timestamps: true });
+// Referral Schema
+const ReferralSchema = new mongoose_1.default.Schema({
+    referrerId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    referredId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User', required: true },
+    code: { type: String, required: true },
+    status: { type: String, enum: ['pending', 'active', 'paid'], default: 'pending' },
+    commissionPercent: { type: Number, default: 10 }, // % of referred user's fees
+    totalEarned: { type: Number, default: 0 },
+    createdAt: { type: Date, default: Date.now }
+}, { timestamps: true });
 // Create compound indexes for performance (simple indexes already defined in schema)
 WalletSchema.index({ userId: 1, index: 1 });
+TradingFeeSchema.index({ userId: 1, timestamp: -1 });
+TradingFeeSchema.index({ feeCollected: 1 });
 PositionSchema.index({ userId: 1, tokenMint: 1 });
 TradeSchema.index({ userId: 1, timestamp: -1 });
 StopLossOrderSchema.index({ userId: 1, status: 1 });
@@ -177,6 +220,9 @@ exports.Trade = mongoose_1.default.model('Trade', TradeSchema);
 exports.StopLossOrder = mongoose_1.default.model('StopLossOrder', StopLossOrderSchema);
 exports.PriceAlert = mongoose_1.default.model('PriceAlert', PriceAlertSchema);
 exports.ActivityLog = mongoose_1.default.model('ActivityLog', ActivityLogSchema);
+exports.TradingFee = mongoose_1.default.model('TradingFee', TradingFeeSchema);
+exports.Subscription = mongoose_1.default.model('Subscription', SubscriptionSchema);
+exports.Referral = mongoose_1.default.model('Referral', ReferralSchema);
 // Export connection status helper
 function isConnected() {
     return mongoose_1.default.connection.readyState === 1;

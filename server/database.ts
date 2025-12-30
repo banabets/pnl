@@ -163,8 +163,54 @@ const ActivityLogSchema = new mongoose.Schema({
   userAgent: String
 }, { timestamps: true });
 
+// Trading Fee Schema - Track all fees collected
+const TradingFeeSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  tradeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Trade' },
+  tokenMint: { type: String, required: true },
+  tradeType: { type: String, enum: ['buy', 'sell'], required: true },
+  tradeAmount: { type: Number, required: true }, // SOL amount of trade
+  feePercent: { type: Number, required: true },
+  feeAmount: { type: Number, required: true }, // Fee in SOL
+  feeCollected: { type: Boolean, default: false },
+  signature: String,
+  timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
+
+// Subscription Schema - Premium plans
+const SubscriptionSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
+  plan: { type: String, enum: ['free', 'basic', 'premium', 'whale'], default: 'free' },
+  feeDiscount: { type: Number, default: 0 }, // % discount on trading fees
+  maxWallets: { type: Number, default: 5 },
+  features: {
+    copyTrading: { type: Boolean, default: false },
+    sniperBot: { type: Boolean, default: false },
+    dcaBot: { type: Boolean, default: false },
+    advancedAnalytics: { type: Boolean, default: false },
+    prioritySupport: { type: Boolean, default: false }
+  },
+  startDate: { type: Date, default: Date.now },
+  endDate: { type: Date },
+  autoRenew: { type: Boolean, default: false },
+  paymentMethod: String
+}, { timestamps: true });
+
+// Referral Schema
+const ReferralSchema = new mongoose.Schema({
+  referrerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  referredId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  code: { type: String, required: true },
+  status: { type: String, enum: ['pending', 'active', 'paid'], default: 'pending' },
+  commissionPercent: { type: Number, default: 10 }, // % of referred user's fees
+  totalEarned: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+}, { timestamps: true });
+
 // Create compound indexes for performance (simple indexes already defined in schema)
 WalletSchema.index({ userId: 1, index: 1 });
+TradingFeeSchema.index({ userId: 1, timestamp: -1 });
+TradingFeeSchema.index({ feeCollected: 1 });
 PositionSchema.index({ userId: 1, tokenMint: 1 });
 TradeSchema.index({ userId: 1, timestamp: -1 });
 StopLossOrderSchema.index({ userId: 1, status: 1 });
@@ -180,6 +226,9 @@ export const Trade = mongoose.model('Trade', TradeSchema);
 export const StopLossOrder = mongoose.model('StopLossOrder', StopLossOrderSchema);
 export const PriceAlert = mongoose.model('PriceAlert', PriceAlertSchema);
 export const ActivityLog = mongoose.model('ActivityLog', ActivityLogSchema);
+export const TradingFee = mongoose.model('TradingFee', TradingFeeSchema);
+export const Subscription = mongoose.model('Subscription', SubscriptionSchema);
+export const Referral = mongoose.model('Referral', ReferralSchema);
 
 // Export connection status helper
 export function isConnected(): boolean {

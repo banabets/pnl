@@ -796,5 +796,260 @@ export declare const ActivityLog: mongoose.Model<{
 } & {
     __v: number;
 }>>;
+export declare const TradingFee: mongoose.Model<{
+    timestamp: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    tradeType: "buy" | "sell";
+    tradeAmount: number;
+    feePercent: number;
+    feeAmount: number;
+    feeCollected: boolean;
+    signature?: string;
+    tradeId?: mongoose.Types.ObjectId;
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    timestamp: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    tradeType: "buy" | "sell";
+    tradeAmount: number;
+    feePercent: number;
+    feeAmount: number;
+    feeCollected: boolean;
+    signature?: string;
+    tradeId?: mongoose.Types.ObjectId;
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    timestamp: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    tradeType: "buy" | "sell";
+    tradeAmount: number;
+    feePercent: number;
+    feeAmount: number;
+    feeCollected: boolean;
+    signature?: string;
+    tradeId?: mongoose.Types.ObjectId;
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    timestamp: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    tradeType: "buy" | "sell";
+    tradeAmount: number;
+    feePercent: number;
+    feeAmount: number;
+    feeCollected: boolean;
+    signature?: string;
+    tradeId?: mongoose.Types.ObjectId;
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    timestamp: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    tradeType: "buy" | "sell";
+    tradeAmount: number;
+    feePercent: number;
+    feeAmount: number;
+    feeCollected: boolean;
+    signature?: string;
+    tradeId?: mongoose.Types.ObjectId;
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    timestamp: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    tradeType: "buy" | "sell";
+    tradeAmount: number;
+    feePercent: number;
+    feeAmount: number;
+    feeCollected: boolean;
+    signature?: string;
+    tradeId?: mongoose.Types.ObjectId;
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
+export declare const Subscription: mongoose.Model<{
+    userId: mongoose.Types.ObjectId;
+    plan: "premium" | "free" | "basic" | "whale";
+    feeDiscount: number;
+    maxWallets: number;
+    startDate: NativeDate;
+    autoRenew: boolean;
+    paymentMethod?: string;
+    features?: {
+        copyTrading: boolean;
+        sniperBot: boolean;
+        dcaBot: boolean;
+        advancedAnalytics: boolean;
+        prioritySupport: boolean;
+    };
+    endDate?: NativeDate;
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    userId: mongoose.Types.ObjectId;
+    plan: "premium" | "free" | "basic" | "whale";
+    feeDiscount: number;
+    maxWallets: number;
+    startDate: NativeDate;
+    autoRenew: boolean;
+    paymentMethod?: string;
+    features?: {
+        copyTrading: boolean;
+        sniperBot: boolean;
+        dcaBot: boolean;
+        advancedAnalytics: boolean;
+        prioritySupport: boolean;
+    };
+    endDate?: NativeDate;
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    userId: mongoose.Types.ObjectId;
+    plan: "premium" | "free" | "basic" | "whale";
+    feeDiscount: number;
+    maxWallets: number;
+    startDate: NativeDate;
+    autoRenew: boolean;
+    paymentMethod?: string;
+    features?: {
+        copyTrading: boolean;
+        sniperBot: boolean;
+        dcaBot: boolean;
+        advancedAnalytics: boolean;
+        prioritySupport: boolean;
+    };
+    endDate?: NativeDate;
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    userId: mongoose.Types.ObjectId;
+    plan: "premium" | "free" | "basic" | "whale";
+    feeDiscount: number;
+    maxWallets: number;
+    startDate: NativeDate;
+    autoRenew: boolean;
+    paymentMethod?: string;
+    features?: {
+        copyTrading: boolean;
+        sniperBot: boolean;
+        dcaBot: boolean;
+        advancedAnalytics: boolean;
+        prioritySupport: boolean;
+    };
+    endDate?: NativeDate;
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    userId: mongoose.Types.ObjectId;
+    plan: "premium" | "free" | "basic" | "whale";
+    feeDiscount: number;
+    maxWallets: number;
+    startDate: NativeDate;
+    autoRenew: boolean;
+    paymentMethod?: string;
+    features?: {
+        copyTrading: boolean;
+        sniperBot: boolean;
+        dcaBot: boolean;
+        advancedAnalytics: boolean;
+        prioritySupport: boolean;
+    };
+    endDate?: NativeDate;
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    userId: mongoose.Types.ObjectId;
+    plan: "premium" | "free" | "basic" | "whale";
+    feeDiscount: number;
+    maxWallets: number;
+    startDate: NativeDate;
+    autoRenew: boolean;
+    paymentMethod?: string;
+    features?: {
+        copyTrading: boolean;
+        sniperBot: boolean;
+        dcaBot: boolean;
+        advancedAnalytics: boolean;
+        prioritySupport: boolean;
+    };
+    endDate?: NativeDate;
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
+export declare const Referral: mongoose.Model<{
+    createdAt: NativeDate;
+    status: "active" | "pending" | "paid";
+    referrerId: mongoose.Types.ObjectId;
+    referredId: mongoose.Types.ObjectId;
+    code: string;
+    commissionPercent: number;
+    totalEarned: number;
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    createdAt: NativeDate;
+    status: "active" | "pending" | "paid";
+    referrerId: mongoose.Types.ObjectId;
+    referredId: mongoose.Types.ObjectId;
+    code: string;
+    commissionPercent: number;
+    totalEarned: number;
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    createdAt: NativeDate;
+    status: "active" | "pending" | "paid";
+    referrerId: mongoose.Types.ObjectId;
+    referredId: mongoose.Types.ObjectId;
+    code: string;
+    commissionPercent: number;
+    totalEarned: number;
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    createdAt: NativeDate;
+    status: "active" | "pending" | "paid";
+    referrerId: mongoose.Types.ObjectId;
+    referredId: mongoose.Types.ObjectId;
+    code: string;
+    commissionPercent: number;
+    totalEarned: number;
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    createdAt: NativeDate;
+    status: "active" | "pending" | "paid";
+    referrerId: mongoose.Types.ObjectId;
+    referredId: mongoose.Types.ObjectId;
+    code: string;
+    commissionPercent: number;
+    totalEarned: number;
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    createdAt: NativeDate;
+    status: "active" | "pending" | "paid";
+    referrerId: mongoose.Types.ObjectId;
+    referredId: mongoose.Types.ObjectId;
+    code: string;
+    commissionPercent: number;
+    totalEarned: number;
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
 export declare function isConnected(): boolean;
 //# sourceMappingURL=database.d.ts.map

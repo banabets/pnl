@@ -143,6 +143,11 @@ import { portfolioTracker } from './portfolio-tracker';
 import { stopLossManager } from './stop-loss-manager';
 import { priceAlertManager } from './price-alerts';
 
+// Jupiter Aggregator & Token Audit
+import { JupiterService, initJupiterService, getJupiterService } from './jupiter-service';
+import { TokenAuditService, initTokenAuditService, getTokenAuditService } from './token-audit';
+import { TradingFee, Subscription, Referral } from './database';
+
 // MongoDB Connection
 import { connectDatabase, isConnected } from './database';
 
@@ -179,6 +184,13 @@ const pumpFunBot = PumpFunBot ? new PumpFunBot() : null;
 const onChainSearch = PumpFunOnChainSearch ? new PumpFunOnChainSearch() : null;
 const wsListener = new PumpFunWebSocketListener();
 const tradesListener = new TradesListener();
+
+// Initialize Jupiter & Token Audit services
+const HELIUS_RPC = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+const TRADING_FEE_PERCENT = 0.5; // 0.5% trading fee
+const jupiterService = initJupiterService(HELIUS_RPC, TRADING_FEE_PERCENT);
+const tokenAuditService = initTokenAuditService(HELIUS_RPC);
+console.log('✅ Jupiter Aggregator initialized (0.5% trading fee)');
 
 // Store active trades listeners by token mint
 const activeTradesListeners = new Map<string, TradesListener>();
@@ -4533,6 +4545,275 @@ app.post('/api/alerts/cancel/:alertId', (req, res) => {
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }
+});
+
+// ==================== JUPITER SWAP ENDPOINTS ====================
+
+// Get swap quote
+app.get('/api/jupiter/quote', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { inputMint, outputMint, amount, slippage } = req.query;
+
+    if (!inputMint || !outputMint || !amount) {
+      return res.status(400).json({ error: 'inputMint, outputMint, and amount are required' });
+    }
+
+    const quote = await jupiterService.getQuote(
+      inputMint as string,
+      outputMint as string,
+      parseInt(amount as string),
+      parseInt(slippage as string) || 100
+    );
+
+    if (!quote) {
+      return res.status(404).json({ error: 'No route found' });
+    }
+
+    res.json(quote);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Execute swap via Jupiter (with trading fee)
+app.post('/api/jupiter/swap', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.userId;
+    const { tokenMint, amount, action, slippage, walletIndex } = req.body;
+
+    if (!tokenMint || !amount || !action) {
+      return res.status(400).json({ error: 'tokenMint, amount, and action (buy/sell) are required' });
+    }
+
+    if (!isMongoConnected() || !userId) {
+      return res.status(503).json({ error: 'Database connection required for trading' });
+    }
+
+    // Get user wallet
+    const wallet = walletIndex
+      ? await walletService.getWalletWithKey(userId, walletIndex)
+      : await walletService.getMasterWalletWithKey(userId);
+
+    if (!wallet) {
+      return res.status(400).json({ error: 'Wallet not found' });
+    }
+
+    let result;
+    if (action === 'buy') {
+      result = await jupiterService.buyToken(tokenMint, parseFloat(amount), wallet.keypair, slippage || 100);
+    } else {
+      result = await jupiterService.sellToken(tokenMint, parseInt(amount), wallet.keypair, slippage || 100);
+    }
+
+    // Record trading fee
+    if (result.success && result.feePaid) {
+      await TradingFee.create({
+        userId,
+        tokenMint,
+        tradeType: action,
+        tradeAmount: parseFloat(amount),
+        feePercent: TRADING_FEE_PERCENT,
+        feeAmount: result.feePaid,
+        feeCollected: true,
+        signature: result.signature
+      });
+    }
+
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get best route info
+app.get('/api/jupiter/route', async (req, res) => {
+  try {
+    const { inputMint, outputMint, amount } = req.query;
+
+    if (!inputMint || !outputMint || !amount) {
+      return res.status(400).json({ error: 'inputMint, outputMint, and amount are required' });
+    }
+
+    const route = await jupiterService.getBestRoute(
+      inputMint as string,
+      outputMint as string,
+      parseInt(amount as string)
+    );
+
+    if (!route) {
+      return res.status(404).json({ error: 'No route found' });
+    }
+
+    res.json(route);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== TOKEN AUDIT ENDPOINTS ====================
+
+// Full token audit
+app.get('/api/audit/token/:mint', async (req, res) => {
+  try {
+    const { mint } = req.params;
+    const audit = await tokenAuditService.auditToken(mint);
+    res.json(audit);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Quick safety check
+app.get('/api/audit/quick/:mint', async (req, res) => {
+  try {
+    const { mint } = req.params;
+    const result = await tokenAuditService.quickCheck(mint);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Honeypot check
+app.get('/api/audit/honeypot/:mint', async (req, res) => {
+  try {
+    const { mint } = req.params;
+    const result = await tokenAuditService.isHoneypot(mint);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== TRADING FEES ENDPOINTS ====================
+
+// Get user's trading fees summary
+app.get('/api/fees/summary', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.userId;
+
+    const fees = await TradingFee.aggregate([
+      { $match: { userId: new (require('mongoose').Types.ObjectId)(userId) } },
+      {
+        $group: {
+          _id: null,
+          totalFees: { $sum: '$feeAmount' },
+          totalTrades: { $sum: 1 },
+          totalVolume: { $sum: '$tradeAmount' }
+        }
+      }
+    ]);
+
+    res.json(fees[0] || { totalFees: 0, totalTrades: 0, totalVolume: 0 });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's fee history
+app.get('/api/fees/history', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.userId;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const fees = await TradingFee.find({ userId })
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json(fees);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin: Get platform fee stats
+app.get('/api/fees/platform', authenticateToken, requireRole(['admin']), async (req: AuthenticatedRequest, res) => {
+  try {
+    const stats = await TradingFee.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalFeesCollected: { $sum: '$feeAmount' },
+          totalTrades: { $sum: 1 },
+          totalVolume: { $sum: '$tradeAmount' }
+        }
+      }
+    ]);
+
+    const last24h = await TradingFee.aggregate([
+      { $match: { timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } } },
+      {
+        $group: {
+          _id: null,
+          fees24h: { $sum: '$feeAmount' },
+          trades24h: { $sum: 1 },
+          volume24h: { $sum: '$tradeAmount' }
+        }
+      }
+    ]);
+
+    res.json({
+      allTime: stats[0] || { totalFeesCollected: 0, totalTrades: 0, totalVolume: 0 },
+      last24h: last24h[0] || { fees24h: 0, trades24h: 0, volume24h: 0 }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== SUBSCRIPTION ENDPOINTS ====================
+
+// Get user subscription
+app.get('/api/subscription', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.userId;
+    let subscription = await Subscription.findOne({ userId }).lean();
+
+    if (!subscription) {
+      // Create default free subscription
+      subscription = await Subscription.create({
+        userId,
+        plan: 'free',
+        feeDiscount: 0,
+        maxWallets: 5
+      });
+    }
+
+    res.json(subscription);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get subscription plans
+app.get('/api/subscription/plans', (req, res) => {
+  res.json({
+    free: {
+      price: 0,
+      feeDiscount: 0,
+      maxWallets: 5,
+      features: { copyTrading: false, sniperBot: false, dcaBot: false, advancedAnalytics: false }
+    },
+    basic: {
+      price: 0.5, // SOL per month
+      feeDiscount: 25,
+      maxWallets: 10,
+      features: { copyTrading: false, sniperBot: true, dcaBot: true, advancedAnalytics: false }
+    },
+    premium: {
+      price: 1.5,
+      feeDiscount: 50,
+      maxWallets: 25,
+      features: { copyTrading: true, sniperBot: true, dcaBot: true, advancedAnalytics: true }
+    },
+    whale: {
+      price: 5,
+      feeDiscount: 75,
+      maxWallets: 100,
+      features: { copyTrading: true, sniperBot: true, dcaBot: true, advancedAnalytics: true, prioritySupport: true }
+    }
+  });
 });
 
 // Catch all handler: send back React's index.html file
