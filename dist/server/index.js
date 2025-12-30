@@ -150,12 +150,32 @@ const dca_bot_1 = require("./dca-bot");
 const copy_trading_1 = require("./copy-trading");
 // Token Feed Service
 const token_feed_1 = require("./token-feed");
+const token_enricher_worker_1 = require("./token-enricher-worker");
 // MongoDB Connection
 const database_3 = require("./database");
 // Connect to MongoDB
-(0, database_3.connectDatabase)().catch((error) => {
+(0, database_3.connectDatabase)().then(() => {
+    // Initialize token feed after MongoDB connection
+    token_feed_1.tokenFeed.start().then(() => {
+        // Start enricher worker after token feed is ready
+        token_enricher_worker_1.tokenEnricherWorker.start().catch((error) => {
+            console.error('❌ Failed to start token enricher worker:', error);
+        });
+    }).catch((error) => {
+        console.error('❌ Failed to start token feed:', error);
+    });
+}).catch((error) => {
     console.error('❌ Failed to connect to MongoDB:', error);
     console.warn('⚠️ Continuing without MongoDB - some features may not work');
+    // Still try to start token feed even without MongoDB
+    token_feed_1.tokenFeed.start().then(() => {
+        // Start enricher worker even without MongoDB
+        token_enricher_worker_1.tokenEnricherWorker.start().catch((error) => {
+            console.error('❌ Failed to start token enricher worker:', error);
+        });
+    }).catch((error) => {
+        console.error('❌ Failed to start token feed:', error);
+    });
 });
 const app = (0, express_1.default)();
 app.set('trust proxy', 1); // Trust first proxy (Railway, Heroku, etc.)
@@ -4537,15 +4557,19 @@ app.get('/api/subscription/plans', (req, res) => {
 app.get('/api/tokens/feed', async (req, res) => {
     try {
         const filter = req.query.filter || 'all';
-        const minLiquidity = parseInt(req.query.minLiquidity) || 1000;
+        // Default to 0 to allow new tokens with low/no liquidity
+        const minLiquidity = req.query.minLiquidity !== undefined ? parseInt(req.query.minLiquidity) : 0;
         const maxAge = parseInt(req.query.maxAge) || 1440;
         const limit = parseInt(req.query.limit) || 50;
+        console.log(`🔍 /api/tokens/feed: filter=${filter}, minLiquidity=${minLiquidity}, maxAge=${maxAge}, limit=${limit}`);
+        console.log(`📊 TokenFeed status: isStarted=${token_feed_1.tokenFeed.isServiceStarted() ? 'yes' : 'no'}, onChainTokens=${token_feed_1.tokenFeed.getOnChainTokens().size}`);
         const tokens = await token_feed_1.tokenFeed.fetchTokens({
             filter: filter,
             minLiquidity,
             maxAge,
             limit
         });
+        console.log(`✅ /api/tokens/feed: Returning ${tokens.length} tokens`);
         res.json({
             success: true,
             count: tokens.length,
@@ -4553,7 +4577,13 @@ app.get('/api/tokens/feed', async (req, res) => {
         });
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('❌ /api/tokens/feed error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            count: 0,
+            tokens: []
+        });
     }
 });
 // Get NEW tokens (< 30 min old)

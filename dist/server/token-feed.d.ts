@@ -42,14 +42,92 @@ interface TokenFeedOptions {
     limit: number;
 }
 declare class TokenFeedService {
-    private cache;
-    private cacheExpiry;
+    private metadataCache;
+    private priceCache;
+    private volumeCache;
+    private marketDataCache;
+    private priceChangeCache;
+    private fullTokenCache;
+    private readonly TTL;
     private callbacks;
+    private onChainTokens;
+    private graduatedTokens;
+    private isStarted;
     constructor();
     /**
-     * Fetch latest tokens from multiple sources
+     * Cleanup expired cache entries
+     */
+    private cleanupExpiredCache;
+    /**
+     * Get cached metadata or null if expired/missing
+     */
+    private getCachedMetadata;
+    /**
+     * Set metadata in cache
+     */
+    private setCachedMetadata;
+    /**
+     * Get cached price or null if expired/missing
+     */
+    private getCachedPrice;
+    /**
+     * Set price in cache
+     */
+    private setCachedPrice;
+    /**
+     * Get cached volume or null if expired/missing
+     */
+    private getCachedVolume;
+    /**
+     * Set volume in cache
+     */
+    private setCachedVolume;
+    /**
+     * Get cached market data or null if expired/missing
+     */
+    private getCachedMarketData;
+    /**
+     * Set market data in cache
+     */
+    private setCachedMarketData;
+    /**
+     * Get cached price changes or null if expired/missing
+     */
+    private getCachedPriceChanges;
+    /**
+     * Set price changes in cache
+     */
+    private setCachedPriceChanges;
+    /**
+     * Start the on-chain monitoring
+     */
+    start(): Promise<void>;
+    /**
+     * Get on-chain tokens map (for worker access)
+     */
+    getOnChainTokens(): Map<string, TokenData>;
+    /**
+     * Check if service is started
+     */
+    isServiceStarted(): boolean;
+    /**
+     * Enrich token data with DexScreener metadata (with intelligent caching)
+     * Public method so worker can access it
+     */
+    enrichTokenData(mint: string): Promise<void>;
+    /**
+     * Enrich token data from on-chain (Metaplex metadata) - Fallback when APIs fail
+     * Returns true if enrichment was successful, false otherwise
+     */
+    private enrichTokenDataOnChain;
+    /**
+     * Fetch latest tokens from on-chain + DexScreener
      */
     fetchTokens(options?: Partial<TokenFeedOptions>): Promise<TokenData[]>;
+    /**
+     * Fallback: Fetch from pump.fun API (last resort when all other sources fail)
+     */
+    private fetchFromPumpFunAPI;
     /**
      * Fetch from DexScreener search API
      */

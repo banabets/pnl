@@ -5132,9 +5132,13 @@ app.get('/api/subscription/plans', (req, res) => {
 app.get('/api/tokens/feed', async (req, res) => {
   try {
     const filter = (req.query.filter as string) || 'all';
-    const minLiquidity = parseInt(req.query.minLiquidity as string) || 1000;
+    // Default to 0 to allow new tokens with low/no liquidity
+    const minLiquidity = req.query.minLiquidity !== undefined ? parseInt(req.query.minLiquidity as string) : 0;
     const maxAge = parseInt(req.query.maxAge as string) || 1440;
     const limit = parseInt(req.query.limit as string) || 50;
+
+    console.log(`🔍 /api/tokens/feed: filter=${filter}, minLiquidity=${minLiquidity}, maxAge=${maxAge}, limit=${limit}`);
+    console.log(`📊 TokenFeed status: isStarted=${tokenFeed.isServiceStarted() ? 'yes' : 'no'}, onChainTokens=${tokenFeed.getOnChainTokens().size}`);
 
     const tokens = await tokenFeed.fetchTokens({
       filter: filter as any,
@@ -5143,13 +5147,21 @@ app.get('/api/tokens/feed', async (req, res) => {
       limit
     });
 
+    console.log(`✅ /api/tokens/feed: Returning ${tokens.length} tokens`);
+
     res.json({
       success: true,
       count: tokens.length,
       tokens
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('❌ /api/tokens/feed error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message,
+      count: 0,
+      tokens: []
+    });
   }
 });
 

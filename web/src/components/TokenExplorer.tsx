@@ -465,7 +465,8 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
           break;
         default:
           params.set('filter', 'all');
-          params.set('minLiquidity', '1000');
+          // Don't set minLiquidity - let backend use default (0) to allow new tokens
+          // params.set('minLiquidity', '0'); // Allow tokens with any liquidity
       }
 
       const response = await api.get(`${endpoint}?${params.toString()}`);
