@@ -48,6 +48,7 @@ function App() {
     // Check if token exists in localStorage on mount
     return !!localStorage.getItem('authToken');
   });
+  const [currentUser, setCurrentUser] = useState<{ username: string; email: string } | null>(null);
 
   // Verify authentication on mount and when token changes
   useEffect(() => {
@@ -59,6 +60,9 @@ function App() {
           const res = await api.get('/auth/me');
           if (res.data.success) {
             setIsAuthenticated(true);
+            if (res.data.user) {
+              setCurrentUser({ username: res.data.user.username, email: res.data.user.email });
+            }
           }
           // If success is false but we have a token, keep session active
           // Let the UserProfile component handle actual logout
@@ -85,6 +89,7 @@ function App() {
               localStorage.removeItem('authToken');
               localStorage.removeItem('userId');
               setIsAuthenticated(false);
+              setCurrentUser(null);
               // Dispatch storage event so other components know
               window.dispatchEvent(new StorageEvent('storage', {
                 key: 'authToken',
@@ -105,6 +110,7 @@ function App() {
         }
       } else {
         setIsAuthenticated(false);
+        setCurrentUser(null);
       }
     };
 
@@ -116,6 +122,16 @@ function App() {
         const hasToken = !!e.newValue;
         console.log('Auth token changed:', hasToken ? 'logged in' : 'logged out');
         setIsAuthenticated(hasToken);
+        if (!hasToken) {
+          setCurrentUser(null);
+        } else {
+          // Refetch user info when token changes
+          api.get('/auth/me').then(res => {
+            if (res.data.success && res.data.user) {
+              setCurrentUser({ username: res.data.user.username, email: res.data.user.email });
+            }
+          }).catch(() => {});
+        }
       }
     };
 
@@ -513,6 +529,17 @@ function App() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* User Avatar */}
+              {isAuthenticated && currentUser && (
+                <button
+                  onClick={() => setActiveTab('profile')}
+                  className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-primary-500 to-accent-pink text-white font-bold text-sm sm:text-base uppercase shadow-lg shadow-primary-500/25 hover:shadow-primary-500/40 hover:scale-105 transition-all duration-200 border-2 border-white/20"
+                  title={currentUser.username}
+                >
+                  {currentUser.username.charAt(0)}
+                </button>
               )}
             </div>
           </div>
