@@ -16,11 +16,15 @@ const RAYDIUM_CPMM_PROGRAM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 // Helius WebSocket URL
 const getHeliusWsUrl = () => {
-    const apiKey = process.env.HELIUS_API_KEY || process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1];
+    // Try to get API key from env, RPC URL, or use default Helius key
+    const apiKey = process.env.HELIUS_API_KEY ||
+        process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
+        '7b05747c-b100-4159-ba5f-c85e8c8d3997'; // Default Helius API key
     if (!apiKey) {
-        console.warn('No Helius API key found, using public RPC');
+        console.warn('⚠️ No Helius API key found, using public RPC (may have rate limits)');
         return 'wss://api.mainnet-beta.solana.com';
     }
+    console.log(`✅ Using Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
     return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
 };
 class HeliusWebSocketService extends events_1.EventEmitter {
@@ -44,8 +48,13 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         this.rpcCircuitBreakerOpen = false;
         this.rpcCircuitBreakerResetTime = 0;
         this.CIRCUIT_BREAKER_RESET_DELAY = 60000; // 1 minute
-        const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+        // Use Helius RPC if API key is available, otherwise fallback to public RPC
+        const heliusApiKey = process.env.HELIUS_API_KEY || process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1] || '7b05747c-b100-4159-ba5f-c85e8c8d3997';
+        const rpcUrl = heliusApiKey
+            ? `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`
+            : (process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
         this.connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
+        console.log(`🔗 Helius WebSocket: Using RPC ${rpcUrl.includes('helius') ? 'Helius (with API key)' : 'Public Solana RPC'}`);
     }
     /**
      * Start the WebSocket connection and subscriptions
@@ -266,8 +275,11 @@ class HeliusWebSocketService extends events_1.EventEmitter {
      */
     async getTransactionDetails(signature) {
         try {
-            const apiKey = process.env.HELIUS_API_KEY;
-            if (!apiKey) {
+            // Try to get API key from env or extract from RPC URL
+            const apiKey = process.env.HELIUS_API_KEY ||
+                process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
+                '7b05747c-b100-4159-ba5f-c85e8c8d3997'; // Fallback to default key
+            if (!apiKey || apiKey === '') {
                 // Fallback to basic RPC
                 return this.getBasicTransactionDetails(signature);
             }
