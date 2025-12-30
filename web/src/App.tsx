@@ -59,23 +59,49 @@ function App() {
           const res = await api.get('/auth/me');
           if (res.data.success) {
             setIsAuthenticated(true);
-          } else {
-            setIsAuthenticated(false);
           }
+          // If success is false but we have a token, keep session active
+          // Let the UserProfile component handle actual logout
         } catch (error: any) {
-          // Handle rate limit errors (429) - don't clear token, assume still authenticated
+          // Handle rate limit errors (429) - keep session
           if (error.response?.status === 429) {
             console.warn('Rate limit exceeded during auth check, keeping session');
-            setIsAuthenticated(true); // Assume still authenticated
+            setIsAuthenticated(true);
             return;
           }
-          
-          // Only clear token if it's a real auth error, not network error
-          if (error.response?.status === 401 && error.response?.data?.error) {
-            setIsAuthenticated(false);
-            // Don't clear token here - let the component handle it
+
+          // For 401 errors, only logout if token is explicitly invalid/expired
+          // Check if the error message indicates the token itself is bad
+          if (error.response?.status === 401) {
+            const errorMsg = error.response?.data?.error || '';
+            const isTokenInvalid =
+              errorMsg.includes('expired') ||
+              errorMsg.includes('invalid') ||
+              errorMsg.includes('malformed') ||
+              errorMsg.includes('jwt');
+
+            if (isTokenInvalid) {
+              console.warn('Token is invalid/expired, clearing session');
+              localStorage.removeItem('authToken');
+              localStorage.removeItem('userId');
+              setIsAuthenticated(false);
+              // Dispatch storage event so other components know
+              window.dispatchEvent(new StorageEvent('storage', {
+                key: 'authToken',
+                newValue: null,
+                oldValue: token
+              }));
+            } else {
+              // Keep session for other 401 errors (might be endpoint-specific)
+              console.warn('401 error but keeping session (not a token issue)');
+              setIsAuthenticated(true);
+            }
+            return;
           }
-          // For network errors, keep the token and assume we're still authenticated
+
+          // For network errors, keep the session active
+          console.warn('Network error during auth check, keeping session');
+          setIsAuthenticated(true);
         }
       } else {
         setIsAuthenticated(false);
@@ -83,16 +109,18 @@ function App() {
     };
 
     verifyAuth();
-    
-    // Listen for storage changes (e.g., token updated in another tab)
+
+    // Listen for storage changes (login/logout from any component)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'authToken') {
-        setIsAuthenticated(!!e.newValue);
+        const hasToken = !!e.newValue;
+        console.log('Auth token changed:', hasToken ? 'logged in' : 'logged out');
+        setIsAuthenticated(hasToken);
       }
     };
-    
+
     window.addEventListener('storage', handleStorageChange);
-    
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };

@@ -107,16 +107,32 @@ export default function UserProfile() {
         
         // Only clear token if it's a real authentication error (401 with auth error message)
         // Don't clear on network errors or other temporary issues
-        if (error.response?.status === 401 && 
-            (error.response?.data?.error?.includes('token') || 
-             error.response?.data?.error?.includes('Authentication') ||
-             error.response?.data?.error?.includes('expired'))) {
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('userId');
-          setIsLoggedIn(false);
+        if (error.response?.status === 401) {
+          const errorMsg = error.response?.data?.error || '';
+          const isTokenInvalid =
+            errorMsg.includes('token') ||
+            errorMsg.includes('Authentication') ||
+            errorMsg.includes('expired') ||
+            errorMsg.includes('invalid') ||
+            errorMsg.includes('jwt');
+
+          if (isTokenInvalid) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userId');
+            setIsLoggedIn(false);
+            // Dispatch storage event so App.tsx knows
+            window.dispatchEvent(new StorageEvent('storage', { key: 'authToken', newValue: null }));
+          } else {
+            // Not a token issue, keep session and assume logged in
+            // (some endpoints might return 401 for other reasons)
+            setIsLoggedIn(true);
+          }
+          return;
         }
-        // For network errors or other issues, keep the token and just mark as not logged in
-        // The token might still be valid, we just couldn't verify it right now
+
+        // For network errors or other issues, keep the session active if we have a token
+        console.warn('Auth check failed (network error?), keeping session active');
+        setIsLoggedIn(true);
       }
     } else {
       setIsLoggedIn(false);
