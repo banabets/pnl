@@ -58,6 +58,12 @@ class TokenIndexerService {
       return; // Silently skip if MongoDB not available
     }
 
+    // Double check that TokenIndex is available
+    if (!TokenIndex) {
+      console.warn('⚠️ TokenIndex model not available, skipping index');
+      return;
+    }
+
     try {
       const tokenDoc = {
         mint: data.mint,
@@ -102,7 +108,10 @@ class TokenIndexerService {
 
     } catch (error: any) {
       // Log but don't throw - indexing failures shouldn't break the app
-      console.error(`Failed to index token ${data.mint}:`, error.message);
+      // Only log if it's not a connection error (to avoid spam)
+      if (!error.message?.includes('connection') && !error.message?.includes('undefined')) {
+        console.error(`Failed to index token ${data.mint?.substring(0, 8) || 'unknown'}:`, error.message);
+      }
     }
   }
 
@@ -213,6 +222,12 @@ class TokenIndexerService {
           break;
       }
 
+      // Double check that TokenIndex is available
+      if (!TokenIndex) {
+        console.warn('⚠️ TokenIndex model not available, returning empty array');
+        return [];
+      }
+
       const tokens = await TokenIndex.find(query)
         .sort({ createdAt: -1 })
         .limit(limit)
@@ -319,6 +334,11 @@ class TokenIndexerService {
   async updateEnrichment(mint: string, data: Partial<TokenIndexData>, source: string): Promise<void> {
     if (!this.isEnabled) {
       return;
+    }
+
+    // Double check that TokenIndex is available
+    if (!TokenIndex) {
+      return; // Silently skip if model not available
     }
 
     try {
