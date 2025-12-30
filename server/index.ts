@@ -148,6 +148,11 @@ import { JupiterService, initJupiterService, getJupiterService } from './jupiter
 import { TokenAuditService, initTokenAuditService, getTokenAuditService } from './token-audit';
 import { TradingFee, Subscription, Referral } from './database';
 
+// Trading Bots
+import { SniperBot, initSniperBot, getSniperBot, SnipeHistory } from './sniper-bot';
+import { DCABot, initDCABot, getDCABot, DCAOrder, DCAExecution } from './dca-bot';
+import { CopyTradingService, initCopyTrading, getCopyTrading, FollowedWallet, CopyTrade, WalletStats } from './copy-trading';
+
 // MongoDB Connection
 import { connectDatabase, isConnected } from './database';
 
@@ -191,6 +196,24 @@ const TRADING_FEE_PERCENT = 0.5; // 0.5% trading fee
 const jupiterService = initJupiterService(HELIUS_RPC, TRADING_FEE_PERCENT);
 const tokenAuditService = initTokenAuditService(HELIUS_RPC);
 console.log('✅ Jupiter Aggregator initialized (0.5% trading fee)');
+
+// Initialize Trading Bots
+const sniperBot = initSniperBot(HELIUS_RPC);
+const dcaBot = initDCABot();
+const copyTradingService = initCopyTrading(HELIUS_RPC);
+
+// Set DCA keypair getter (uses wallet service)
+dcaBot.setKeypairGetter(async (userId: string, walletIndex?: number) => {
+  if (!isMongoConnected()) return null;
+  const wallet = walletIndex
+    ? await walletService.getWalletWithKey(userId, walletIndex)
+    : await walletService.getMasterWalletWithKey(userId);
+  return wallet?.keypair || null;
+});
+
+// Start DCA scheduler
+dcaBot.start(60000); // Check every minute
+console.log('✅ Trading Bots initialized (Sniper, DCA, Copy Trading)');
 
 // Store active trades listeners by token mint
 const activeTradesListeners = new Map<string, TradesListener>();
@@ -4757,6 +4780,260 @@ app.get('/api/fees/platform', authenticateToken, requireRole(['admin']), async (
       allTime: stats[0] || { totalFeesCollected: 0, totalTrades: 0, totalVolume: 0 },
       last24h: last24h[0] || { fees24h: 0, trades24h: 0, volume24h: 0 }
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== SNIPER BOT ENDPOINTS ====================
+
+// Get sniper config
+app.get('/api/sniper/config', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const config = await sniperBot.getConfig(req.userId!);
+    res.json(config || { enabled: false });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update sniper config
+app.put('/api/sniper/config', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const config = await sniperBot.updateConfig(req.userId!, req.body);
+    res.json(config);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Enable sniper
+app.post('/api/sniper/enable', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    await sniperBot.enable(req.userId!);
+    res.json({ success: true, message: 'Sniper enabled' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Disable sniper
+app.post('/api/sniper/disable', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    await sniperBot.disable(req.userId!);
+    res.json({ success: true, message: 'Sniper disabled' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get snipe history
+app.get('/api/sniper/history', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const history = await sniperBot.getHistory(req.userId!, limit);
+    res.json(history);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Check if token passes sniper filters
+app.post('/api/sniper/check', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { tokenMint } = req.body;
+    const config = await sniperBot.getConfig(req.userId!);
+    if (!config) {
+      return res.status(400).json({ error: 'Sniper not configured' });
+    }
+    const result = await sniperBot.checkToken(tokenMint, config);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== DCA BOT ENDPOINTS ====================
+
+// Create DCA order
+app.post('/api/dca/orders', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { tokenMint, totalAmountSol, amountPerBuy, intervalMinutes, tokenName, walletIndex } = req.body;
+
+    if (!tokenMint || !totalAmountSol || !amountPerBuy) {
+      return res.status(400).json({ error: 'tokenMint, totalAmountSol, and amountPerBuy are required' });
+    }
+
+    const order = await dcaBot.createOrder(
+      req.userId!,
+      tokenMint,
+      totalAmountSol,
+      amountPerBuy,
+      intervalMinutes || 60,
+      tokenName,
+      walletIndex
+    );
+
+    res.json(order);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's DCA orders
+app.get('/api/dca/orders', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const status = req.query.status as string;
+    const orders = await dcaBot.getUserOrders(req.userId!, status);
+    res.json(orders);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Pause DCA order
+app.post('/api/dca/orders/:orderId/pause', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const success = await dcaBot.pauseOrder(req.params.orderId, req.userId!);
+    res.json({ success });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Resume DCA order
+app.post('/api/dca/orders/:orderId/resume', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const success = await dcaBot.resumeOrder(req.params.orderId, req.userId!);
+    res.json({ success });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancel DCA order
+app.delete('/api/dca/orders/:orderId', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const success = await dcaBot.cancelOrder(req.params.orderId, req.userId!);
+    res.json({ success });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get DCA order execution history
+app.get('/api/dca/orders/:orderId/history', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const history = await dcaBot.getOrderHistory(req.params.orderId);
+    res.json(history);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's DCA stats
+app.get('/api/dca/stats', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const stats = await dcaBot.getUserStats(req.userId!);
+    res.json(stats);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== COPY TRADING ENDPOINTS ====================
+
+// Follow a wallet
+app.post('/api/copy/follow', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { walletAddress, label, copyBuys, copySells, maxCopyAmountSol, copyPercentage } = req.body;
+
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'walletAddress is required' });
+    }
+
+    const followed = await copyTradingService.followWallet(req.userId!, walletAddress, {
+      label, copyBuys, copySells, maxCopyAmountSol, copyPercentage
+    });
+
+    res.json(followed);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unfollow a wallet
+app.delete('/api/copy/follow/:walletAddress', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const success = await copyTradingService.unfollowWallet(req.userId!, req.params.walletAddress);
+    res.json({ success });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get followed wallets
+app.get('/api/copy/followed', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const wallets = await copyTradingService.getFollowedWallets(req.userId!);
+    res.json(wallets);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update follow settings
+app.put('/api/copy/follow/:walletAddress', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const updated = await copyTradingService.updateFollowSettings(
+      req.userId!,
+      req.params.walletAddress,
+      req.body
+    );
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get copy trade history
+app.get('/api/copy/history', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const history = await copyTradingService.getCopyHistory(req.userId!, limit);
+    res.json(history);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get wallet leaderboard
+app.get('/api/copy/leaderboard', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 20;
+    const sortBy = (req.query.sortBy as string) || 'pnl7d';
+    const leaderboard = await copyTradingService.getLeaderboard(limit, sortBy);
+    res.json(leaderboard);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's copy trading stats
+app.get('/api/copy/stats', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const stats = await copyTradingService.getUserStats(req.userId!);
+    res.json(stats);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Analyze a wallet
+app.get('/api/copy/analyze/:walletAddress', async (req, res) => {
+  try {
+    const analysis = await copyTradingService.analyzeWallet(req.params.walletAddress);
+    res.json(analysis);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
