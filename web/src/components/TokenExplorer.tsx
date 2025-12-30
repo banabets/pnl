@@ -470,9 +470,12 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
 
       const response = await api.get(`${endpoint}?${params.toString()}`);
 
-      if (response.data && Array.isArray(response.data)) {
+      // Handle response format: { success, count, tokens } or direct array
+      const tokensData = response.data?.tokens || response.data;
+
+      if (tokensData && Array.isArray(tokensData)) {
         // Map TokenData from API to Token interface
-        const mappedTokens: Token[] = response.data.map((t: any) => ({
+        const mappedTokens: Token[] = tokensData.map((t: any) => ({
           mint: t.mint,
           name: t.name || 'Unknown',
           symbol: t.symbol || 'UNK',
@@ -519,7 +522,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         console.log(`✅ Loaded ${mappedTokens.length} tokens with filter: ${activeFilter}`);
         setTokens(mappedTokens);
       } else {
-        console.log('No tokens returned from API');
+        console.log('No tokens returned from API. Response:', response.data);
         setTokens([]);
       }
     } catch (error) {
