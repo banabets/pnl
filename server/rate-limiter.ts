@@ -13,8 +13,9 @@ class RateLimiter {
 
   constructor() {
     // Configure rate limits for different services
+    // DexScreener free tier: ~10 requests/minute, be conservative
     this.configs.set('dexscreener', {
-      max: 10,           // 10 requests
+      max: 8,            // 8 requests (conservative to avoid 429)
       window: 60000,     // per minute
       name: 'DexScreener'
     });

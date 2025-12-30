@@ -1051,5 +1051,266 @@ export declare const Referral: mongoose.Model<{
 } & {
     __v: number;
 }>>;
+export declare const TokenIndex: mongoose.Model<{
+    mint: string;
+    createdAt: NativeDate;
+    isNew: boolean;
+    source: "pumpfun" | "raydium" | "unknown";
+    isGraduating: boolean;
+    isTrending: boolean;
+    symbol?: string;
+    bondingCurve?: string;
+    name?: string;
+    price?: number;
+    imageUrl?: string;
+    creator?: string;
+    marketCap?: number;
+    liquidity?: number;
+    volume24h?: number;
+    volume1h?: number;
+    volume5m?: number;
+    holders?: number;
+    supply?: number;
+    priceChange5m?: number;
+    priceChange1h?: number;
+    priceChange24h?: number;
+    lastEnrichedAt?: NativeDate;
+    enrichmentSource?: string;
+    riskScore?: number;
+    pairAddress?: string;
+    dexId?: string;
+    age?: number;
+    txns5m?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns1h?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns24h?: {
+        buys?: number;
+        sells?: number;
+    };
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    mint: string;
+    createdAt: NativeDate;
+    isNew: boolean;
+    source: "pumpfun" | "raydium" | "unknown";
+    isGraduating: boolean;
+    isTrending: boolean;
+    symbol?: string;
+    bondingCurve?: string;
+    name?: string;
+    price?: number;
+    imageUrl?: string;
+    creator?: string;
+    marketCap?: number;
+    liquidity?: number;
+    volume24h?: number;
+    volume1h?: number;
+    volume5m?: number;
+    holders?: number;
+    supply?: number;
+    priceChange5m?: number;
+    priceChange1h?: number;
+    priceChange24h?: number;
+    lastEnrichedAt?: NativeDate;
+    enrichmentSource?: string;
+    riskScore?: number;
+    pairAddress?: string;
+    dexId?: string;
+    age?: number;
+    txns5m?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns1h?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns24h?: {
+        buys?: number;
+        sells?: number;
+    };
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    mint: string;
+    createdAt: NativeDate;
+    isNew: boolean;
+    source: "pumpfun" | "raydium" | "unknown";
+    isGraduating: boolean;
+    isTrending: boolean;
+    symbol?: string;
+    bondingCurve?: string;
+    name?: string;
+    price?: number;
+    imageUrl?: string;
+    creator?: string;
+    marketCap?: number;
+    liquidity?: number;
+    volume24h?: number;
+    volume1h?: number;
+    volume5m?: number;
+    holders?: number;
+    supply?: number;
+    priceChange5m?: number;
+    priceChange1h?: number;
+    priceChange24h?: number;
+    lastEnrichedAt?: NativeDate;
+    enrichmentSource?: string;
+    riskScore?: number;
+    pairAddress?: string;
+    dexId?: string;
+    age?: number;
+    txns5m?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns1h?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns24h?: {
+        buys?: number;
+        sells?: number;
+    };
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    mint: string;
+    createdAt: NativeDate;
+    isNew: boolean;
+    source: "pumpfun" | "raydium" | "unknown";
+    isGraduating: boolean;
+    isTrending: boolean;
+    symbol?: string;
+    bondingCurve?: string;
+    name?: string;
+    price?: number;
+    imageUrl?: string;
+    creator?: string;
+    marketCap?: number;
+    liquidity?: number;
+    volume24h?: number;
+    volume1h?: number;
+    volume5m?: number;
+    holders?: number;
+    supply?: number;
+    priceChange5m?: number;
+    priceChange1h?: number;
+    priceChange24h?: number;
+    lastEnrichedAt?: NativeDate;
+    enrichmentSource?: string;
+    riskScore?: number;
+    pairAddress?: string;
+    dexId?: string;
+    age?: number;
+    txns5m?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns1h?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns24h?: {
+        buys?: number;
+        sells?: number;
+    };
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    mint: string;
+    createdAt: NativeDate;
+    isNew: boolean;
+    source: "pumpfun" | "raydium" | "unknown";
+    isGraduating: boolean;
+    isTrending: boolean;
+    symbol?: string;
+    bondingCurve?: string;
+    name?: string;
+    price?: number;
+    imageUrl?: string;
+    creator?: string;
+    marketCap?: number;
+    liquidity?: number;
+    volume24h?: number;
+    volume1h?: number;
+    volume5m?: number;
+    holders?: number;
+    supply?: number;
+    priceChange5m?: number;
+    priceChange1h?: number;
+    priceChange24h?: number;
+    lastEnrichedAt?: NativeDate;
+    enrichmentSource?: string;
+    riskScore?: number;
+    pairAddress?: string;
+    dexId?: string;
+    age?: number;
+    txns5m?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns1h?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns24h?: {
+        buys?: number;
+        sells?: number;
+    };
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    mint: string;
+    createdAt: NativeDate;
+    isNew: boolean;
+    source: "pumpfun" | "raydium" | "unknown";
+    isGraduating: boolean;
+    isTrending: boolean;
+    symbol?: string;
+    bondingCurve?: string;
+    name?: string;
+    price?: number;
+    imageUrl?: string;
+    creator?: string;
+    marketCap?: number;
+    liquidity?: number;
+    volume24h?: number;
+    volume1h?: number;
+    volume5m?: number;
+    holders?: number;
+    supply?: number;
+    priceChange5m?: number;
+    priceChange1h?: number;
+    priceChange24h?: number;
+    lastEnrichedAt?: NativeDate;
+    enrichmentSource?: string;
+    riskScore?: number;
+    pairAddress?: string;
+    dexId?: string;
+    age?: number;
+    txns5m?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns1h?: {
+        buys?: number;
+        sells?: number;
+    };
+    txns24h?: {
+        buys?: number;
+        sells?: number;
+    };
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
 export declare function isConnected(): boolean;
 //# sourceMappingURL=database.d.ts.map

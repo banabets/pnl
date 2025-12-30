@@ -311,7 +311,8 @@ class TokenFeedService {
                 age: tokenData.age,
             });
             // Fetch additional metadata from DexScreener after a delay
-            setTimeout(() => this.enrichTokenData(event.mint), 5000);
+            // Use longer delay to avoid rate limits when many tokens are created at once
+            setTimeout(() => this.enrichTokenData(event.mint), 30000); // 30 seconds instead of 5
         });
         // Listen for graduations
         helius_websocket_1.heliusWebSocket.on('graduation', async (event) => {
@@ -434,29 +435,46 @@ class TokenFeedService {
                 existing.priceChange1h = cachedPriceChanges.priceChange1h || existing.priceChange1h;
                 existing.priceChange24h = cachedPriceChanges.priceChange24h || existing.priceChange24h;
             }
-            // 6. If we have all cached data, skip API call
-            if (cachedMetadata && cachedPrice !== null && cachedVolume && cachedMarketData && cachedPriceChanges) {
-                console.log(`✅ All data cached for ${mint.slice(0, 8)}..., skipping API call`);
+            // 6. If we have cached metadata (name, symbol, image), that's often enough
+            // Only fetch from API if we're missing critical metadata AND rate limit allows
+            const hasBasicMetadata = cachedMetadata && (cachedMetadata.name || cachedMetadata.symbol);
+            if (hasBasicMetadata && cachedPrice !== null && cachedVolume && cachedMarketData) {
+                console.log(`✅ Sufficient data cached for ${mint.slice(0, 8)}..., skipping API call`);
                 this.onChainTokens.set(mint, existing);
                 return;
             }
-            // 7. Fetch from API only if cache is missing/expired
-            // Wait if rate limit is reached
-            await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener');
-            // Check if we can make request
+            // 7. Check rate limit BEFORE waiting (to avoid unnecessary waits)
             if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
-                console.log(`⏳ Rate limit reached for DexScreener, using on-chain fallback for ${mint.slice(0, 8)}...`);
+                console.log(`⏳ Rate limit reached for DexScreener, using cached/on-chain data for ${mint.slice(0, 8)}...`);
+                // Try on-chain fallback first
                 const onChainResult = await this.enrichTokenDataOnChain(mint);
                 if (onChainResult) {
                     return;
                 }
-                // If on-chain fails, use cached data
+                // If on-chain fails, use what we have from cache
+                this.onChainTokens.set(mint, existing);
                 return;
             }
-            console.log(`🔍 Fetching fresh data from DexScreener for ${mint.slice(0, 8)}... (${rate_limiter_1.rateLimiter.getRemainingRequests('dexscreener')} requests remaining)`);
-            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`, { headers: { 'Accept': 'application/json' } });
-            // Record the request
+            // 8. Wait if needed (but we already checked canMakeRequest, so this should be quick)
+            await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener', 5000); // Max 5 second wait
+            // Double check after waiting
+            if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
+                console.log(`⏳ Still rate limited after wait, using cached/on-chain data for ${mint.slice(0, 8)}...`);
+                const onChainResult = await this.enrichTokenDataOnChain(mint);
+                if (onChainResult) {
+                    return;
+                }
+                this.onChainTokens.set(mint, existing);
+                return;
+            }
+            const remaining = rate_limiter_1.rateLimiter.getRemainingRequests('dexscreener');
+            console.log(`🔍 Fetching fresh data from DexScreener for ${mint.slice(0, 8)}... (${remaining} requests remaining)`);
+            // Record the request BEFORE making it (to prevent concurrent requests)
             rate_limiter_1.rateLimiter.recordRequest('dexscreener');
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`, {
+                headers: { 'Accept': 'application/json' },
+                signal: AbortSignal.timeout(10000) // 10 second timeout
+            });
             if (!response.ok) {
                 // If API fails, try on-chain fallback
                 console.log(`⚠️ DexScreener API failed for ${mint.slice(0, 8)}..., trying on-chain fallback...`);
