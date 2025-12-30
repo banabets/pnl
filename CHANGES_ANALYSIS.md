@@ -243,3 +243,4 @@ El proyecto está ahora **completamente funcional** en producción con:
 - RPC configurado (Helius)
 - Todas las APIs principales funcionando
 
+

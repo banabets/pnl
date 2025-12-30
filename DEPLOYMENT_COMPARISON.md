@@ -117,3 +117,4 @@ railway up
 
 La mayoría de proyectos profesionales usan Vercel para frontend y Railway/Render para backend. Es la arquitectura más común y recomendada.
 
+

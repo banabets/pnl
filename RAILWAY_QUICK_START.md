@@ -134,3 +134,4 @@ Tu backend debería estar corriendo en Railway. Ahora solo necesitas:
 2. ✅ Actualizar variables en Vercel
 3. ✅ Probar la conexión desde `www.pnl.onl`
 
+

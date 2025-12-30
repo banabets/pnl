@@ -173,6 +173,8 @@ export default function UserProfile() {
         setUser(res.data.user);
         setIsLoggedIn(true);
         loadUserData(res.data.user);
+        // Notify App.tsx about auth change
+        window.dispatchEvent(new StorageEvent('storage', { key: 'authToken', newValue: res.data.token }));
         alert('✅ Registration successful!');
         setIsRegister(false);
         setUsername('');
@@ -198,6 +200,8 @@ export default function UserProfile() {
         setUser(res.data.user);
         setIsLoggedIn(true);
         loadUserData(res.data.user);
+        // Notify App.tsx about auth change
+        window.dispatchEvent(new StorageEvent('storage', { key: 'authToken', newValue: res.data.token }));
         alert('✅ Login successful!');
         setUsername('');
         setPassword('');
@@ -303,6 +307,8 @@ export default function UserProfile() {
     localStorage.removeItem('authToken');
     setUser(null);
     setIsLoggedIn(false);
+    // Notify App.tsx about auth change
+    window.dispatchEvent(new StorageEvent('storage', { key: 'authToken', newValue: null }));
     alert('✅ Logged out');
   };
 

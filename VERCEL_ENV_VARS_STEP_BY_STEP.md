@@ -192,3 +192,4 @@ Vercel Dashboard
 
 Una vez configurado, tu frontend se conectará correctamente al backend en Railway.
 
+

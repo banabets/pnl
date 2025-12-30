@@ -196,3 +196,4 @@ Una vez completado, tu aplicación estará completamente funcional:
 - ✅ Socket.IO funcionando
 - ✅ Todas las APIs funcionando
 
+

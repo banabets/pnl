@@ -82,3 +82,4 @@ Asegúrate de que ambas variables estén marcadas para:
 - [ ] Consola muestra URLs correctas
 - [ ] Socket.IO conectado correctamente
 
+

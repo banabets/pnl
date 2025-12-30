@@ -232,30 +232,53 @@ function App() {
     };
   }, []);
 
-  // Load master wallet and listen for updates
+  // Load master wallet and listen for updates - only when authenticated
   useEffect(() => {
     const loadMasterWallet = async () => {
+      // Only load if we have a token
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setMasterWallet(null);
+        return;
+      }
+
       try {
         const res = await api.get('/master-wallet');
         setMasterWallet(res.data);
-      } catch (error) {
-        console.error('Failed to load master wallet:', error);
+      } catch (error: any) {
+        // Don't log 401 errors as they're expected when not authenticated
+        if (error.response?.status !== 401) {
+          console.error('Failed to load master wallet:', error);
+        }
+        // If 401, just clear the wallet display but don't clear the token
+        // The token verification useEffect handles that
+        if (error.response?.status === 401) {
+          setMasterWallet(null);
+        }
       }
     };
 
-    loadMasterWallet();
+    // Only load if authenticated
+    if (isAuthenticated) {
+      loadMasterWallet();
+    } else {
+      setMasterWallet(null);
+    }
 
-    if (socket) {
+    if (socket && isAuthenticated) {
       socket.on('master-wallet:created', () => loadMasterWallet());
       socket.on('master-wallet:withdrawn', () => loadMasterWallet());
       socket.on('funds:distributed', () => loadMasterWallet());
       socket.on('funds:recovered', () => loadMasterWallet());
     }
 
-    // Auto-refresh master wallet balance every 30 seconds (reduced to avoid rate limiting)
-    const interval = setInterval(() => {
-      loadMasterWallet();
-    }, 30000);
+    // Auto-refresh master wallet balance every 30 seconds (only when authenticated)
+    let interval: NodeJS.Timeout | null = null;
+    if (isAuthenticated) {
+      interval = setInterval(() => {
+        loadMasterWallet();
+      }, 30000);
+    }
 
     return () => {
       if (socket) {
@@ -264,9 +287,9 @@ function App() {
         socket.off('funds:distributed');
         socket.off('funds:recovered');
       }
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
-  }, [socket]);
+  }, [socket, isAuthenticated]);
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">

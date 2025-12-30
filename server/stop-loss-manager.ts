@@ -286,3 +286,4 @@ class StopLossManager {
 export const stopLossManager = new StopLossManager();
 
 
+

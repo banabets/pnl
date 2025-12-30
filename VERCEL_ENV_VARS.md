@@ -94,3 +94,4 @@ Una vez configurado:
 - ✅ Socket.IO funcionando
 - ✅ Todas las APIs funcionando
 
+

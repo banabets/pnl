@@ -41,35 +41,17 @@ api.interceptors.response.use(
       const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Too many requests. Please wait a moment.';
       console.warn('⚠️ Rate limit exceeded:', errorMessage);
       // Don't clear token on rate limit - the user is still authenticated
-      // Just reject the promise so the component can handle it gracefully
       return Promise.reject(error);
     }
-    
-    // Only handle 401 errors that are authentication-related
+
+    // For 401 errors, NEVER automatically clear the token or redirect
+    // Let the individual components handle this gracefully
+    // The token should only be cleared on explicit logout or when the auth check confirms it's invalid
     if (error.response?.status === 401) {
-      const errorMessage = error.response?.data?.error || '';
-      const isAuthError = errorMessage.includes('token') || 
-                         errorMessage.includes('Authentication') || 
-                         errorMessage.includes('expired') ||
-                         errorMessage.includes('Invalid') ||
-                         error.config?.url?.includes('/auth/');
-      
-      // Only clear token if it's a real authentication error, not a network error
-      // Network errors don't have error.response, so we ignore those
-      if (isAuthError && error.response) {
-        // Don't clear token if we're already on the login/profile page
-        // This prevents clearing token when checking auth status
-        const isAuthPage = window.location.pathname === '/' || 
-                          window.location.pathname.includes('profile');
-        
-        // Only clear and redirect if not on auth page
-        if (!isAuthPage) {
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('userId');
-          window.location.href = '/';
-        }
-      }
+      // Just log it and let the component handle it
+      console.warn('🔒 Authentication required for:', error.config?.url);
     }
+
     return Promise.reject(error);
   }
 );

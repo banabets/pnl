@@ -238,3 +238,4 @@ Test the system:
 - Activity logs are limited to last 10,000 entries
 - User data is stored in JSON files (consider database for production)
 
+

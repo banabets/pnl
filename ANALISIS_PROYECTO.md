@@ -544,3 +544,4 @@ POST /api/stop-loss/create
 **Versión analizada**: 1.0.0
 **Estado**: Producción (con mejoras pendientes)
 
+

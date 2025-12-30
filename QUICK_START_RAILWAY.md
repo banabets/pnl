@@ -90,3 +90,4 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || 'mongodb
 
 **¡Eso es todo!** Tu app debería funcionar con MongoDB en Railway. 🚀
 
+
