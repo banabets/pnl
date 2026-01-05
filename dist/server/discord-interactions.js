@@ -47,15 +47,41 @@ function verifyDiscordSignature(body, signature, timestamp) {
         console.warn('⚠️ DISCORD_PUBLIC_KEY not set, skipping signature verification');
         return true; // Allow in development
     }
+    if (!signature || !timestamp) {
+        console.error('Missing signature or timestamp');
+        return false;
+    }
     try {
         // Discord uses Ed25519 signatures
-        const message = Buffer.from(timestamp + body);
+        // The message is: timestamp + body (as string)
+        const message = Buffer.from(timestamp + body, 'utf8');
+        // Signature is hex-encoded
         const signatureBuffer = Buffer.from(signature, 'hex');
+        // Public key is hex-encoded (64 characters = 32 bytes)
         const publicKeyBuffer = Buffer.from(DISCORD_PUBLIC_KEY, 'hex');
-        return nacl.sign.detached.verify(message, signatureBuffer, publicKeyBuffer);
+        if (signatureBuffer.length !== 64) {
+            console.error(`Invalid signature length: ${signatureBuffer.length}, expected 64`);
+            return false;
+        }
+        if (publicKeyBuffer.length !== 32) {
+            console.error(`Invalid public key length: ${publicKeyBuffer.length}, expected 32`);
+            return false;
+        }
+        const isValid = nacl.sign.detached.verify(message, signatureBuffer, publicKeyBuffer);
+        if (!isValid) {
+            console.error('Signature verification failed');
+            console.error('Message length:', message.length);
+            console.error('Signature (first 16 chars):', signature.substring(0, 16));
+            console.error('Public key (first 16 chars):', DISCORD_PUBLIC_KEY.substring(0, 16));
+        }
+        return isValid;
     }
     catch (error) {
         console.error('Error verifying Discord signature:', error);
+        if (error instanceof Error) {
+            console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
+        }
         return false;
     }
 }
