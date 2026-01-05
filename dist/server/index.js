@@ -152,6 +152,8 @@ const copy_trading_1 = require("./copy-trading");
 const token_feed_1 = require("./token-feed");
 const token_enricher_worker_1 = require("./token-enricher-worker");
 const token_indexer_1 = require("./token-indexer");
+// Discord Interactions
+const discord_interactions_1 = require("./discord-interactions");
 // MongoDB Connection
 const database_3 = require("./database");
 // Connect to MongoDB
@@ -4731,7 +4733,7 @@ app.post('/api/discord/interactions', discordInteractionsParser, async (req, res
         // Parse JSON from raw body
         const body = JSON.parse(req.body.toString());
         req.body = body;
-        await handleDiscordInteraction(req, res, token_feed_1.tokenFeed);
+        await (0, discord_interactions_1.handleDiscordInteraction)(req, res, token_feed_1.tokenFeed);
     }
     catch (error) {
         console.error('Error handling Discord interaction:', error);

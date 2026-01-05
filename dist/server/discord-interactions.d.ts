@@ -1,5 +1,5 @@
 /**
- * Verify Discord interaction signature
+ * Verify Discord interaction signature (Ed25519)
  */
 export declare function verifyDiscordSignature(body: string, signature: string, timestamp: string): boolean;
 /**

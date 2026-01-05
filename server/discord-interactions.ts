@@ -1,12 +1,12 @@
 // Discord Interactions Handler
 // Handles Discord Slash Commands and Interactions
 
-import nacl from 'tweetnacl';
+import * as nacl from 'tweetnacl';
 
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY || '';
 
 /**
- * Verify Discord interaction signature
+ * Verify Discord interaction signature (Ed25519)
  */
 export function verifyDiscordSignature(
   body: string,
@@ -19,15 +19,12 @@ export function verifyDiscordSignature(
   }
 
   try {
-    const message = timestamp + body;
-    const hmac = crypto.createHmac('sha256', Buffer.from(DISCORD_PUBLIC_KEY, 'hex'));
-    hmac.update(message);
-    const calculatedSignature = hmac.digest('hex');
+    // Discord uses Ed25519 signatures
+    const message = Buffer.from(timestamp + body);
+    const signatureBuffer = Buffer.from(signature, 'hex');
+    const publicKeyBuffer = Buffer.from(DISCORD_PUBLIC_KEY, 'hex');
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(calculatedSignature, 'hex')
-    );
+    return nacl.sign.detached.verify(message, signatureBuffer, publicKeyBuffer);
   } catch (error) {
     console.error('Error verifying Discord signature:', error);
     return false;

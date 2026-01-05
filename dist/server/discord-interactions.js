@@ -37,9 +37,10 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyDiscordSignature = verifyDiscordSignature;
 exports.handleDiscordInteraction = handleDiscordInteraction;
+const nacl = __importStar(require("tweetnacl"));
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY || '';
 /**
- * Verify Discord interaction signature
+ * Verify Discord interaction signature (Ed25519)
  */
 function verifyDiscordSignature(body, signature, timestamp) {
     if (!DISCORD_PUBLIC_KEY) {
@@ -47,11 +48,11 @@ function verifyDiscordSignature(body, signature, timestamp) {
         return true; // Allow in development
     }
     try {
-        const message = timestamp + body;
-        const hmac = crypto.createHmac('sha256', Buffer.from(DISCORD_PUBLIC_KEY, 'hex'));
-        hmac.update(message);
-        const calculatedSignature = hmac.digest('hex');
-        return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(calculatedSignature, 'hex'));
+        // Discord uses Ed25519 signatures
+        const message = Buffer.from(timestamp + body);
+        const signatureBuffer = Buffer.from(signature, 'hex');
+        const publicKeyBuffer = Buffer.from(DISCORD_PUBLIC_KEY, 'hex');
+        return nacl.sign.detached.verify(message, signatureBuffer, publicKeyBuffer);
     }
     catch (error) {
         console.error('Error verifying Discord signature:', error);

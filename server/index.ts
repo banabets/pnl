@@ -168,6 +168,9 @@ import { tokenFeed } from './token-feed';
 import { tokenEnricherWorker } from './token-enricher-worker';
 import { tokenIndexer } from './token-indexer';
 
+// Discord Interactions
+import { handleDiscordInteraction } from './discord-interactions';
+
 // MongoDB Connection
 import { connectDatabase, isConnected } from './database';
 
