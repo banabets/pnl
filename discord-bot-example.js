@@ -1,6 +1,9 @@
 // Discord Bot Example - Token Lookup by Mint Address
-// Install: npm install discord.js
+// Install: npm install discord.js dotenv
 // Usage: node discord-bot-example.js
+// 
+// App ID: 1457643453797367909
+// Invite URL: https://discord.com/api/oauth2/authorize?client_id=1457643453797367909&permissions=274877906944&scope=bot
 
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 require('dotenv').config();
@@ -16,12 +19,17 @@ const client = new Client({
 // Your server API URL (change this to your deployed URL)
 const API_URL = process.env.API_URL || 'http://localhost:3001';
 
+// Discord Application ID (for OAuth/invite links)
+const DISCORD_APP_ID = process.env.DISCORD_APP_ID || '1457643453797367909';
+
 // Command prefix
 const PREFIX = '!';
 
 client.once('ready', () => {
   console.log(`✅ Discord bot logged in as ${client.user.tag}`);
   console.log(`📡 API URL: ${API_URL}`);
+  console.log(`🆔 App ID: ${DISCORD_APP_ID}`);
+  console.log(`🔗 Invite URL: https://discord.com/api/oauth2/authorize?client_id=${DISCORD_APP_ID}&permissions=274877906944&scope=bot`);
 });
 
 client.on('messageCreate', async (message) => {

@@ -22,15 +22,23 @@ API_URL=https://tu-servidor.com  # O http://localhost:3001 para desarrollo
 ### 3. Obtener Token de Discord Bot
 
 1. Ve a [Discord Developer Portal](https://discord.com/developers/applications)
-2. Crea una nueva aplicación
-3. Ve a "Bot" → "Add Bot"
+2. Si ya tienes una aplicación, selecciónala (App ID: `1457643453797367909`)
+3. Ve a "Bot" → "Add Bot" (si no lo has hecho)
 4. Copia el token y pégalo en `.env`
 5. Habilita estos intents:
    - `MESSAGE CONTENT INTENT` (requerido para leer mensajes)
    - `SERVER MEMBERS INTENT` (opcional)
 
+**App ID configurado:** `1457643453797367909`
+
 ### 4. Invitar el bot a tu servidor
 
+**Opción rápida (con App ID configurado):**
+```
+https://discord.com/api/oauth2/authorize?client_id=1457643453797367909&permissions=274877906944&scope=bot
+```
+
+**O manualmente:**
 1. En Discord Developer Portal → "OAuth2" → "URL Generator"
 2. Selecciona:
    - `bot`
