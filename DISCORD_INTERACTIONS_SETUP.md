@@ -22,17 +22,17 @@ Agrega estas variables a tu `.env`:
 # Discord Bot Token (ya lo tienes)
 DISCORD_BOT_TOKEN=tu_token_del_bot
 
-# Discord Public Key (NUEVO - necesario para verificar firmas)
-DISCORD_PUBLIC_KEY=tu_public_key_de_discord
+# Discord Public Key (NECESARIO para verificar firmas)
+# App ID: 1457643453797367909
+DISCORD_PUBLIC_KEY=499c4c830721d542d34274d5d7b58ec05ce3f12b11e9e54ff44c4ff6dbdb228c
 ```
 
-## 🔍 Cómo Obtener el Public Key
+## 🔍 Public Key Configurado
 
-1. Ve a [Discord Developer Portal](https://discord.com/developers/applications)
-2. Selecciona tu aplicación (App ID: `1457643453797367909`)
-3. Ve a **General Information**
-4. Copia el **Public Key** (está en la misma página donde está el App ID)
-5. Pégalo en `.env` como `DISCORD_PUBLIC_KEY`
+**App ID:** `1457643453797367909`  
+**Public Key:** `499c4c830721d542d34274d5d7b58ec05ce3f12b11e9e54ff44c4ff6dbdb228c`
+
+Este Public Key ya está configurado para tu aplicación. Solo necesitas agregarlo a tus variables de entorno.
 
 ## ✅ Verificación del Endpoint
 
@@ -48,9 +48,11 @@ Cuando pongas la URL en Discord Developer Portal:
 
 ```bash
 # En tu servidor (Railway, Vercel, etc.)
-DISCORD_PUBLIC_KEY=tu_public_key_aqui
+DISCORD_PUBLIC_KEY=499c4c830721d542d34274d5d7b58ec05ce3f12b11e9e54ff44c4ff6dbdb228c
 DISCORD_BOT_TOKEN=tu_bot_token_aqui
 ```
+
+**Nota:** El Public Key ya está configurado. Solo necesitas agregar tu `DISCORD_BOT_TOKEN`.
 
 ### 2. Registrar el Endpoint en Discord
 
