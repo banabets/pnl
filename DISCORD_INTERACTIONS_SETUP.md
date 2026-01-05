@@ -5,14 +5,14 @@
 En el **Discord Developer Portal** → **General Information** → **Interactions Endpoint URL**, pon:
 
 ```
-https://tu-servidor.com/api/discord/interactions
+https://pnl.onl/api/discord/interactions
 ```
 
-**Ejemplos:**
-- Producción: `https://tu-dominio.com/api/discord/interactions`
-- Railway: `https://tu-app.railway.app/api/discord/interactions`
-- Vercel: `https://tu-app.vercel.app/api/discord/interactions`
-- Local (desarrollo): `http://localhost:3001/api/discord/interactions` (usar ngrok para testing)
+**Tu sitio:** `https://pnl.onl`  
+**Endpoint completo:** `https://pnl.onl/api/discord/interactions`
+
+**Para desarrollo local:**
+- Local: `http://localhost:3001/api/discord/interactions` (usar ngrok para testing)
 
 ## 🔑 Variables de Entorno Requeridas
 
@@ -57,11 +57,11 @@ DISCORD_BOT_TOKEN=tu_bot_token_aqui
 ### 2. Registrar el Endpoint en Discord
 
 1. Ve a [Discord Developer Portal](https://discord.com/developers/applications)
-2. Selecciona tu aplicación
+2. Selecciona tu aplicación (App ID: `1457643453797367909`)
 3. Ve a **General Information**
-4. En **Interactions Endpoint URL**, pon: `https://tu-servidor.com/api/discord/interactions`
+4. En **Interactions Endpoint URL**, pon: `https://pnl.onl/api/discord/interactions`
 5. Haz clic en **Save Changes**
-6. Discord verificará automáticamente el endpoint
+6. Discord verificará automáticamente el endpoint (deberías ver un checkmark verde ✅)
 
 ### 3. Crear Slash Commands (Opcional)
 

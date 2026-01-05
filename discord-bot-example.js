@@ -16,8 +16,8 @@ const client = new Client({
   ],
 });
 
-// Your server API URL (change this to your deployed URL)
-const API_URL = process.env.API_URL || 'http://localhost:3001';
+// Your server API URL
+const API_URL = process.env.API_URL || 'https://pnl.onl';
 
 // Discord Application ID (for OAuth/invite links)
 const DISCORD_APP_ID = process.env.DISCORD_APP_ID || '1457643453797367909';

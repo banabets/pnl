@@ -16,7 +16,7 @@ npm install discord.js dotenv
 
 ```bash
 DISCORD_BOT_TOKEN=tu_token_del_bot_de_discord
-API_URL=https://tu-servidor.com  # O http://localhost:3001 para desarrollo
+API_URL=https://pnl.onl  # Tu sitio web
 DISCORD_PUBLIC_KEY=499c4c830721d542d34274d5d7b58ec05ce3f12b11e9e54ff44c4ff6dbdb228c  # Para Interactions Endpoint
 ```
 
