@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -152,8 +185,6 @@ const copy_trading_1 = require("./copy-trading");
 const token_feed_1 = require("./token-feed");
 const token_enricher_worker_1 = require("./token-enricher-worker");
 const token_indexer_1 = require("./token-indexer");
-// Discord Interactions
-const discord_interactions_1 = require("./discord-interactions");
 // MongoDB Connection
 const database_3 = require("./database");
 // Connect to MongoDB
@@ -190,10 +221,41 @@ const io = new socket_io_1.Server(httpServer, {
     },
 });
 app.use((0, cors_1.default)());
+// Discord Interactions endpoint - MUST be BEFORE express.json() to get raw body
+// This endpoint needs the raw body for signature verification
+app.post('/api/discord/interactions', express_1.default.raw({ type: 'application/json' }), async (req, res) => {
+    try {
+        // Get raw body string BEFORE parsing
+        const rawBody = req.body.toString();
+        // Get signature headers
+        const signature = req.headers['x-signature-ed25519'];
+        const timestamp = req.headers['x-signature-timestamp'];
+        // Parse JSON for processing
+        const body = JSON.parse(rawBody);
+        // Handle PING immediately (Discord verification) - respond before signature check in dev
+        if (body.type === 1) {
+            // For PING, we can respond immediately if signature verification is optional in dev
+            // But we should still verify if public key is set
+            if (process.env.DISCORD_PUBLIC_KEY) {
+                const { verifyDiscordSignature } = await Promise.resolve().then(() => __importStar(require('./discord-interactions')));
+                if (!verifyDiscordSignature(rawBody, signature || '', timestamp || '')) {
+                    return res.status(401).json({ error: 'Invalid signature' });
+                }
+            }
+            return res.json({ type: 1 }); // PONG
+        }
+        // For other interactions, verify signature and handle
+        req.body = body;
+        const { handleDiscordInteraction } = await Promise.resolve().then(() => __importStar(require('./discord-interactions')));
+        await handleDiscordInteraction(req, res, token_feed_1.tokenFeed, rawBody);
+    }
+    catch (error) {
+        console.error('Error handling Discord interaction:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// Now apply express.json() for all other routes
 app.use(express_1.default.json());
-// Discord Interactions endpoint - needs raw body for signature verification
-// This must be BEFORE express.json() middleware for this route
-const discordInteractionsParser = express_1.default.raw({ type: 'application/json' });
 // Serve static files from React app
 const buildPath = path_1.default.join(__dirname, '../web/build');
 app.use(express_1.default.static(buildPath));
@@ -4726,20 +4788,7 @@ app.get('/api/tokens/:mint', async (req, res) => {
         });
     }
 });
-// Discord Interactions Webhook Endpoint
-// This is the URL you put in Discord Developer Portal → Interactions Endpoint URL
-app.post('/api/discord/interactions', discordInteractionsParser, async (req, res) => {
-    try {
-        // Parse JSON from raw body
-        const body = JSON.parse(req.body.toString());
-        req.body = body;
-        await (0, discord_interactions_1.handleDiscordInteraction)(req, res, token_feed_1.tokenFeed);
-    }
-    catch (error) {
-        console.error('Error handling Discord interaction:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
+// Discord Interactions endpoint is defined above (before express.json())
 // Catch all handler: send back React's index.html file
 app.get('*', (req, res) => {
     res.sendFile(path_1.default.join(buildPath, 'index.html'));

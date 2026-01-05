@@ -210,11 +210,46 @@ const io = new SocketServer(httpServer, {
 });
 
 app.use(cors());
-app.use(express.json());
 
-// Discord Interactions endpoint - needs raw body for signature verification
-// This must be BEFORE express.json() middleware for this route
-const discordInteractionsParser = express.raw({ type: 'application/json' });
+// Discord Interactions endpoint - MUST be BEFORE express.json() to get raw body
+// This endpoint needs the raw body for signature verification
+app.post('/api/discord/interactions', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    // Get raw body string BEFORE parsing
+    const rawBody = req.body.toString();
+    
+    // Get signature headers
+    const signature = req.headers['x-signature-ed25519'] as string;
+    const timestamp = req.headers['x-signature-timestamp'] as string;
+
+    // Parse JSON for processing
+    const body = JSON.parse(rawBody);
+    
+    // Handle PING immediately (Discord verification) - respond before signature check in dev
+    if (body.type === 1) {
+      // For PING, we can respond immediately if signature verification is optional in dev
+      // But we should still verify if public key is set
+      if (process.env.DISCORD_PUBLIC_KEY) {
+        const { verifyDiscordSignature } = await import('./discord-interactions');
+        if (!verifyDiscordSignature(rawBody, signature || '', timestamp || '')) {
+          return res.status(401).json({ error: 'Invalid signature' });
+        }
+      }
+      return res.json({ type: 1 }); // PONG
+    }
+
+    // For other interactions, verify signature and handle
+    req.body = body;
+    const { handleDiscordInteraction } = await import('./discord-interactions');
+    await handleDiscordInteraction(req, res, tokenFeed, rawBody);
+  } catch (error: any) {
+    console.error('Error handling Discord interaction:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Now apply express.json() for all other routes
+app.use(express.json());
 
 // Serve static files from React app
 const buildPath = path.join(__dirname, '../web/build');
@@ -5318,20 +5353,7 @@ app.get('/api/tokens/:mint', async (req, res) => {
   }
 });
 
-// Discord Interactions Webhook Endpoint
-// This is the URL you put in Discord Developer Portal → Interactions Endpoint URL
-app.post('/api/discord/interactions', discordInteractionsParser, async (req, res) => {
-  try {
-    // Parse JSON from raw body
-    const body = JSON.parse(req.body.toString());
-    req.body = body;
-    
-    await handleDiscordInteraction(req, res, tokenFeed);
-  } catch (error: any) {
-    console.error('Error handling Discord interaction:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// Discord Interactions endpoint is defined above (before express.json())
 
 // Catch all handler: send back React's index.html file
 app.get('*', (req, res) => {

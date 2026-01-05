@@ -34,7 +34,7 @@ export function verifyDiscordSignature(
 /**
  * Handle Discord interaction
  */
-export async function handleDiscordInteraction(req: any, res: any, tokenFeed: any): Promise<void> {
+export async function handleDiscordInteraction(req: any, res: any, tokenFeed: any, rawBody?: string): Promise<void> {
   const signature = req.headers['x-signature-ed25519'] as string;
   const timestamp = req.headers['x-signature-timestamp'] as string;
 
@@ -42,11 +42,12 @@ export async function handleDiscordInteraction(req: any, res: any, tokenFeed: an
     return res.status(401).json({ error: 'Missing signature headers' });
   }
 
-  // Get raw body for signature verification
-  const body = JSON.stringify(req.body);
+  // Use provided raw body or stringify parsed body
+  const bodyString = rawBody || JSON.stringify(req.body);
 
   // Verify signature
-  if (!verifyDiscordSignature(body, signature, timestamp)) {
+  if (!verifyDiscordSignature(bodyString, signature, timestamp)) {
+    console.error('Invalid Discord signature. Public key set:', !!process.env.DISCORD_PUBLIC_KEY);
     return res.status(401).json({ error: 'Invalid signature' });
   }
 

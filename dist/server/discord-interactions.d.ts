@@ -5,5 +5,5 @@ export declare function verifyDiscordSignature(body: string, signature: string, 
 /**
  * Handle Discord interaction
  */
-export declare function handleDiscordInteraction(req: any, res: any, tokenFeed: any): Promise<void>;
+export declare function handleDiscordInteraction(req: any, res: any, tokenFeed: any, rawBody?: string): Promise<void>;
 //# sourceMappingURL=discord-interactions.d.ts.map

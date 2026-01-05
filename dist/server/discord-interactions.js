@@ -62,16 +62,17 @@ function verifyDiscordSignature(body, signature, timestamp) {
 /**
  * Handle Discord interaction
  */
-async function handleDiscordInteraction(req, res, tokenFeed) {
+async function handleDiscordInteraction(req, res, tokenFeed, rawBody) {
     const signature = req.headers['x-signature-ed25519'];
     const timestamp = req.headers['x-signature-timestamp'];
     if (!signature || !timestamp) {
         return res.status(401).json({ error: 'Missing signature headers' });
     }
-    // Get raw body for signature verification
-    const body = JSON.stringify(req.body);
+    // Use provided raw body or stringify parsed body
+    const bodyString = rawBody || JSON.stringify(req.body);
     // Verify signature
-    if (!verifyDiscordSignature(body, signature, timestamp)) {
+    if (!verifyDiscordSignature(bodyString, signature, timestamp)) {
+        console.error('Invalid Discord signature. Public key set:', !!process.env.DISCORD_PUBLIC_KEY);
         return res.status(401).json({ error: 'Invalid signature' });
     }
     const interaction = req.body;
