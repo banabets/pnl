@@ -166,6 +166,7 @@ import { CopyTradingService, initCopyTrading, getCopyTrading, FollowedWallet, Co
 // Token Feed Service
 import { tokenFeed } from './token-feed';
 import { tokenEnricherWorker } from './token-enricher-worker';
+import { tokenIndexer } from './token-indexer';
 
 // MongoDB Connection
 import { connectDatabase, isConnected } from './database';
@@ -5198,16 +5199,115 @@ app.get('/api/tokens/trending', async (req, res) => {
   }
 });
 
-// Get specific token by mint
+// Get specific token by mint - Enhanced endpoint for Discord bots and external use
 app.get('/api/tokens/:mint', async (req, res) => {
   try {
-    const token = await tokenFeed.getToken(req.params.mint);
-    if (!token) {
-      return res.status(404).json({ error: 'Token not found' });
+    const mint = req.params.mint;
+    console.log(`🔍 Token lookup requested for: ${mint.substring(0, 8)}...`);
+    
+    // Try to get from tokenFeed first (most up-to-date)
+    let token = await tokenFeed.getToken(mint);
+    
+    // If not found, try to get from MongoDB (if available)
+    if (!token && tokenIndexer.isActive()) {
+      const dbToken = await tokenIndexer.getToken(mint);
+      if (dbToken) {
+        // Convert TokenIndexData to TokenData format
+        token = {
+          mint: dbToken.mint,
+          name: dbToken.name || `Token ${dbToken.mint.slice(0, 8)}`,
+          symbol: dbToken.symbol || 'UNK',
+          imageUrl: dbToken.imageUrl,
+          price: dbToken.price || 0,
+          priceChange5m: dbToken.priceChange5m || 0,
+          priceChange1h: dbToken.priceChange1h || 0,
+          priceChange24h: dbToken.priceChange24h || 0,
+          volume5m: dbToken.volume5m || 0,
+          volume1h: dbToken.volume1h || 0,
+          volume24h: dbToken.volume24h || 0,
+          liquidity: dbToken.liquidity || 0,
+          marketCap: dbToken.marketCap || 0,
+          fdv: dbToken.marketCap || 0,
+          holders: dbToken.holders,
+          txns5m: dbToken.txns5m || { buys: 0, sells: 0 },
+          txns1h: dbToken.txns1h || { buys: 0, sells: 0 },
+          txns24h: dbToken.txns24h || { buys: 0, sells: 0 },
+          createdAt: dbToken.createdAt,
+          pairAddress: dbToken.pairAddress || '',
+          dexId: dbToken.dexId || 'unknown',
+          age: dbToken.age || 0,
+          isNew: dbToken.isNew || false,
+          isGraduating: dbToken.isGraduating || false,
+          isTrending: dbToken.isTrending || false,
+          riskScore: dbToken.riskScore || 50,
+        };
+      }
     }
-    res.json({ success: true, token });
+    
+    if (!token) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Token not found',
+        mint: mint
+      });
+    }
+    
+    // Return comprehensive token data
+    res.json({ 
+      success: true, 
+      token: {
+        // Basic info
+        mint: token.mint,
+        name: token.name,
+        symbol: token.symbol,
+        imageUrl: token.imageUrl,
+        
+        // Price data
+        price: token.price,
+        priceChange5m: token.priceChange5m,
+        priceChange1h: token.priceChange1h,
+        priceChange24h: token.priceChange24h,
+        
+        // Market data
+        marketCap: token.marketCap,
+        liquidity: token.liquidity,
+        fdv: token.fdv,
+        holders: token.holders,
+        
+        // Volume data
+        volume5m: token.volume5m,
+        volume1h: token.volume1h,
+        volume24h: token.volume24h,
+        
+        // Transaction data
+        txns5m: token.txns5m,
+        txns1h: token.txns1h,
+        txns24h: token.txns24h,
+        
+        // Metadata
+        createdAt: token.createdAt,
+        age: token.age, // in minutes
+        pairAddress: token.pairAddress,
+        dexId: token.dexId,
+        
+        // Flags
+        isNew: token.isNew,
+        isGraduating: token.isGraduating,
+        isTrending: token.isTrending,
+        riskScore: token.riskScore,
+        
+        // Links (for Discord embeds)
+        dexScreenerUrl: `https://dexscreener.com/solana/${token.pairAddress || token.mint}`,
+        birdeyeUrl: `https://birdeye.so/token/${token.mint}`,
+        solscanUrl: `https://solscan.io/token/${token.mint}`,
+      }
+    });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching token:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 
