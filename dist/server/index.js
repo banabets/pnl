@@ -189,6 +189,9 @@ const io = new socket_io_1.Server(httpServer, {
 });
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
+// Discord Interactions endpoint - needs raw body for signature verification
+// This must be BEFORE express.json() middleware for this route
+const discordInteractionsParser = express_1.default.raw({ type: 'application/json' });
 // Serve static files from React app
 const buildPath = path_1.default.join(__dirname, '../web/build');
 app.use(express_1.default.static(buildPath));
@@ -4719,6 +4722,20 @@ app.get('/api/tokens/:mint', async (req, res) => {
             success: false,
             error: error.message
         });
+    }
+});
+// Discord Interactions Webhook Endpoint
+// This is the URL you put in Discord Developer Portal → Interactions Endpoint URL
+app.post('/api/discord/interactions', discordInteractionsParser, async (req, res) => {
+    try {
+        // Parse JSON from raw body
+        const body = JSON.parse(req.body.toString());
+        req.body = body;
+        await handleDiscordInteraction(req, res, token_feed_1.tokenFeed);
+    }
+    catch (error) {
+        console.error('Error handling Discord interaction:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 // Catch all handler: send back React's index.html file

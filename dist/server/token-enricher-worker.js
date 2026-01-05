@@ -144,8 +144,8 @@ class TokenEnricherWorker {
                 }
             }
         }
-        // Limit to 50 tokens per batch
-        return tokens.slice(0, 50);
+        // Limit to 10 tokens per batch (to avoid rate limits with DexScreener)
+        return tokens.slice(0, 10);
     }
     /**
      * Enrich a single token
