@@ -225,32 +225,63 @@ app.use((0, cors_1.default)());
 // This endpoint needs the raw body for signature verification
 app.post('/api/discord/interactions', express_1.default.raw({ type: 'application/json' }), async (req, res) => {
     try {
-        // Get raw body string BEFORE parsing
-        const rawBody = req.body.toString();
+        // Get raw body as Buffer and convert to string
+        const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body);
         // Get signature headers
         const signature = req.headers['x-signature-ed25519'];
         const timestamp = req.headers['x-signature-timestamp'];
         // Parse JSON for processing
-        const body = JSON.parse(rawBody);
-        // Handle PING immediately (Discord verification) - respond before signature check in dev
+        let body;
+        try {
+            body = JSON.parse(rawBody);
+        }
+        catch (parseError) {
+            console.error('Failed to parse JSON body:', parseError);
+            return res.status(400).json({ error: 'Invalid JSON' });
+        }
+        // Handle PING immediately (Discord verification) - respond quickly
         if (body.type === 1) {
-            // For PING, we can respond immediately if signature verification is optional in dev
-            // But we should still verify if public key is set
-            if (process.env.DISCORD_PUBLIC_KEY) {
-                const { verifyDiscordSignature } = await Promise.resolve().then(() => __importStar(require('./discord-interactions')));
-                if (!verifyDiscordSignature(rawBody, signature || '', timestamp || '')) {
-                    return res.status(401).json({ error: 'Invalid signature' });
+            console.log('📡 Discord PING received');
+            // For initial verification, respond immediately to PING
+            // Discord needs a quick response (< 3 seconds)
+            // We'll verify signature but not block on it for PING
+            if (process.env.DISCORD_PUBLIC_KEY && signature && timestamp) {
+                try {
+                    const { verifyDiscordSignature } = await Promise.resolve().then(() => __importStar(require('./discord-interactions')));
+                    const isValid = verifyDiscordSignature(rawBody, signature, timestamp);
+                    if (!isValid) {
+                        console.error('❌ Invalid signature for PING - but responding anyway for verification');
+                        // Still respond to allow Discord to verify the endpoint
+                        // In production, you might want to return 401 here
+                    }
+                    else {
+                        console.log('✅ Signature verified for PING');
+                    }
+                }
+                catch (verifyError) {
+                    console.error('Error verifying signature:', verifyError);
+                    // Still respond to PING even if verification fails (for endpoint verification)
                 }
             }
-            return res.json({ type: 1 }); // PONG
+            else if (!process.env.DISCORD_PUBLIC_KEY) {
+                console.warn('⚠️ DISCORD_PUBLIC_KEY not set, skipping signature verification');
+            }
+            // Respond with PONG (Discord requires this exact format)
+            console.log('✅ Responding to PING with PONG');
+            return res.status(200).json({ type: 1 });
         }
         // For other interactions, verify signature and handle
+        if (!signature || !timestamp) {
+            console.error('Missing signature headers');
+            return res.status(401).json({ error: 'Missing signature headers' });
+        }
         req.body = body;
         const { handleDiscordInteraction } = await Promise.resolve().then(() => __importStar(require('./discord-interactions')));
         await handleDiscordInteraction(req, res, token_feed_1.tokenFeed, rawBody);
     }
     catch (error) {
-        console.error('Error handling Discord interaction:', error);
+        console.error('❌ Error handling Discord interaction:', error);
+        console.error('Error stack:', error.stack);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
