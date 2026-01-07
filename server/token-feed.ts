@@ -7,6 +7,13 @@ import { rateLimiter } from './rate-limiter';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { getMint } from '@solana/spl-token';
 
+// Tokens conocidos a excluir (Wrapped SOL, tokens genéricos, etc.)
+const EXCLUDED_MINTS = new Set([
+  'So11111111111111111111111111111111111111112', // Wrapped SOL
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
+]);
+
 interface TokenData {
   mint: string;
   name: string;
@@ -824,6 +831,24 @@ class TokenFeedService {
    * Fetch latest tokens from on-chain + DexScreener
    */
   async fetchTokens(options: Partial<TokenFeedOptions> = {}): Promise<TokenData[]> {
+    // Filtrar tokens excluidos
+    const filterExcluded = (tokens: TokenData[]): TokenData[] => {
+      return tokens.filter(token => {
+        // Excluir tokens conocidos
+        if (EXCLUDED_MINTS.has(token.mint)) {
+          return false;
+        }
+        // Excluir tokens sin nombre o con nombres genéricos
+        if (!token.name || token.name.trim() === '' || 
+            token.name.toLowerCase() === 'pump fun' ||
+            token.name.toLowerCase() === 'pump.fun' ||
+            token.name.toLowerCase() === 'wrapped solana' ||
+            token.name.toLowerCase() === 'wrapped sol') {
+          return false;
+        }
+        return true;
+      });
+    };
     const {
       filter = 'all',
       minLiquidity = 0, // Allow 0 liquidity for new tokens
@@ -1061,6 +1086,12 @@ class TokenFeedService {
 
         const age = Math.floor((now - createdAt) / 60000); // Age in minutes
 
+        // Excluir tokens conocidos
+        const mint = token.mint || token.address || '';
+        if (EXCLUDED_MINTS.has(mint)) {
+          continue;
+        }
+        
         // Filter out generic pump.fun tokens
         const name = (token.name || '').toLowerCase().trim();
         const symbol = (token.symbol || '').toLowerCase().trim();
@@ -1068,8 +1099,14 @@ class TokenFeedService {
           name === 'pump.fun' ||
           name === 'pump fun' ||
           name === 'pumpfun' ||
+          name === 'wrapped solana' ||
+          name === 'wrapped sol' ||
+          name === 'solana' ||
           symbol === 'pump.fun' ||
-          symbol === 'pumpfun';
+          symbol === 'pumpfun' ||
+          symbol === 'wsol' ||
+          symbol === 'sol' ||
+          !name || name.trim() === ''; // Excluir tokens sin nombre
         
         if (isGeneric) continue;
 
