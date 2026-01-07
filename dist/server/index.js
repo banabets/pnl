@@ -129,6 +129,7 @@ catch (e) {
 // WebSocket listener (should exist)
 const websocket_listener_1 = require("../src/pumpfun/websocket-listener");
 const trades_listener_1 = require("../src/pumpfun/trades-listener");
+const pumpfun_realtime_1 = require("./pumpfun-realtime");
 // PumpFunTransactionParser will be loaded dynamically from dist/ if available
 // User Session Manager
 const user_session_1 = require("./user-session");
@@ -300,6 +301,7 @@ const onChainSearch = PumpFunOnChainSearch ? new PumpFunOnChainSearch() : null;
 const wsListener = new websocket_listener_1.PumpFunWebSocketListener();
 const volumeBot = VolumeBot ? new VolumeBot() : null;
 const tradesListener = new trades_listener_1.TradesListener();
+const pumpFunRealtime = new pumpfun_realtime_1.PumpFunRealtimeListener();
 // Initialize Jupiter & Token Audit services
 const HELIUS_RPC = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
 const TRADING_FEE_PERCENT = 0.5; // 0.5% trading fee
@@ -331,6 +333,47 @@ wsListener.startListening().catch((err) => {
 // Broadcast token updates to connected clients
 wsListener.onTokenUpdate((token) => {
     broadcast('token:new', token);
+});
+// Iniciar PumpFun Realtime Listener (suscripción directa al programa, GRATIS)
+pumpFunRealtime.start().catch((err) => {
+    console.error('Failed to start PumpFun Realtime Listener:', err);
+});
+// Escuchar eventos del PumpFun Realtime Listener y emitirlos vía Socket.IO
+pumpFunRealtime.on('new_token', (event) => {
+    console.log(`📡 Nuevo token en tiempo real: ${event.mint.substring(0, 8)}...`);
+    broadcast('token:new', {
+        mint: event.mint,
+        name: event.name,
+        symbol: event.symbol,
+        signature: event.signature,
+        timestamp: event.timestamp,
+        creator: event.creator,
+        bondingCurve: event.bondingCurve,
+        price: event.price,
+        volume: event.volume,
+        liquidity: event.liquidity,
+        marketCap: event.marketCap,
+        holders: event.holders,
+    });
+});
+pumpFunRealtime.on('token_updated', (event) => {
+    broadcast('token:updated', {
+        mint: event.mint,
+        name: event.name,
+        symbol: event.symbol,
+        price: event.price,
+        volume: event.volume,
+        liquidity: event.liquidity,
+        marketCap: event.marketCap,
+        holders: event.holders,
+    });
+});
+pumpFunRealtime.on('trade', (event) => {
+    broadcast('token:trade', {
+        mint: event.mint,
+        signature: event.signature,
+        timestamp: event.timestamp,
+    });
 });
 // Broadcast helper
 const broadcast = (event, data) => {
