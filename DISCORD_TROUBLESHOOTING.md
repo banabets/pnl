@@ -129,3 +129,4 @@ Esto probará si el endpoint responde correctamente.
 5. Guarda cambios
 6. Discord intentará verificar nuevamente
 
+
