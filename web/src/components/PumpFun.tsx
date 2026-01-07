@@ -327,7 +327,7 @@ export default function PumpFun({ socket }: PumpFunProps) {
             </div>
           )}
           {tradingMethod === 'pumpfun' && (
-            <div className="mt-3 text-xs text-yellow-400/80 bg-yellow-500/10 p-2 rounded">
+            <div className="mt-3 text-xs text-primary-400/80 bg-primary-500/10 p-2 rounded border border-primary-500/20">
               PumpFun opera directamente en la bonding curve. Solo funciona con tokens que aún no han graduado.
             </div>
           )}
