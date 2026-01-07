@@ -974,6 +974,23 @@ class TokenFeedService {
       // Apply base filters (but be lenient for new tokens)
       const beforeFilter = tokens.length;
       tokens = tokens.filter(t => {
+        // Excluir tokens conocidos (Wrapped SOL, USDC, USDT, etc.)
+        if (EXCLUDED_MINTS.has(t.mint)) {
+          return false;
+        }
+        
+        // Excluir tokens sin nombre o con nombres genéricos
+        if (!t.name || t.name.trim() === '' || 
+            t.name.toLowerCase() === 'pump fun' ||
+            t.name.toLowerCase() === 'pump.fun' ||
+            t.name.toLowerCase() === 'wrapped solana' ||
+            t.name.toLowerCase() === 'wrapped sol' ||
+            t.name.toLowerCase() === 'solana' ||
+            t.symbol?.toLowerCase() === 'wsol' ||
+            t.symbol?.toLowerCase() === 'sol') {
+          return false;
+        }
+        
         // For 'new' filter, allow tokens with 0 liquidity
         if (filter === 'new') {
           if (t.age > maxAge) return false;
