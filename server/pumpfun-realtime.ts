@@ -6,6 +6,13 @@ import { EventEmitter } from 'events';
 
 const PUMP_FUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
 
+// Tokens conocidos a excluir (Wrapped SOL, tokens genéricos, etc.)
+const EXCLUDED_MINTS = new Set([
+  'So11111111111111111111111111111111111111112', // Wrapped SOL
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
+]);
+
 export interface PumpFunTokenEvent {
   type: 'new_token' | 'trade' | 'update';
   mint: string;
@@ -89,10 +96,12 @@ export class PumpFunRealtimeListener extends EventEmitter {
             const logsStr = logMessages.join(' ');
             
             // Detectar creación de nuevo token
+            // Buscar patrones más específicos de pump.fun
             if (logsStr.includes('Program log: Instruction: Create') ||
                 logsStr.includes('Program log: Instruction: Initialize') ||
                 logsStr.includes('Program log: Create') ||
-                logsStr.includes('Program log: Initialize')) {
+                logsStr.includes('Program log: Initialize') ||
+                (logsStr.includes('Program log') && logsStr.includes('pump'))) {
               
               console.log(`🆕 Nueva transacción pump.fun detectada: ${signature.substring(0, 16)}...`);
               
@@ -100,10 +109,10 @@ export class PumpFunRealtimeListener extends EventEmitter {
               setTimeout(async () => {
                 try {
                   await this.processTransaction(signature, 'new_token');
-                } catch (error) {
-                  console.warn(`Error procesando transacción ${signature.substring(0, 16)}...:`, error);
+                } catch (error: any) {
+                  console.warn(`Error procesando transacción ${signature.substring(0, 16)}...:`, error.message);
                 }
-              }, 1000); // Delay de 1 segundo para asegurar que la transacción esté disponible
+              }, 1500); // Delay de 1.5 segundos para asegurar que la transacción esté disponible
             }
 
             // Detectar trades (buy/sell)
@@ -170,23 +179,37 @@ export class PumpFunRealtimeListener extends EventEmitter {
 
       // El mint del token generalmente está en las cuentas
       // Para pump.fun, el mint suele estar en las primeras cuentas
-      for (let i = 0; i < Math.min(accountKeys.length, 10); i++) {
+      // Pero necesitamos verificar que sea realmente un token de pump.fun
+      const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+      
+      for (let i = 0; i < Math.min(accountKeys.length, 15); i++) {
         const account = accountKeys[i];
         const pubkey = account instanceof PublicKey ? account : new PublicKey(account);
+        const pubkeyStr = pubkey.toBase58();
+        
+        // Excluir tokens conocidos (Wrapped SOL, USDC, etc.)
+        if (EXCLUDED_MINTS.has(pubkeyStr)) {
+          continue;
+        }
         
         // Verificar si es un token mint (tiene metadata de token)
         try {
           const accountInfo = await this.connection.getAccountInfo(pubkey);
           if (accountInfo && accountInfo.data.length > 0) {
             // Verificar si es un mint de token SPL
-            // Los mints de token tienen una estructura específica
-            if (accountInfo.owner.equals(new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'))) {
-              // Es un token mint
-              tokenMint = pubkey.toBase58();
-              break;
+            if (accountInfo.owner.equals(TOKEN_PROGRAM_ID)) {
+              // Verificar que el tamaño del data sea correcto para un mint (82 bytes mínimo)
+              if (accountInfo.data.length >= 82) {
+                // Verificar que no sea un token conocido excluido
+                if (!EXCLUDED_MINTS.has(pubkeyStr)) {
+                  tokenMint = pubkeyStr;
+                  console.log(`✅ Token mint encontrado: ${pubkeyStr.substring(0, 8)}...`);
+                  break;
+                }
+              }
             }
           }
-        } catch {
+        } catch (error) {
           // Continuar buscando
         }
       }
@@ -231,6 +254,12 @@ export class PumpFunRealtimeListener extends EventEmitter {
       }
 
       if (eventType === 'new_token' && tokenMint) {
+        // Verificar que no sea un token excluido
+        if (EXCLUDED_MINTS.has(tokenMint)) {
+          console.log(`⚠️ Token excluido detectado (Wrapped SOL o similar): ${tokenMint.substring(0, 8)}...`);
+          return;
+        }
+
         const event: PumpFunTokenEvent = {
           type: 'new_token',
           mint: tokenMint,
@@ -242,14 +271,14 @@ export class PumpFunRealtimeListener extends EventEmitter {
 
         console.log(`🆕 Nuevo token detectado: ${tokenMint.substring(0, 8)}...`);
         
-        // Emitir evento
+        // Emitir evento INMEDIATAMENTE con información básica
         this.emit('new_token', event);
         this.emit('token_event', event);
 
         // Intentar obtener más información del token (nombre, símbolo, etc.)
         // Esto se puede hacer de forma asíncrona sin bloquear
-        this.enrichTokenInfo(tokenMint, event).catch(() => {
-          // Ignorar errores de enriquecimiento
+        this.enrichTokenInfo(tokenMint, event).catch((error) => {
+          console.warn(`⚠️ Error enriqueciendo token ${tokenMint.substring(0, 8)}...:`, error.message);
         });
       } else if (eventType === 'trade' && tokenMint) {
         const event: PumpFunTokenEvent = {
@@ -274,33 +303,96 @@ export class PumpFunRealtimeListener extends EventEmitter {
    */
   private async enrichTokenInfo(mint: string, event: PumpFunTokenEvent): Promise<void> {
     try {
-      // Intentar obtener información de pump.fun API
-      const pumpApiUrl = `https://frontend-api.pump.fun/coins/${mint}`;
-      const response = await fetch(pumpApiUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Accept': 'application/json',
-        },
-      });
+      // Método 1: Intentar obtener información de pump.fun API
+      try {
+        const pumpApiUrl = `https://frontend-api.pump.fun/coins/${mint}`;
+        const response = await fetch(pumpApiUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://pump.fun/',
+          },
+          timeout: 5000,
+        } as any);
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Actualizar evento con información enriquecida
-        event.name = data.name || data.token_name || event.name;
-        event.symbol = data.symbol || data.token_symbol || event.symbol;
-        event.price = data.usd_market_cap ? data.usd_market_cap / (data.market_cap || 1) : undefined;
-        event.volume = data.volume_24h || data.volume || undefined;
-        event.liquidity = data.liquidity || undefined;
-        event.marketCap = data.usd_market_cap || data.market_cap || undefined;
-        event.holders = data.holders || undefined;
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Actualizar evento con información enriquecida
+          if (data.name && data.name.trim() && data.name.toLowerCase() !== 'pump fun') {
+            event.name = data.name;
+          }
+          if (data.symbol && data.symbol.trim() && data.symbol.toLowerCase() !== 'pump') {
+            event.symbol = data.symbol;
+          }
+          if (data.token_name && !event.name) {
+            event.name = data.token_name;
+          }
+          if (data.token_symbol && !event.symbol) {
+            event.symbol = data.token_symbol;
+          }
+          
+          event.price = data.usd_market_cap ? data.usd_market_cap / (data.market_cap || 1) : undefined;
+          event.volume = data.volume_24h || data.volume || undefined;
+          event.liquidity = data.liquidity || undefined;
+          event.marketCap = data.usd_market_cap || data.market_cap || undefined;
+          event.holders = data.holders || undefined;
 
-        // Emitir evento actualizado
-        this.emit('token_updated', event);
-        this.emit('token_event', event);
+          console.log(`✅ Token enriquecido: ${event.name || event.symbol || mint.substring(0, 8)}...`);
+
+          // Emitir evento actualizado
+          this.emit('token_updated', event);
+          this.emit('token_event', event);
+          return; // Éxito, salir
+        }
+      } catch (pumpError) {
+        console.warn(`⚠️ pump.fun API falló para ${mint.substring(0, 8)}...:`, pumpError);
       }
-    } catch (error) {
-      // Ignorar errores de enriquecimiento
+
+      // Método 2: Intentar obtener de DexScreener como fallback
+      try {
+        const dexUrl = `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
+        const dexResponse = await fetch(dexUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': 'application/json',
+          },
+        });
+
+        if (dexResponse.ok) {
+          const dexData = await dexResponse.json();
+          if (dexData.pairs && dexData.pairs.length > 0) {
+            const pair = dexData.pairs[0];
+            if (pair.baseToken) {
+              if (pair.baseToken.name && !event.name) {
+                event.name = pair.baseToken.name;
+              }
+              if (pair.baseToken.symbol && !event.symbol) {
+                event.symbol = pair.baseToken.symbol;
+              }
+            }
+            event.price = pair.priceUsd ? parseFloat(pair.priceUsd) : undefined;
+            event.volume = pair.volume?.h24 ? parseFloat(pair.volume.h24) : undefined;
+            event.liquidity = pair.liquidity?.usd ? parseFloat(pair.liquidity.usd) : undefined;
+            event.marketCap = pair.marketCap ? parseFloat(pair.marketCap) : undefined;
+
+            if (event.name || event.symbol) {
+              console.log(`✅ Token enriquecido desde DexScreener: ${event.name || event.symbol || mint.substring(0, 8)}...`);
+              this.emit('token_updated', event);
+              this.emit('token_event', event);
+              return;
+            }
+          }
+        }
+      } catch (dexError) {
+        // Ignorar errores de DexScreener
+      }
+
+      // Si no se pudo enriquecer, al menos emitir el evento básico
+      console.warn(`⚠️ No se pudo enriquecer token ${mint.substring(0, 8)}... (sin nombre/símbolo)`);
+      
+    } catch (error: any) {
+      console.warn(`⚠️ Error enriqueciendo token ${mint.substring(0, 8)}...:`, error.message);
     }
   }
 
