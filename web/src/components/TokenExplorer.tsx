@@ -285,22 +285,86 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
 
     // Listen for real-time token updates via WebSocket
     if (socket) {
+      // Nuevo token detectado en tiempo real
       socket.on('token:new', (token: any) => {
-        console.log('New token detected:', token);
-        // Add to tokens list if not already present
+        console.log('🆕 Nuevo token en tiempo real:', token);
+        // Agregar a la lista si no existe
         setTokens((prev) => {
           const exists = prev.some(t => t.mint === token.mint);
-          if (exists) return prev;
+          if (exists) {
+            // Actualizar token existente
+            return prev.map(t => 
+              t.mint === token.mint 
+                ? {
+                    ...t,
+                    name: token.name || t.name,
+                    symbol: token.symbol || t.symbol,
+                    creator: token.creator || t.creator,
+                    market_cap: token.marketCap || t.market_cap,
+                    usd_market_cap: token.marketCap || t.usd_market_cap,
+                    liquidity: token.liquidity || t.liquidity,
+                    volume_24h: token.volume || t.volume_24h,
+                    holders: token.holders || t.holders,
+                    price: token.price || t.price,
+                    created_timestamp: token.timestamp || t.created_timestamp,
+                  }
+                : t
+            );
+          }
+          // Agregar nuevo token al inicio
           return [{
             mint: token.mint,
-            name: `Token ${token.mint.substring(0, 8)}`,
-            symbol: 'TKN',
-            created_timestamp: token.timestamp,
+            name: token.name || `Token ${token.mint.substring(0, 8)}`,
+            symbol: token.symbol || 'TKN',
+            description: '',
+            image_uri: '',
+            created_timestamp: token.timestamp || Date.now() / 1000,
             complete: false,
-            market_cap: 0,
-            usd_market_cap: 0,
-          } as Token, ...prev].slice(0, 50);
+            market_cap: token.marketCap || 0,
+            usd_market_cap: token.marketCap || 0,
+            creator: token.creator || '',
+            liquidity: token.liquidity || 0,
+            volume_24h: token.volume || 0,
+            holders: token.holders || 0,
+            price: token.price || 0,
+            pumpfun: {
+              bonding_curve: token.bondingCurve || '',
+              associated_bonding_curve: '',
+              associated_market: '',
+            },
+          } as Token, ...prev].slice(0, 100); // Mantener hasta 100 tokens
         });
+      });
+
+      // Token actualizado (con más información)
+      socket.on('token:updated', (token: any) => {
+        console.log('🔄 Token actualizado:', token);
+        setTokens((prev) => {
+          return prev.map(t => 
+            t.mint === token.mint 
+              ? {
+                  ...t,
+                  name: token.name || t.name,
+                  symbol: token.symbol || t.symbol,
+                  market_cap: token.marketCap || t.market_cap,
+                  usd_market_cap: token.marketCap || t.usd_market_cap,
+                  liquidity: token.liquidity || t.liquidity,
+                  volume_24h: token.volume || t.volume_24h,
+                  holders: token.holders || t.holders,
+                  price: token.price || t.price,
+                }
+              : t
+          );
+        });
+      });
+
+      // Trade detectado
+      socket.on('token:trade', (trade: any) => {
+        // Actualizar volumen y precio si es el token seleccionado
+        if (selectedToken && selectedToken.mint === trade.mint) {
+          loadTokenPriceData(trade.mint);
+          loadTrades(trade.mint);
+        }
       });
     }
 
@@ -308,16 +372,18 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
     if (autoRefresh) {
       interval = setInterval(() => {
         loadTokens();
-      }, 15000); // Refresh every 15 seconds
+      }, 30000); // Refresh every 30 seconds (menos frecuente ya que tenemos tiempo real)
     }
 
     return () => {
       if (interval) clearInterval(interval);
       if (socket) {
         socket.off('token:new');
+        socket.off('token:updated');
+        socket.off('token:trade');
       }
     };
-  }, [autoRefresh, socket, activeFilter]);
+  }, [autoRefresh, socket, activeFilter, selectedToken]);
 
   useEffect(() => {
     if (selectedToken) {

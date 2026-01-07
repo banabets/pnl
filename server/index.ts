@@ -100,6 +100,7 @@ try {
 // WebSocket listener (should exist)
 import { PumpFunWebSocketListener } from '../src/pumpfun/websocket-listener';
 import { TradesListener } from '../src/pumpfun/trades-listener';
+import { PumpFunRealtimeListener } from './pumpfun-realtime';
 // PumpFunTransactionParser will be loaded dynamically from dist/ if available
 
 // User Session Manager
@@ -295,6 +296,7 @@ const onChainSearch = PumpFunOnChainSearch ? new PumpFunOnChainSearch() : null;
 const wsListener = new PumpFunWebSocketListener();
 const volumeBot = VolumeBot ? new VolumeBot() : null;
 const tradesListener = new TradesListener();
+const pumpFunRealtime = new PumpFunRealtimeListener();
 
 // Initialize Jupiter & Token Audit services
 const HELIUS_RPC = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
@@ -332,6 +334,51 @@ wsListener.startListening().catch((err) => {
 // Broadcast token updates to connected clients
 wsListener.onTokenUpdate((token) => {
   broadcast('token:new', token);
+});
+
+// Iniciar PumpFun Realtime Listener (suscripción directa al programa, GRATIS)
+pumpFunRealtime.start().catch((err) => {
+  console.error('Failed to start PumpFun Realtime Listener:', err);
+});
+
+// Escuchar eventos del PumpFun Realtime Listener y emitirlos vía Socket.IO
+pumpFunRealtime.on('new_token', (event: any) => {
+  console.log(`📡 Nuevo token en tiempo real: ${event.mint.substring(0, 8)}...`);
+  broadcast('token:new', {
+    mint: event.mint,
+    name: event.name,
+    symbol: event.symbol,
+    signature: event.signature,
+    timestamp: event.timestamp,
+    creator: event.creator,
+    bondingCurve: event.bondingCurve,
+    price: event.price,
+    volume: event.volume,
+    liquidity: event.liquidity,
+    marketCap: event.marketCap,
+    holders: event.holders,
+  });
+});
+
+pumpFunRealtime.on('token_updated', (event: any) => {
+  broadcast('token:updated', {
+    mint: event.mint,
+    name: event.name,
+    symbol: event.symbol,
+    price: event.price,
+    volume: event.volume,
+    liquidity: event.liquidity,
+    marketCap: event.marketCap,
+    holders: event.holders,
+  });
+});
+
+pumpFunRealtime.on('trade', (event: any) => {
+  broadcast('token:trade', {
+    mint: event.mint,
+    signature: event.signature,
+    timestamp: event.timestamp,
+  });
 });
 
 // Broadcast helper
