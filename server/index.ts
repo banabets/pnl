@@ -2049,20 +2049,20 @@ app.post('/api/volume-bot/execute', async (req, res) => {
     let wallets: any[] = [];
     
     // Intentar usar wallet-service si MongoDB está conectado
-    if (isMongoConnected() && req.userId) {
+    const authReq = req as any;
+    if (isMongoConnected() && authReq.userId) {
       try {
+        const userId = authReq.userId;
         // Obtener wallets del usuario
-        const userWallets = await walletService.getUserWallets(req.userId);
-        wallets = userWallets
+        const userWallets = await walletService.getUserWallets(userId);
+        const walletPromises = userWallets
           .filter((w: any) => !walletIndices || walletIndices.includes(w.index))
-          .map((w: any) => {
-            const walletWithKey = walletService.getWalletWithKey(req.userId!, w.index);
-            return walletWithKey?.then((wk: any) => wk?.keypair).catch(() => null);
-          });
+          .map((w: any) => walletService.getWalletWithKey(userId, w.index));
         
-        // Resolver todas las promesas
-        wallets = await Promise.all(wallets);
-        wallets = wallets.filter((w: any) => w !== null);
+        const walletsWithKeys = await Promise.all(walletPromises);
+        wallets = walletsWithKeys
+          .filter((wk: any) => wk && wk.keypair)
+          .map((wk: any) => wk.keypair);
       } catch (error) {
         console.warn('Could not load wallets from wallet-service, trying keypairs:', error);
       }
