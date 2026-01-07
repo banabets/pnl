@@ -288,12 +288,12 @@ app.use(express.static(buildPath));
 // Initialize bot managers (only if they exist)
 const walletManager = WalletManager ? new WalletManager() : null;
 const fundManager = FundManager ? new FundManager() : null;
-const volumeBot = VolumeBot ? new VolumeBot() : null;
 const masterWalletManager = MasterWalletManager ? new MasterWalletManager() : null;
 // Initialize PumpFunBot and PumpFunOnChainSearch if available
 const pumpFunBot = PumpFunBot ? new PumpFunBot() : null;
 const onChainSearch = PumpFunOnChainSearch ? new PumpFunOnChainSearch() : null;
 const wsListener = new PumpFunWebSocketListener();
+const volumeBot = VolumeBot ? new VolumeBot() : null;
 const tradesListener = new TradesListener();
 
 // Initialize Jupiter & Token Audit services
@@ -1893,6 +1893,233 @@ app.post('/api/pumpfun/stop', async (req, res) => {
     }
     pumpFunBot.stopPump();
     broadcast('pumpfun:stopped', {});
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// Volume Bot - Genera volumen de trading en pump.fun
+// Con 1 SOL genera más de $25,000 USD en volumen total (compras + ventas)
+app.post('/api/volume-bot/execute', async (req, res) => {
+  try {
+    if (!volumeBot) {
+      return res.status(503).json({ error: 'VolumeBot not available. Please rebuild the project.' });
+    }
+
+    console.log(`🚀 Volume Bot execute requested`);
+    console.log('⚠️ LIVE MODE: Real trades will be executed with real funds!');
+
+    const config = req.body;
+    const {
+      tokenMint,
+      tokenName,
+      totalSolAmount = 1, // Default 1 SOL
+      targetVolumeUSD = 25000, // Default $25,000 USD
+      maxTransactions,
+      minTransactionSize = 0.01,
+      maxTransactionSize = 0.1,
+      delayBetweenTrades = 1000,
+      useMultipleWallets = true,
+      slippageBps = 100,
+      walletIndices, // Índices de wallets a usar (opcional)
+    } = config;
+
+    if (!tokenMint) {
+      return res.status(400).json({ error: 'tokenMint is required' });
+    }
+
+    // Obtener wallets
+    let wallets: any[] = [];
+    
+    // Intentar usar wallet-service si MongoDB está conectado
+    // Nota: Este endpoint no requiere autenticación por ahora, pero puede usar wallets del sistema
+    if (isMongoConnected()) {
+      try {
+        // Si hay userId en el request (de autenticación), usarlo
+        const authReq = req as any;
+        const userId = authReq.userId;
+        if (userId) {
+          // Obtener wallets del usuario
+          const userWallets = await walletService.getUserWallets(userId);
+          const walletPromises = userWallets
+            .filter((w: any) => !walletIndices || walletIndices.includes(w.index))
+            .map((w: any) => walletService.getWalletWithKey(userId, w.index));
+          
+          const walletsWithKeys = await Promise.all(walletPromises);
+          wallets = walletsWithKeys
+            .filter((wk: any) => wk && wk.keypair)
+            .map((wk: any) => wk.keypair);
+        }
+      } catch (error) {
+        console.warn('Could not load wallets from wallet-service, trying keypairs:', error);
+      }
+    }
+
+    // Si no hay wallets del wallet-service, usar keypairs
+    if (wallets.length === 0 && walletManager) {
+      const keypairs = walletManager.loadKeypairs();
+      if (walletIndices && Array.isArray(walletIndices)) {
+        wallets = walletIndices
+          .filter((idx: number) => idx > 0 && idx <= keypairs.length)
+          .map((idx: number) => keypairs[idx - 1]);
+      } else {
+        wallets = keypairs;
+      }
+    }
+
+    if (wallets.length === 0) {
+      return res.status(400).json({ error: 'No wallets available. Please ensure wallets are configured.' });
+    }
+
+    console.log(`✅ Using ${wallets.length} wallets for volume bot`);
+
+    // Inicializar bot con wallets
+    await volumeBot.initialize(wallets);
+
+    // Ejecutar bot de volumen
+    const volumeConfig = {
+      tokenMint,
+      tokenName,
+      totalSolAmount,
+      targetVolumeUSD,
+      maxTransactions,
+      minTransactionSize,
+      maxTransactionSize,
+      delayBetweenTrades,
+      useMultipleWallets,
+      slippageBps,
+    };
+
+    const result = await volumeBot.executeVolumeBot(volumeConfig);
+
+    broadcast('volume-bot:completed', result);
+    res.json({ success: result.success, result });
+  } catch (error: any) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('Volume Bot error:', errorMsg);
+    broadcast('volume-bot:error', { error: errorMsg });
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+app.post('/api/volume-bot/stop', async (req, res) => {
+  try {
+    if (!volumeBot) {
+      return res.status(503).json({ error: 'VolumeBot not available.' });
+    }
+    volumeBot.stop();
+    broadcast('volume-bot:stopped', {});
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// Volume Bot - Genera volumen de trading en pump.fun
+app.post('/api/volume-bot/execute', async (req, res) => {
+  try {
+    if (!volumeBot) {
+      return res.status(503).json({ error: 'VolumeBot not available. Please rebuild the project.' });
+    }
+
+    console.log(`🚀 Volume Bot execute requested`);
+    console.log('⚠️ LIVE MODE: Real trades will be executed with real funds!');
+
+    const config = req.body;
+    const {
+      tokenMint,
+      tokenName,
+      totalSolAmount = 1, // Default 1 SOL
+      targetVolumeUSD = 25000, // Default $25,000 USD
+      maxTransactions,
+      minTransactionSize = 0.01,
+      maxTransactionSize = 0.1,
+      delayBetweenTrades = 1000,
+      useMultipleWallets = true,
+      slippageBps = 100,
+      walletIndices, // Índices de wallets a usar (opcional)
+    } = config;
+
+    if (!tokenMint) {
+      return res.status(400).json({ error: 'tokenMint is required' });
+    }
+
+    // Obtener wallets
+    let wallets: any[] = [];
+    
+    // Intentar usar wallet-service si MongoDB está conectado
+    if (isMongoConnected() && req.userId) {
+      try {
+        // Obtener wallets del usuario
+        const userWallets = await walletService.getUserWallets(req.userId);
+        wallets = userWallets
+          .filter((w: any) => !walletIndices || walletIndices.includes(w.index))
+          .map((w: any) => {
+            const walletWithKey = walletService.getWalletWithKey(req.userId!, w.index);
+            return walletWithKey?.then((wk: any) => wk?.keypair).catch(() => null);
+          });
+        
+        // Resolver todas las promesas
+        wallets = await Promise.all(wallets);
+        wallets = wallets.filter((w: any) => w !== null);
+      } catch (error) {
+        console.warn('Could not load wallets from wallet-service, trying keypairs:', error);
+      }
+    }
+
+    // Si no hay wallets del wallet-service, usar keypairs
+    if (wallets.length === 0 && walletManager) {
+      const keypairs = walletManager.loadKeypairs();
+      if (walletIndices && Array.isArray(walletIndices)) {
+        wallets = walletIndices
+          .filter((idx: number) => idx > 0 && idx <= keypairs.length)
+          .map((idx: number) => keypairs[idx - 1]);
+      } else {
+        wallets = keypairs;
+      }
+    }
+
+    if (wallets.length === 0) {
+      return res.status(400).json({ error: 'No wallets available. Please ensure wallets are configured.' });
+    }
+
+    // Inicializar bot con wallets
+    await volumeBot.initialize(wallets);
+
+    // Ejecutar bot de volumen
+    const volumeConfig = {
+      tokenMint,
+      tokenName,
+      totalSolAmount,
+      targetVolumeUSD,
+      maxTransactions,
+      minTransactionSize,
+      maxTransactionSize,
+      delayBetweenTrades,
+      useMultipleWallets,
+      slippageBps,
+    };
+
+    const result = await volumeBot.executeVolumeBot(volumeConfig);
+
+    broadcast('volume-bot:completed', result);
+    res.json({ success: result.success, result });
+  } catch (error: any) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('Volume Bot error:', errorMsg);
+    broadcast('volume-bot:error', { error: errorMsg });
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+app.post('/api/volume-bot/stop', async (req, res) => {
+  try {
+    if (!volumeBot) {
+      return res.status(503).json({ error: 'VolumeBot not available.' });
+    }
+    volumeBot.stop();
+    broadcast('volume-bot:stopped', {});
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: String(error) });
