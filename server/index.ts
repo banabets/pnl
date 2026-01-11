@@ -1237,6 +1237,105 @@ app.get('/api/master-wallet/export-key', authenticateToken, async (req: Authenti
   }
 });
 
+// Delete Master Wallet
+app.delete('/api/master-wallet', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.userId;
+    const { confirmDelete, force } = req.body;
+
+    // Security: Require explicit confirmation
+    if (!confirmDelete) {
+      return res.status(400).json({ 
+        error: 'Confirmation required. Set confirmDelete to true to delete the master wallet.',
+        requiresConfirmation: true
+      });
+    }
+
+    // If MongoDB is connected, use per-user wallet service
+    if (isMongoConnected() && userId) {
+      // Check if master wallet exists
+      const walletInfo = await walletService.getMasterWalletInfo(userId);
+      if (!walletInfo || !walletInfo.exists) {
+        return res.status(404).json({ 
+          error: 'Master wallet not found',
+          exists: false
+        });
+      }
+
+      // Security check: Warn if wallet has balance (unless force is true)
+      const balance = walletInfo.balance || 0;
+      if (balance > 0.001 && !force) {
+        return res.status(400).json({
+          error: `Cannot delete master wallet with balance (${balance.toFixed(4)} SOL). Please withdraw funds first or set force=true to delete anyway.`,
+          balance,
+          requiresWithdrawal: true
+        });
+      }
+
+      // Delete master wallet
+      const deleted = await walletService.deleteMasterWallet(userId);
+      
+      if (deleted) {
+        // Audit log
+        await auditService.log(userId, 'master_wallet_deleted', 'wallet', {
+          hadBalance: balance,
+          force: force || false
+        }, {
+          ip: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+
+        broadcast('master-wallet:deleted', { userId });
+        log.info('Master wallet deleted', { userId, hadBalance: balance });
+        
+        res.json({ 
+          success: true, 
+          message: 'Master wallet deleted successfully',
+          hadBalance: balance
+        });
+      } else {
+        res.status(500).json({ error: 'Failed to delete master wallet' });
+      }
+      return;
+    }
+
+    // Fallback to legacy global wallet if MongoDB not connected
+    if (!masterWalletManager || !masterWalletManager.masterWalletExists()) {
+      return res.status(404).json({ 
+        error: 'Master wallet not found',
+        exists: false
+      });
+    }
+
+    // Get wallet info for balance check
+    const info = await masterWalletManager.getMasterWalletInfo(config.connection);
+    const balance = info?.balance || 0;
+
+    // Security check: Warn if wallet has balance (unless force is true)
+    if (balance > 0.001 && !force) {
+      return res.status(400).json({
+        error: `Cannot delete master wallet with balance (${balance.toFixed(4)} SOL). Please withdraw funds first or set force=true to delete anyway.`,
+        balance,
+        requiresWithdrawal: true
+      });
+    }
+
+    // Delete master wallet
+    masterWalletManager.deleteMasterWallet();
+    broadcast('master-wallet:deleted', {});
+    
+    log.info('Master wallet deleted (legacy)', { hadBalance: balance });
+    res.json({ 
+      success: true, 
+      message: 'Master wallet deleted successfully',
+      hadBalance: balance
+    });
+  } catch (error) {
+    log.error('Error deleting master wallet', { error: (error as Error).message });
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 app.post('/api/master-wallet/withdraw', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.userId;

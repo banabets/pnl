@@ -17,6 +17,7 @@ export default function MasterWallet({ socket }: MasterWalletProps) {
 
     if (socket) {
       socket.on('master-wallet:created', () => loadMasterWallet());
+      socket.on('master-wallet:deleted', () => loadMasterWallet());
       socket.on('master-wallet:withdrawn', () => loadMasterWallet());
       socket.on('funds:distributed', () => loadMasterWallet());
       socket.on('funds:recovered', () => loadMasterWallet());
@@ -30,6 +31,7 @@ export default function MasterWallet({ socket }: MasterWalletProps) {
     return () => {
       if (socket) {
         socket.off('master-wallet:created');
+        socket.off('master-wallet:deleted');
         socket.off('master-wallet:withdrawn');
         socket.off('funds:distributed');
         socket.off('funds:recovered');
@@ -136,6 +138,92 @@ export default function MasterWallet({ socket }: MasterWalletProps) {
       alert('✅ Clave privada exportada!\n\n⚠️ IMPORTANTE: Guarda este archivo en un lugar seguro. Cualquiera con acceso a esta clave puede controlar tu Master Wallet.');
     } catch (error: any) {
       alert(`Error: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteMasterWallet = async () => {
+    // Multiple confirmations for safety
+    const balance = masterWallet?.balance || 0;
+    
+    if (balance > 0.001) {
+      const proceed = confirm(
+        `⚠️ WARNING: Master wallet has ${balance.toFixed(4)} SOL balance!\n\n` +
+        `Deleting the master wallet will permanently remove it. You will lose access to these funds unless you:\n` +
+        `1. Export the private key first\n` +
+        `2. Withdraw all funds\n\n` +
+        `Are you absolutely sure you want to proceed?`
+      );
+      
+      if (!proceed) {
+        return;
+      }
+
+      // Second confirmation if there's balance
+      const forceDelete = confirm(
+        `⚠️ FINAL WARNING!\n\n` +
+        `You are about to delete a master wallet with ${balance.toFixed(4)} SOL.\n` +
+        `This action CANNOT be undone.\n\n` +
+        `Type "DELETE" in the next prompt to confirm.`
+      );
+
+      if (!forceDelete) {
+        return;
+      }
+
+      const confirmation = prompt('Type "DELETE" to confirm deletion:');
+      if (confirmation !== 'DELETE') {
+        alert('Deletion cancelled. Master wallet not deleted.');
+        return;
+      }
+    } else {
+      // Single confirmation if no balance
+      const proceed = confirm(
+        `⚠️ Are you sure you want to delete the master wallet?\n\n` +
+        `This action cannot be undone. Make sure you have exported the private key if you need it later.\n\n` +
+        `Type "DELETE" in the next prompt to confirm.`
+      );
+
+      if (!proceed) {
+        return;
+      }
+
+      const confirmation = prompt('Type "DELETE" to confirm deletion:');
+      if (confirmation !== 'DELETE') {
+        alert('Deletion cancelled. Master wallet not deleted.');
+        return;
+      }
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.delete('/master-wallet', {
+        data: {
+          confirmDelete: true,
+          force: balance > 0.001,
+        },
+      });
+
+      if (response.data.success) {
+        alert(`✅ Master wallet deleted successfully${balance > 0.001 ? `\n\n⚠️ Note: The wallet had ${balance.toFixed(4)} SOL balance. Make sure you have the private key exported if you need to recover funds.` : ''}`);
+        
+        // Reload to show "no master wallet" state
+        await loadMasterWallet();
+        
+        // Emit socket event
+        if (socket) {
+          socket.emit('master-wallet:deleted');
+        }
+      }
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || error.message;
+      
+      if (error.response?.data?.requiresWithdrawal) {
+        alert(`❌ Cannot delete: ${errorMsg}\n\nPlease withdraw all funds first or export the private key.`);
+      } else {
+        alert(`❌ Error: ${errorMsg}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -283,6 +371,21 @@ export default function MasterWallet({ socket }: MasterWalletProps) {
               >
                 Recover Funds to Master
               </button>
+
+              <div className="bg-red-900/10 rounded-lg p-4 border-2 border-red-500/30 shadow-[0_2px_6px_rgba(239,68,68,0.2),inset_0_1px_0_rgba(255,255,255,0.08)]">
+                <h3 className="text-lg font-semibold text-red-400 mb-2">⚠️ Danger Zone</h3>
+                <p className="text-sm text-white/60 mb-4">
+                  Deleting the master wallet will permanently remove it from the system. 
+                  Make sure you have exported the private key and withdrawn all funds.
+                </p>
+                <button
+                  onClick={handleDeleteMasterWallet}
+                  disabled={loading}
+                  className="w-full px-4 py-3 bg-red-600/20 hover:bg-red-600/30 border-2 border-red-500/50 hover:border-red-500/70 text-red-400 rounded-lg font-semibold disabled:opacity-50 shadow-[0_2px_6px_rgba(239,68,68,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(239,68,68,0.4)] transition-all"
+                >
+                  🗑️ Delete Master Wallet
+                </button>
+              </div>
 
               <div className="bg-black rounded-lg p-4 border border-white/15 shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] space-y-4">
                 <h3 className="text-lg font-semibold text-white">Withdraw from Master</h3>
