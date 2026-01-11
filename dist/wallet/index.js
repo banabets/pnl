@@ -64,7 +64,7 @@ class WalletManager {
         if (count <= 0 || count > 20) {
             throw new Error('Keypair count must be between 1 and 20 for safety');
         }
-        console.log(chalk_1.default.blue(`� Generating ${count} new ape keypairs for hill domination...`));
+        console.log(chalk_1.default.blue(`� Generating ${count} new keypairs...`));
         const keypairs = [];
         for (let i = 0; i < count; i++) {
             const keypair = web3_js_1.Keypair.generate();
