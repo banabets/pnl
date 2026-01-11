@@ -361,11 +361,14 @@ async function fetchPumpFunTokens(): Promise<any[]> {
 
   // Return cached data if still fresh
   if (tokenCache.data.length > 0 && now - tokenCache.timestamp < CACHE_DURATION) {
+    log.info('Returning cached tokens', { count: tokenCache.data.length, age: Math.floor((now - tokenCache.timestamp) / 1000) + 's' });
     return tokenCache.data;
   }
 
   try {
     const pumpUrl = 'https://frontend-api.pump.fun/coins?offset=0&limit=100&sort=created_timestamp&order=DESC';
+    log.info('Fetching tokens from pump.fun API', { url: pumpUrl });
+
     const response = await fetch(pumpUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
@@ -373,8 +376,12 @@ async function fetchPumpFunTokens(): Promise<any[]> {
       },
     });
 
+    log.info('Pump.fun API response', { status: response.status, ok: response.ok });
+
     if (response.ok) {
       const data = await response.json();
+      log.info('Pump.fun API data received', { isArray: Array.isArray(data), length: Array.isArray(data) ? data.length : 0 });
+
       if (Array.isArray(data) && data.length > 0) {
         // Filter and enrich tokens - transform to frontend format
         const enrichedTokens = data
@@ -421,52 +428,36 @@ async function fetchPumpFunTokens(): Promise<any[]> {
             };
           });
 
+        log.info('Tokens enriched successfully', { count: enrichedTokens.length });
+
         // Update cache
         tokenCache = { data: enrichedTokens, timestamp: now };
+        log.info('Token cache updated', { count: enrichedTokens.length });
         return enrichedTokens;
+      } else {
+        log.warn('Pump.fun API returned empty or invalid data');
       }
+    } else {
+      log.warn('Pump.fun API request failed', { status: response.status });
     }
   } catch (error) {
-    log.error('Error fetching pump.fun tokens', { error: (error as Error).message });
+    log.error('Error fetching pump.fun tokens', { error: (error as Error).message, stack: (error as Error).stack });
   }
 
+  log.info('Returning stale cache or empty array', { cacheSize: tokenCache.data.length });
   return tokenCache.data; // Return stale cache on error
 }
 
-// /api/tokens/feed - General token feed (DEPRECATED - use tokenFeed service instead)
-// This endpoint is kept for backward compatibility but should use tokenFeed.fetchTokens()
+// /api/tokens/feed - General token feed
 app.get('/api/tokens/feed', readLimiter, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
-    const filter = (req.query.filter as string) || 'all';
-    const minLiquidity = parseInt(req.query.minLiquidity as string) || 0;
-    const maxAge = parseInt(req.query.maxAge as string) || 1440;
-
-    // Try to use tokenFeed service first (has MongoDB and WebSocket data)
-    if (tokenFeed.isServiceStarted()) {
-      try {
-        const tokens = await tokenFeed.fetchTokens({
-          filter: filter as any,
-          minLiquidity,
-          maxAge,
-          limit
-        });
-        
-        return res.json({
-          success: true,
-          count: tokens.length,
-          tokens
-        });
-      } catch (feedError) {
-        log.warn('tokenFeed.fetchTokens failed, falling back to pump.fun API', { error: (feedError as Error).message });
-      }
-    }
-
-    // Fallback to pump.fun API
     const tokens = await fetchPumpFunTokens();
+
+    log.info('Token feed requested', { count: tokens.length, limit });
     res.json(tokens.slice(0, limit));
   } catch (error) {
-    log.error('Error in /api/tokens/feed', { error: (error as Error).message });
+    log.error('Error in /api/tokens/feed', { error: (error as Error).message, stack: (error as Error).stack });
     res.status(500).json({ error: 'Failed to fetch token feed' });
   }
 });
@@ -1166,28 +1157,27 @@ app.get('/api/master-wallet/export-key', authenticateToken, async (req: Authenti
       
       // If master wallet doesn't exist, try to create it automatically
       if (!walletWithKey) {
-        console.log(`[export-key] Master wallet not found for user ${userId}, attempting to create...`);
+        log.info('Master wallet not found, attempting to create', { userId: userId.substring(0, 8) + '...' });
         try {
           const result = await walletService.createMasterWallet(userId);
-          console.log(`[export-key] Master wallet creation result:`, result);
+          log.info('Master wallet creation result', { success: !!result, userId: userId.substring(0, 8) + '...' });
           if (result) {
             // Retry getting the wallet after creation
             walletWithKey = await walletService.getMasterWalletWithKey(userId);
             if (walletWithKey) {
-              console.log(`[export-key] Successfully created and retrieved master wallet for user ${userId}`);
+              log.info('Successfully created and retrieved master wallet', { userId: userId.substring(0, 8) + '...' });
             } else {
-              console.error(`[export-key] Master wallet created but could not be retrieved for user ${userId}`);
+              log.error('Master wallet created but could not be retrieved', { userId: userId.substring(0, 8) + '...' });
             }
           }
         } catch (createError) {
-          console.error('[export-key] Error creating master wallet:', createError);
           const errorMessage = createError instanceof Error ? createError.message : String(createError);
-          console.error('[export-key] Error details:', {
-            userId,
+          log.error('Error creating master wallet', {
+            userId: userId.substring(0, 8) + '...',
             error: errorMessage,
             stack: createError instanceof Error ? createError.stack : undefined
           });
-          return res.status(400).json({ 
+          return res.status(400).json({
             error: 'Master wallet not found. Please create a master wallet first using the "Create Master Wallet" button.',
             details: errorMessage
           });
@@ -1195,8 +1185,8 @@ app.get('/api/master-wallet/export-key', authenticateToken, async (req: Authenti
       }
 
       if (!walletWithKey) {
-        console.error(`[export-key] Master wallet still not found after creation attempt for user ${userId}`);
-        return res.status(400).json({ 
+        log.error('Master wallet still not found after creation attempt', { userId: userId.substring(0, 8) + '...' });
+        return res.status(400).json({
           error: 'Master wallet not found. Please create a master wallet first using the "Create Master Wallet" button.',
           userId: userId.substring(0, 8) + '...' // Log partial userId for debugging
         });

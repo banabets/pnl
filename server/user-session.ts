@@ -3,6 +3,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { log } from './logger';
 
 export interface UserSession {
   userId: string;
@@ -34,7 +35,7 @@ export class UserSessionManager {
         return JSON.parse(data);
       }
     } catch (error) {
-      console.error('Error loading sessions:', error);
+      log.error('Error loading sessions:', error);
     }
     return [];
   }
@@ -43,7 +44,7 @@ export class UserSessionManager {
     try {
       fs.writeFileSync(this.sessionsFile, JSON.stringify(sessions, null, 2));
     } catch (error) {
-      console.error('Error saving sessions:', error);
+      log.error('Error saving sessions:', error);
     }
   }
 

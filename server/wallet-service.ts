@@ -3,6 +3,7 @@ import { Wallet, MasterWallet, User } from './database';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import { log } from './logger';
 
 // Encriptación de private keys usando AES-256
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
@@ -12,7 +13,7 @@ const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 if (!process.env.ENCRYPTION_KEY) {
   throw new Error(
     'ENCRYPTION_KEY must be set in environment variables.\n' +
-    'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+    'Generate one with: node -e "log.info(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
   );
 }
 if (process.env.ENCRYPTION_KEY.length !== 64 || !/^[0-9a-f]{64}$/i.test(process.env.ENCRYPTION_KEY)) {
@@ -160,7 +161,7 @@ export class WalletService {
         keypair
       };
     } catch (error) {
-      console.error('Error decrypting wallet:', error);
+      log.error('Error decrypting wallet:', error);
       return null;
     }
   }
@@ -318,7 +319,7 @@ export class WalletService {
         balance: masterWallet.balance
       };
     } catch (error) {
-      console.error('Error decrypting master wallet:', error);
+      log.error('Error decrypting master wallet:', error);
       return null;
     }
   }

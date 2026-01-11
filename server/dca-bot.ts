@@ -2,6 +2,7 @@
 import { Keypair } from '@solana/web3.js';
 import { getJupiterService } from './jupiter-service';
 import mongoose from 'mongoose';
+import { log } from './logger';
 
 export interface DCAOrder {
   userId: string;
@@ -228,7 +229,7 @@ export class DCABot {
    */
   async processPendingOrders(): Promise<void> {
     if (!this.getKeypairForUser) {
-      console.warn('DCA Bot: Keypair getter not set');
+      log.warn('DCA Bot: Keypair getter not set');
       return;
     }
 
@@ -246,14 +247,14 @@ export class DCABot {
         );
 
         if (!keypair) {
-          console.warn(`DCA: No keypair for user ${order.userId}`);
+          log.warn(`DCA: No keypair for user ${order.userId}`);
           continue;
         }
 
         const result = await this.executeBuy(order, keypair);
-        console.log(`DCA executed for order ${order._id}: ${result.success ? 'success' : result.error}`);
+        log.info(`DCA executed for order ${order._id}: ${result.success ? 'success' : result.error}`);
       } catch (error) {
-        console.error(`DCA execution error for order ${order._id}:`, error);
+        log.error(`DCA execution error for order ${order._id}:`, error);
       }
     }
   }
@@ -266,10 +267,12 @@ export class DCABot {
 
     this.isRunning = true;
     this.intervalId = setInterval(() => {
-      this.processPendingOrders().catch(console.error);
+      this.processPendingOrders().catch((error) => {
+        log.error('Error processing pending DCA orders', { error: error instanceof Error ? error.message : String(error) });
+      });
     }, intervalMs);
 
-    console.log('✅ DCA Bot started');
+    log.info('✅ DCA Bot started');
   }
 
   /**
@@ -281,7 +284,7 @@ export class DCABot {
       this.intervalId = null;
     }
     this.isRunning = false;
-    console.log('⏹️ DCA Bot stopped');
+    log.info('⏹️ DCA Bot stopped');
   }
 
   /**

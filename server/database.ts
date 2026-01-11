@@ -1,5 +1,6 @@
 // MongoDB Database Connection and Models
 import mongoose from 'mongoose';
+import { log } from './logger';
 
 // Support both MONGODB_URI and MONGO_URL (Railway uses different names)
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || 'mongodb://localhost:27017/pnl-onl';
@@ -13,12 +14,12 @@ export async function connectDatabase(): Promise<void> {
       maxIdleTimeMS: 30000,
       serverSelectionTimeoutMS: 5000,
     });
-    console.log('✅ Connected to MongoDB');
+    log.info('✅ Connected to MongoDB');
     
     // Create indexes after connection
     await createIndexes();
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
+    log.error('❌ MongoDB connection error:', error);
     throw error;
   }
 }
@@ -79,9 +80,9 @@ async function createIndexes(): Promise<void> {
     await AuditLog.collection.createIndex({ userId: 1, timestamp: -1 });
     await AuditLog.collection.createIndex({ action: 1, timestamp: -1 });
     
-    console.log('✅ Database indexes created');
+    log.info('✅ Database indexes created');
   } catch (error) {
-    console.error('⚠️ Error creating indexes:', error);
+    log.error('⚠️ Error creating indexes:', error);
     // Don't throw - indexes are optional
   }
 }
@@ -90,9 +91,9 @@ async function createIndexes(): Promise<void> {
 export async function disconnectDatabase(): Promise<void> {
   try {
     await mongoose.disconnect();
-    console.log('✅ Disconnected from MongoDB');
+    log.info('✅ Disconnected from MongoDB');
   } catch (error) {
-    console.error('❌ MongoDB disconnection error:', error);
+    log.error('❌ MongoDB disconnection error:', error);
   }
 }
 

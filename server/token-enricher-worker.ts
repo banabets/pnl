@@ -3,6 +3,7 @@
 
 import { tokenIndexer } from './token-indexer';
 import { tokenFeed } from './token-feed';
+import { log } from './logger';
 
 class TokenEnricherWorker {
   private isRunning = false;
@@ -15,12 +16,12 @@ class TokenEnricherWorker {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log('⚠️ Token Enricher Worker already running');
+      log.warn('Token Enricher Worker already running');
       return;
     }
 
     this.isRunning = true;
-    console.log('🔄 Starting Token Enricher Worker...');
+    log.info('Starting Token Enricher Worker');
 
     // Enrich tokens every 5 minutes
     this.interval = setInterval(async () => {
@@ -47,7 +48,7 @@ class TokenEnricherWorker {
     }
     this.isRunning = false;
     this.processing = false;
-    console.log('🛑 Token Enricher Worker stopped');
+    log.info('Token Enricher Worker stopped');
   }
 
   /**
@@ -83,12 +84,12 @@ class TokenEnricherWorker {
       const uniqueMints = Array.from(new Set(tokensToEnrich));
 
       if (uniqueMints.length === 0) {
-        console.log('📊 No tokens need enrichment at this time');
+        log.info('No tokens need enrichment at this time');
         this.processing = false;
         return;
       }
 
-      console.log(`🔄 Enriching ${uniqueMints.length} tokens in background...`);
+      log.info('Enriching tokens in background', { count: uniqueMints.length });
 
       // 3. Process in small batches to avoid rate limits
       const batchSize = 5;
@@ -116,10 +117,10 @@ class TokenEnricherWorker {
         }
       }
 
-      console.log(`✅ Enrichment complete: ${enriched} enriched, ${failed} failed`);
+      log.info('Enrichment complete', { enriched, failed });
 
     } catch (error: any) {
-      console.error('❌ Error in enricher worker:', error.message);
+      log.error('Error in enricher worker', { error: error.message });
     } finally {
       this.processing = false;
     }
@@ -138,7 +139,7 @@ class TokenEnricherWorker {
         const dbTokens = await tokenIndexer.getTokensNeedingEnrichment(30);
         tokens.push(...dbTokens);
       } catch (error) {
-        console.error('Failed to get tokens from MongoDB:', error);
+        log.error('Failed to get tokens from MongoDB', { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
@@ -178,7 +179,7 @@ class TokenEnricherWorker {
       await tokenFeed.enrichTokenData(mint);
       return true;
     } catch (error: any) {
-      console.error(`Failed to enrich token ${mint.slice(0, 8)}...:`, error.message);
+      log.error('Failed to enrich token', { mint: mint.slice(0, 8), error: error.message });
       return false;
     }
   }
@@ -204,7 +205,7 @@ class TokenEnricherWorker {
   async enrichNow(mints: string[]): Promise<void> {
     if (mints.length === 0) return;
 
-    console.log(`🔄 Force enriching ${mints.length} tokens...`);
+    log.info('Force enriching tokens', { count: mints.length });
 
     const batchSize = 5;
     for (let i = 0; i < mints.length; i += batchSize) {
@@ -219,7 +220,7 @@ class TokenEnricherWorker {
       }
     }
 
-    console.log(`✅ Force enrichment complete for ${mints.length} tokens`);
+    log.info('Force enrichment complete', { count: mints.length });
   }
 }
 

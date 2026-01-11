@@ -1,5 +1,6 @@
 // Jupiter Aggregator Service - Best price swaps across Solana DEXs
 import { Connection, PublicKey, VersionedTransaction, Keypair } from '@solana/web3.js';
+import { log } from './logger';
 
 const JUPITER_API = 'https://quote-api.jup.ag/v6';
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -56,7 +57,7 @@ export class JupiterService {
       const response = await fetch(`${JUPITER_API}/quote?${params}`);
 
       if (!response.ok) {
-        console.error('Jupiter quote error:', await response.text());
+        log.error('Jupiter quote error:', await response.text());
         return null;
       }
 
@@ -66,7 +67,7 @@ export class JupiterService {
         slippageBps
       };
     } catch (error) {
-      console.error('Error getting Jupiter quote:', error);
+      log.error('Error getting Jupiter quote:', error);
       return null;
     }
   }

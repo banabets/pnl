@@ -4,6 +4,7 @@ import { getJupiterService } from './jupiter-service';
 import { getTokenAuditService } from './token-audit';
 import { TradingFee } from './database';
 import mongoose from 'mongoose';
+import { log } from './logger';
 
 export interface SniperConfig {
   userId: string;
@@ -233,11 +234,11 @@ export class SniperBot {
         const check = await this.checkToken(tokenMint, config);
 
         if (check.pass) {
-          console.log(`🎯 Token ${tokenMint} passed filters for user ${userId}`);
+          log.info(`🎯 Token ${tokenMint} passed filters for user ${userId}`);
           // Note: Actual execution requires user's keypair, handled via API
         }
       } catch (error) {
-        console.error(`Error checking token for user ${userId}:`, error);
+        log.error(`Error checking token for user ${userId}:`, error);
       }
     }
   }

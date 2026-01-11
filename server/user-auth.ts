@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { User, Session, ActivityLog, isConnected } from './database';
 import mongoose from 'mongoose';
 import { walletService } from './wallet-service';
+import { log } from './logger';
 
 const USERS_FILE = path.join(__dirname, '../data/users.json');
 const SESSIONS_FILE = path.join(__dirname, '../data/sessions.json');
@@ -90,7 +91,7 @@ export class UserAuthManager {
   constructor() {
     // Don't check MongoDB here - it might not be connected yet
     // Load JSON as fallback, but MongoDB will be used dynamically when available
-    console.log('📊 UserAuthManager initialized (will use MongoDB when connected)');
+    log.info('UserAuthManager initialized (will use MongoDB when connected)');
   }
 
   // Dynamically check if MongoDB is connected
@@ -101,7 +102,7 @@ export class UserAuthManager {
   // Ensure JSON data is loaded (for fallback)
   private ensureJsonLoaded(): void {
     if (!this.jsonLoaded && !this.usesMongoDB()) {
-      console.log('📂 Loading JSON fallback data...');
+      log.info('Loading JSON fallback data');
       this.loadUsers();
       this.loadSessions();
       this.loadActivityLogs();
@@ -120,10 +121,10 @@ export class UserAuthManager {
         usersArray.forEach((user: User) => {
           this.users.set(user.id, user);
         });
-        console.log(`📂 Loaded ${this.users.size} users from disk`);
+        log.info('Loaded users from disk', { count: this.users.size });
       }
     } catch (error) {
-      console.error('Error loading users:', error);
+      log.error('Error loading users', { error: error instanceof Error ? error.message : String(error) });
     }
   }
   
@@ -134,7 +135,7 @@ export class UserAuthManager {
       const usersArray = Array.from(this.users.values());
       fs.writeFileSync(USERS_FILE, JSON.stringify(usersArray, null, 2));
     } catch (error) {
-      console.error('Error saving users:', error);
+      log.error('Error saving users', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -154,7 +155,7 @@ export class UserAuthManager {
         this.saveSessions(); // Save cleaned sessions
       }
     } catch (error) {
-      console.error('Error loading sessions:', error);
+      log.error('Error loading sessions', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -163,7 +164,7 @@ export class UserAuthManager {
       const sessionsArray = Array.from(this.sessions.values());
       fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsArray, null, 2));
     } catch (error) {
-      console.error('Error saving sessions:', error);
+      log.error('Error saving sessions', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -179,7 +180,7 @@ export class UserAuthManager {
         }
       }
     } catch (error) {
-      console.error('Error loading activity logs:', error);
+      log.error('Error loading activity logs', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -187,7 +188,7 @@ export class UserAuthManager {
     try {
       fs.writeFileSync(ACTIVITY_LOG_FILE, JSON.stringify(this.activityLogs, null, 2));
     } catch (error) {
-      console.error('Error saving activity logs:', error);
+      log.error('Error saving activity logs', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -226,7 +227,7 @@ export class UserAuthManager {
           await log.save();
         }
       } catch (error) {
-        console.error('Error logging activity to MongoDB:', error);
+        log.error('Error logging activity to MongoDB', { error: error instanceof Error ? error.message : String(error) });
       }
     } else {
       const log: ActivityLog = {
@@ -330,13 +331,13 @@ export class UserAuthManager {
         // Create master wallet for the new user
         try {
           const walletResult = await walletService.createMasterWallet(newUser._id.toString());
-          console.log(`🔑 Master wallet created for user ${username}: ${walletResult.publicKey}`);
+          log.info('Master wallet created for user', { username, publicKey: walletResult.publicKey });
         } catch (walletError) {
-          console.error('⚠️ Failed to create master wallet:', walletError);
+          log.error('Failed to create master wallet', { error: walletError instanceof Error ? walletError.message : String(walletError) });
           // Don't fail registration if wallet creation fails
         }
 
-        console.log(`✅ New user registered: ${username} (${userId})`);
+        log.info('New user registered', { username, userId });
         const userObj = newUser.toObject();
         return {
           success: true,
@@ -397,7 +398,7 @@ export class UserAuthManager {
         this.createSession(userId, token, ipAddress);
         this.logActivity(userId, 'user_registered', { username, email }, ipAddress);
 
-        console.log(`✅ New user registered: ${username} (${userId})`);
+        log.info('New user registered', { username, userId });
         return {
           success: true,
           user: { ...newUser, passwordHash: '' },
@@ -405,7 +406,7 @@ export class UserAuthManager {
         };
       }
     } catch (error: any) {
-      console.error('Error in register:', error);
+      log.error('Error in register', { error: error instanceof Error ? error.message : String(error) });
       return { success: false, error: error.message || 'Registration failed' };
     }
   }
@@ -459,7 +460,7 @@ export class UserAuthManager {
         await this.createSession(userDoc.id, token, ipAddress, userAgent);
         await this.logActivity(userDoc.id, 'user_logged_in', { username: userDoc.username }, ipAddress);
 
-        console.log(`✅ User logged in: ${userDoc.username} (${userDoc.id})`);
+        log.info('User logged in', { username: userDoc.username, userId: userDoc.id });
         const userObj = userDoc.toObject();
         return {
           success: true,
@@ -505,7 +506,7 @@ export class UserAuthManager {
         await this.createSession(user.id, token, ipAddress, userAgent);
         await this.logActivity(user.id, 'user_logged_in', { username: user.username }, ipAddress);
 
-        console.log(`✅ User logged in: ${user.username} (${user.id})`);
+        log.info('User logged in', { username: user.username, userId: user.id });
         return {
           success: true,
           user: { ...user, passwordHash: '' },
@@ -513,7 +514,7 @@ export class UserAuthManager {
         };
       }
     } catch (error: any) {
-      console.error('Error in login:', error);
+      log.error('Error in login', { error: error instanceof Error ? error.message : String(error) });
       return { success: false, error: error.message || 'Login failed' };
     }
   }
@@ -539,7 +540,7 @@ export class UserAuthManager {
           // Verify user exists and allow access
           const user = await User.findOne({ id: decoded.userId }).exec();
           if (user) {
-            console.log(`📊 Token valid for user ${decoded.userId}, creating session in MongoDB`);
+            log.info('Token valid for user, creating session in MongoDB', { userId: decoded.userId });
             // Create a new session in MongoDB
             await this.createSession(decoded.userId, token);
             return { success: true, userId: decoded.userId };
@@ -553,7 +554,7 @@ export class UserAuthManager {
 
         return { success: true, userId: decoded.userId };
       } catch (error) {
-        console.error('Error verifying token in MongoDB:', error);
+        log.error('Error verifying token in MongoDB', { error: error instanceof Error ? error.message : String(error) });
         // Fall back to in-memory check
       }
     }
@@ -601,7 +602,7 @@ export class UserAuthManager {
           await session.save();
         }
       } catch (error) {
-        console.error('Error creating session in MongoDB:', error);
+        log.error('Error creating session in MongoDB', { error: error instanceof Error ? error.message : String(error) });
       }
     } else {
       const session: UserSession = {
@@ -629,7 +630,7 @@ export class UserAuthManager {
         }
         return null;
       } catch (error) {
-        console.error('Error getting user from MongoDB:', error);
+        log.error('Error getting user from MongoDB', { error: error instanceof Error ? error.message : String(error) });
         // Fall through to in-memory check
       }
     }

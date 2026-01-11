@@ -87,7 +87,7 @@ class RateLimiter {
 
     while (!this.canMakeRequest(service) && attempts < maxAttempts) {
       const waitMs = Math.min(waitTime, maxWait);
-      console.log(`⏳ Rate limit reached for ${config.name}, waiting ${waitMs}ms... (attempt ${attempts + 1}/${maxAttempts})`);
+      log.info(`⏳ Rate limit reached for ${config.name}, waiting ${waitMs}ms... (attempt ${attempts + 1}/${maxAttempts})`);
       
       await new Promise(resolve => setTimeout(resolve, waitMs));
       
@@ -97,7 +97,7 @@ class RateLimiter {
     }
 
     if (attempts >= maxAttempts) {
-      console.warn(`⚠️ Max wait attempts reached for ${config.name}, proceeding anyway`);
+      log.warn(`⚠️ Max wait attempts reached for ${config.name}, proceeding anyway`);
     }
   }
 
@@ -181,7 +181,7 @@ class RateLimiter {
    */
   reset(service: 'dexscreener' | 'pumpfun' | 'helius'): void {
     this.requests.delete(service);
-    console.log(`🔄 Rate limit reset for ${service}`);
+    log.info(`🔄 Rate limit reset for ${service}`);
   }
 
   /**

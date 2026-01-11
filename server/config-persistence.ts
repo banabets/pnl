@@ -3,6 +3,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { log } from './logger';
 
 const CONFIG_FILE = path.join(__dirname, '../config.json');
 
@@ -26,14 +27,14 @@ export class ConfigPersistence {
       if (fs.existsSync(CONFIG_FILE)) {
         const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
         const config = JSON.parse(data);
-        console.log('📂 Config loaded from disk:', config);
+        log.info('📂 Config loaded from disk:', config);
         return { ...this.defaultConfig, ...config };
       }
     } catch (error) {
-      console.error('Error loading config from disk:', error);
+      log.error('Error loading config from disk:', error);
     }
     
-    console.log('📂 Using default config (no file found)');
+    log.info('📂 Using default config (no file found)');
     return { ...this.defaultConfig };
   }
 
@@ -43,9 +44,9 @@ export class ConfigPersistence {
       const newConfig = { ...currentConfig, ...config };
       
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
-      console.log('💾 Config saved to disk:', newConfig);
+      log.info('💾 Config saved to disk:', newConfig);
     } catch (error) {
-      console.error('Error saving config to disk:', error);
+      log.error('Error saving config to disk:', error);
     }
   }
 

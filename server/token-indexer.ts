@@ -1,5 +1,6 @@
 // Token Indexer Service - Persist tokens discovered on-chain to MongoDB
 import { TokenIndex, isConnected } from './database';
+import { log } from './logger';
 
 export interface TokenIndexData {
   mint: string;
@@ -44,9 +45,9 @@ class TokenIndexerService {
   async initialize(): Promise<void> {
     this.isEnabled = isConnected();
     if (this.isEnabled) {
-      console.log('✅ Token Indexer initialized (MongoDB connected)');
+      log.info('Token Indexer initialized (MongoDB connected)');
     } else {
-      console.log('⚠️ Token Indexer disabled (MongoDB not connected)');
+      log.warn('Token Indexer disabled (MongoDB not connected)');
     }
   }
 
@@ -102,7 +103,7 @@ class TokenIndexerService {
 
     } catch (error: any) {
       // Log but don't throw - indexing failures shouldn't break the app
-      console.error(`Failed to index token ${data.mint}:`, error.message);
+      log.error('Failed to index token', { mint: data.mint, error: error.message });
     }
   }
 
@@ -158,10 +159,10 @@ class TokenIndexerService {
       }));
 
       await TokenIndex.bulkWrite(operations);
-      console.log(`✅ Indexed ${tokens.length} tokens to MongoDB`);
+      log.info('Indexed tokens to MongoDB', { count: tokens.length });
 
     } catch (error: any) {
-      console.error(`Failed to batch index tokens:`, error.message);
+      log.error('Failed to batch index tokens', { error: error.message });
     }
   }
 
@@ -254,7 +255,7 @@ class TokenIndexerService {
       }));
 
     } catch (error: any) {
-      console.error('Failed to get tokens from MongoDB:', error.message);
+      log.error('Failed to get tokens from MongoDB', { error: error.message });
       return [];
     }
   }
@@ -308,7 +309,7 @@ class TokenIndexerService {
       };
 
     } catch (error: any) {
-      console.error(`Failed to get token ${mint} from MongoDB:`, error.message);
+      log.error('Failed to get token from MongoDB', { mint, error: error.message });
       return null;
     }
   }
@@ -333,7 +334,7 @@ class TokenIndexerService {
         }
       );
     } catch (error: any) {
-      console.error(`Failed to update enrichment for ${mint}:`, error.message);
+      log.error('Failed to update enrichment', { mint, error: error.message });
     }
   }
 
@@ -364,7 +365,7 @@ class TokenIndexerService {
       return tokens.map(t => t.mint);
 
     } catch (error: any) {
-      console.error('Failed to get tokens needing enrichment:', error.message);
+      log.error('Failed to get tokens needing enrichment', { error: error.message });
       return [];
     }
   }

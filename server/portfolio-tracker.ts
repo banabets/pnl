@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { log } from './logger';
 
 export interface Position {
   id: string;
@@ -66,7 +67,7 @@ class PortfolioTracker {
         this.positions = new Map(Object.entries(data));
       }
     } catch (error) {
-      console.error('Error loading positions:', error);
+      log.error('Error loading positions:', error);
     }
 
     try {
@@ -74,7 +75,7 @@ class PortfolioTracker {
         this.trades = JSON.parse(fs.readFileSync(this.tradesFile, 'utf-8'));
       }
     } catch (error) {
-      console.error('Error loading trades:', error);
+      log.error('Error loading trades:', error);
     }
   }
 
@@ -84,7 +85,7 @@ class PortfolioTracker {
       fs.writeFileSync(this.positionsFile, JSON.stringify(positionsObj, null, 2));
       fs.writeFileSync(this.tradesFile, JSON.stringify(this.trades, null, 2));
     } catch (error) {
-      console.error('Error saving data:', error);
+      log.error('Error saving data:', error);
     }
   }
 

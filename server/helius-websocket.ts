@@ -4,6 +4,7 @@
 import WebSocket from 'ws';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { EventEmitter } from 'events';
+import { log } from './logger';
 
 // Program IDs
 const PUMP_FUN_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
@@ -24,17 +25,17 @@ const getHeliusWsUrl = () => {
       const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
       if (match && match[1]) {
         apiKey = match[1];
-        console.log(`✅ Extracted Helius API key from RPC_URL: ${apiKey.substring(0, 8)}...`);
+        log.info('Extracted Helius API key from RPC_URL', { keyPrefix: apiKey.substring(0, 8) });
       }
     }
   }
-  
+
   if (!apiKey) {
-    console.warn('⚠️ No Helius API key found, using public RPC (may have rate limits)');
+    log.warn('No Helius API key found, using public RPC (may have rate limits)');
     return 'wss://api.mainnet-beta.solana.com';
   }
-  
-  console.log(`✅ Using Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
+
+  log.info('Using Helius WebSocket with API key', { keyPrefix: apiKey.substring(0, 8) });
   return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
 };
 
@@ -128,7 +129,7 @@ class HeliusWebSocketService extends EventEmitter {
    * Start the WebSocket connection and subscriptions
    */
   async start(): Promise<void> {
-    console.log('🔌 Starting Helius WebSocket service...');
+    log.info('Starting Helius WebSocket service');
     await this.connect();
   }
 
@@ -138,8 +139,8 @@ class HeliusWebSocketService extends EventEmitter {
   private async connect(): Promise<void> {
     // Don't try to connect if we have auth errors
     if (this.hasAuthError) {
-      console.warn('⚠️ Skipping WebSocket connection due to previous authentication error');
-      console.warn('   Please fix HELIUS_API_KEY and restart the server');
+      log.warn('Skipping WebSocket connection due to previous authentication error');
+      log.warn('Please fix HELIUS_API_KEY and restart the server');
       return;
     }
     
@@ -152,26 +153,25 @@ class HeliusWebSocketService extends EventEmitter {
         const apiKey = apiKeyMatch[1];
         // Helius API keys are typically UUIDs (36 chars) or similar format
         if (apiKey.length < 20) {
-          console.error('⚠️ Helius API key appears to be too short or invalid');
-          console.error(`   Key length: ${apiKey.length} characters`);
+          log.error('Helius API key appears to be too short or invalid', { keyLength: apiKey.length });
           this.hasAuthError = true;
           return;
         }
-        console.log(`📡 Connecting to Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
+        log.info('Connecting to Helius WebSocket with API key', { keyPrefix: apiKey.substring(0, 8) });
       } else {
-        console.error('⚠️ Could not extract API key from WebSocket URL');
+        log.error('Could not extract API key from WebSocket URL');
         this.hasAuthError = true;
         return;
       }
     } else {
-      console.log('📡 Connecting to public Solana WebSocket (no API key)');
+      log.info('Connecting to public Solana WebSocket (no API key)');
     }
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.on('open', () => {
-        console.log('✅ Helius WebSocket connected');
+        log.info('Helius WebSocket connected');
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.setupHeartbeat();
@@ -196,64 +196,69 @@ class HeliusWebSocketService extends EventEmitter {
                           error?.statusCode === 401;
         
         if (is401Error) {
-          console.error('🚫 WebSocket authentication failed (401). This usually means:');
-          console.error('   1. The Helius API key is invalid or expired');
-          console.error('   2. The API key does not have WebSocket permissions');
-          console.error('   3. The API key format is incorrect');
-          console.error('   4. The API key was not properly extracted from RPC_URL');
-          console.error('');
-          console.error('   Current HELIUS_API_KEY status:');
+          log.error('WebSocket authentication failed (401)', {
+            reasons: [
+              'The Helius API key is invalid or expired',
+              'The API key does not have WebSocket permissions',
+              'The API key format is incorrect',
+              'The API key was not properly extracted from RPC_URL'
+            ]
+          });
+
           const apiKey = process.env.HELIUS_API_KEY;
           if (apiKey) {
-            console.error(`   - Found: ${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}`);
-            console.error(`   - Length: ${apiKey.length} characters (expected: 36 for UUID format)`);
+            log.error('HELIUS_API_KEY status', {
+              found: true,
+              keyPrefix: apiKey.substring(0, 8),
+              keySuffix: apiKey.substring(apiKey.length - 4),
+              keyLength: apiKey.length,
+              expectedLength: 36
+            });
           } else {
-            console.error('   - NOT SET in environment variables');
+            log.error('HELIUS_API_KEY not set in environment variables');
             const rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
             if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
-              console.error('   - Attempting to extract from RPC_URL...');
               const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
               if (match && match[1]) {
-                console.error(`   - Extracted: ${match[1].substring(0, 8)}...${match[1].substring(match[1].length - 4)}`);
+                log.error('Extracted API key from RPC_URL', {
+                  keyPrefix: match[1].substring(0, 8),
+                  keySuffix: match[1].substring(match[1].length - 4)
+                });
               } else {
-                console.error('   - Could not extract API key from RPC_URL');
+                log.error('Could not extract API key from RPC_URL');
               }
             }
           }
-          console.error('');
-          console.error('   Solution:');
-          console.error('   1. Get a valid API key from https://helius.dev');
-          console.error('   2. Set HELIUS_API_KEY environment variable');
-          console.error('   3. Ensure the API key has WebSocket permissions enabled');
-          console.error('   4. Restart the server after setting the variable');
-          
+
+          log.error('Solution: Get a valid API key from https://helius.dev, set HELIUS_API_KEY environment variable, ensure WebSocket permissions are enabled, and restart the server');
+
           this.hasAuthError = true;
           // Don't try to reconnect if we have auth errors
           return;
         }
-        
+
         // Log other errors
-        console.error('❌ WebSocket error:', errorMsg);
+        log.error('WebSocket error', { error: errorMsg });
       });
 
       this.ws.on('close', (code: number, reason: Buffer) => {
         const reasonStr = reason.toString();
-        console.log(`🔌 WebSocket disconnected (code: ${code}, reason: ${reasonStr})`);
+        log.info('WebSocket disconnected', { code, reason: reasonStr });
         this.isConnected = false;
         this.clearHeartbeat();
-        
+
         // Don't reconnect if we have auth errors or if close code indicates auth failure
         if (this.hasAuthError || code === 1008 || code === 4001 || reasonStr.includes('401') || reasonStr.includes('Unauthorized')) {
-          console.error('🚫 Stopping reconnection attempts due to authentication error');
+          log.error('Stopping reconnection attempts due to authentication error');
           this.hasAuthError = true;
           return;
         }
-        
+
         this.scheduleReconnect();
       });
 
     } catch (error) {
-      console.error('Failed to connect:', error);
+      log.error('Failed to connect', { error: error instanceof Error ? error.message : String(error) });
       this.scheduleReconnect();
     }
   }
@@ -273,7 +278,7 @@ class HeliusWebSocketService extends EventEmitter {
     // Subscribe to Raydium CPMM
     this.subscribeToProgramLogs(RAYDIUM_CPMM_PROGRAM, 'raydium_cpmm');
 
-    console.log('📊 Subscribed to on-chain programs');
+    log.info('Subscribed to on-chain programs');
   }
 
   /**
@@ -293,7 +298,7 @@ class HeliusWebSocketService extends EventEmitter {
     };
 
     this.ws.send(JSON.stringify(subscribeMessage));
-    console.log(`📡 Subscribed to ${label} (${programId.slice(0, 8)}...)`);
+    log.info('Subscribed to program', { label, programId: programId.slice(0, 8) });
   }
 
   /**
@@ -369,7 +374,7 @@ class HeliusWebSocketService extends EventEmitter {
           bondingCurve: txDetails.bondingCurve,
         };
 
-        console.log(`🆕 New PumpFun token: ${event.symbol || event.mint.slice(0, 8)}`);
+        log.info('New PumpFun token detected', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
         this.emit('new_token', event);
         this.emit('event', event);
       }
@@ -400,7 +405,7 @@ class HeliusWebSocketService extends EventEmitter {
       }
 
     } catch (error) {
-      console.error('Error processing PumpFun tx:', error);
+      log.error('Error processing PumpFun transaction', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -430,13 +435,13 @@ class HeliusWebSocketService extends EventEmitter {
           liquidity: txDetails.liquidity,
         };
 
-        console.log(`🎓 Token graduated: ${event.symbol || event.mint.slice(0, 8)}`);
+        log.info('Token graduated', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
         this.emit('graduation', event);
         this.emit('event', event);
       }
 
     } catch (error) {
-      console.error('Error processing Raydium tx:', error);
+      log.error('Error processing Raydium transaction', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -472,7 +477,7 @@ class HeliusWebSocketService extends EventEmitter {
       return this.parseHeliusTransaction(tx);
 
     } catch (error) {
-      console.error('Error fetching tx details:', error);
+      log.error('Error fetching transaction details', { error: error instanceof Error ? error.message : String(error) });
       return null;
     }
   }
@@ -609,11 +614,18 @@ class HeliusWebSocketService extends EventEmitter {
         if (this.rpc429Count >= this.MAX_429_ERRORS) {
           this.rpcCircuitBreakerOpen = true;
           this.rpc429ResetTime = Date.now() + this.CIRCUIT_BREAKER_RESET_TIME;
-          console.warn(`🚫 RPC Circuit breaker opened after ${this.rpc429Count} consecutive 429 errors. Will retry after ${this.CIRCUIT_BREAKER_RESET_TIME / 1000}s`);
+          log.warn('RPC Circuit breaker opened', {
+            consecutiveErrors: this.rpc429Count,
+            retryAfterSeconds: this.CIRCUIT_BREAKER_RESET_TIME / 1000
+          });
         } else {
           // Log but don't spam
           if (this.rpc429Count === 1 || this.rpc429Count % 3 === 0) {
-            console.warn(`⚠️ RPC rate limited (429). Count: ${this.rpc429Count}/${this.MAX_429_ERRORS}. Consider setting HELIUS_API_KEY.`);
+            log.warn('RPC rate limited (429)', {
+              count: this.rpc429Count,
+              maxErrors: this.MAX_429_ERRORS,
+              suggestion: 'Consider setting HELIUS_API_KEY'
+            });
           }
         }
       } else {
@@ -623,7 +635,7 @@ class HeliusWebSocketService extends EventEmitter {
 
       // Don't log every error to avoid spam
       if (!is429Error || this.rpc429Count <= 3) {
-        console.error('Error getting basic tx details:', error.message || error);
+        log.error('Error getting basic transaction details', { error: error.message || String(error) });
       }
       
       return null;
@@ -658,20 +670,26 @@ class HeliusWebSocketService extends EventEmitter {
   private scheduleReconnect(): void {
     // Don't reconnect if we have authentication errors
     if (this.hasAuthError) {
-      console.error('🚫 Skipping reconnection due to authentication error');
+      log.error('Skipping reconnection due to authentication error');
       return;
     }
     
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('❌ Max reconnection attempts reached. WebSocket will not reconnect automatically.');
-      console.error('   If this is an authentication issue, please check your HELIUS_API_KEY');
+      log.error('Max reconnection attempts reached', {
+        attempts: this.maxReconnectAttempts,
+        suggestion: 'If this is an authentication issue, please check your HELIUS_API_KEY'
+      });
       return;
     }
 
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
     this.reconnectAttempts++;
 
-    console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    log.info('Reconnecting WebSocket', {
+      delayMs: delay,
+      attempt: this.reconnectAttempts,
+      maxAttempts: this.maxReconnectAttempts
+    });
 
     setTimeout(() => {
       if (!this.hasAuthError) {
@@ -710,7 +728,7 @@ class HeliusWebSocketService extends EventEmitter {
    * Stop the WebSocket connection
    */
   stop(): void {
-    console.log('🛑 Stopping Helius WebSocket service...');
+    log.info('Stopping Helius WebSocket service');
     this.clearHeartbeat();
 
     if (this.ws) {

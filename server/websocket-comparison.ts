@@ -5,6 +5,7 @@
 
 import WebSocket from 'ws';
 import { io, Socket } from 'socket.io-client';
+import { log } from './logger';
 
 export interface WebSocketTestResult {
   api: string;
@@ -39,7 +40,7 @@ export async function testPumpPortalAPI(timeout: number = 20000): Promise<WebSoc
       ws = new WebSocket('wss://pumpportal.fun/api/data');
 
       ws.on('open', () => {
-        console.log('✅ PumpPortal API: Connected');
+        log.info('✅ PumpPortal API: Connected');
         result.connected = true;
         result.latency = Date.now() - startTime;
         
@@ -49,7 +50,7 @@ export async function testPumpPortalAPI(timeout: number = 20000): Promise<WebSoc
             method: 'subscribeNewToken',
           };
           if (ws) ws.send(JSON.stringify(subscribePayload));
-          console.log('📤 PumpPortal: Sent subscription request');
+          log.info('📤 PumpPortal: Sent subscription request');
         } catch (error: any) {
           result.errors.push(`Subscription error: ${error.message}`);
         }
@@ -64,7 +65,7 @@ export async function testPumpPortalAPI(timeout: number = 20000): Promise<WebSoc
             sampleData.push(message);
           }
 
-          console.log(`📦 PumpPortal: Received token #${tokensCount}`, {
+          log.info(`📦 PumpPortal: Received token #${tokensCount}`, {
             mint: message.mint || message.address || message.token || 'N/A',
             name: message.name || 'N/A',
             symbol: message.symbol || 'N/A',
@@ -76,7 +77,7 @@ export async function testPumpPortalAPI(timeout: number = 20000): Promise<WebSoc
       });
 
       ws.on('error', (error: Error) => {
-        console.error('❌ PumpPortal API Error:', error);
+        log.error('❌ PumpPortal API Error:', error);
         result.errors.push(`Connection error: ${error.message}`);
         result.connected = false;
         if (ws) ws.close();
@@ -84,7 +85,7 @@ export async function testPumpPortalAPI(timeout: number = 20000): Promise<WebSoc
       });
 
       ws.on('close', () => {
-        console.log('🔌 PumpPortal API: Closed');
+        log.info('🔌 PumpPortal API: Closed');
         result.tokensReceived = tokensCount;
         result.sampleData = sampleData[0] || null;
         result.dataStructure = sampleData.length > 0 ? Object.keys(sampleData[0] || {}) : [];
@@ -143,7 +144,7 @@ export async function testPumpFunSocketIO(timeout: number = 20000): Promise<WebS
       });
 
       socket.on('connect', () => {
-        console.log('✅ Pump.fun Socket.IO: Connected', socket?.id);
+        log.info('✅ Pump.fun Socket.IO: Connected', socket?.id);
         result.connected = true;
         result.latency = Date.now() - startTime;
 
@@ -157,11 +158,11 @@ export async function testPumpFunSocketIO(timeout: number = 20000): Promise<WebS
         socket?.emit('join', 'coins');
         
         // Also try direct event subscriptions
-        console.log('📤 Pump.fun Socket.IO: Sent subscription requests');
+        log.info('📤 Pump.fun Socket.IO: Sent subscription requests');
       });
 
       socket.on('connect_error', (error: Error) => {
-        console.error('❌ Pump.fun Socket.IO Connection Error:', error);
+        log.error('❌ Pump.fun Socket.IO Connection Error:', error);
         result.errors.push(`Connection error: ${error.message}`);
         result.connected = false;
         if (socket) socket.disconnect();
@@ -197,20 +198,20 @@ export async function testPumpFunSocketIO(timeout: number = 20000): Promise<WebS
             ? JSON.stringify(data).substring(0, 150)
             : String(data).substring(0, 150);
           
-          console.log(`📦 Pump.fun Socket.IO [${event}]: Received data #${tokensCount}`, dataPreview);
+          log.info(`📦 Pump.fun Socket.IO [${event}]: Received data #${tokensCount}`, dataPreview);
         });
       });
 
       // Also listen to all events (for debugging - helps discover unknown events)
       socket?.onAny((event, ...args) => {
-        console.log(`📦 Pump.fun Socket.IO [ANY]: Event "${event}" with ${args.length} args`);
+        log.info(`📦 Pump.fun Socket.IO [ANY]: Event "${event}" with ${args.length} args`);
         if (args.length > 0 && typeof args[0] === 'object') {
-          console.log('   Data keys:', Object.keys(args[0]));
+          log.info('   Data keys:', Object.keys(args[0]));
         }
       });
 
       socket.on('disconnect', () => {
-        console.log('🔌 Pump.fun Socket.IO: Disconnected');
+        log.info('🔌 Pump.fun Socket.IO: Disconnected');
         result.tokensReceived = tokensCount;
         result.sampleData = sampleData[0] || null;
         result.dataStructure = sampleData.length > 0 ? Object.keys(sampleData[0]?.data || sampleData[0] || {}) : [];
@@ -246,7 +247,7 @@ export async function compareWebSocketAPIs(): Promise<{
   winner: string;
   recommendation: string;
 }> {
-  console.log('🔍 Starting WebSocket API Comparison...\n');
+  log.info('🔍 Starting WebSocket API Comparison...\n');
 
   // Test both APIs in parallel
   const [pumpPortalResult, pumpFunResult] = await Promise.all([

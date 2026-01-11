@@ -1,6 +1,7 @@
 // Authentication Middleware
 import { Request, Response, NextFunction } from 'express';
 import { userAuthManager } from './user-auth';
+import { log } from './logger';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -37,7 +38,7 @@ export const authenticateToken = async (
     req.user = user;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    log.error('Auth middleware error:', error);
     res.status(500).json({ error: 'Authentication failed' });
   }
 };
@@ -62,7 +63,7 @@ export const optionalAuth = async (
       }
     } catch (error) {
       // Ignore errors in optional auth
-      console.warn('Optional auth error:', error);
+      log.warn('Optional auth error:', error);
     }
   }
 

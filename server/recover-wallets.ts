@@ -2,6 +2,7 @@
 // Usage: node -e "require('./dist/server/recover-wallets.js').recoverFromWallets(['wallet1', 'wallet2'], 'privateKey1', 'privateKey2')"
 
 import { Keypair, Connection, SystemProgram, Transaction, sendAndConfirmTransaction, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
+import { log } from './logger';
 
 export async function recoverFromWallets(
   walletAddresses: string[],
@@ -70,7 +71,7 @@ export async function recoverFromWallets(
         })
       );
       
-      console.log(`💸 Recovering ${amountToRecover.toFixed(4)} SOL from ${walletAddress.substring(0, 8)}...`);
+      log.info(`💸 Recovering ${amountToRecover.toFixed(4)} SOL from ${walletAddress.substring(0, 8)}...`);
       const signature = await sendAndConfirmTransaction(
         connection,
         transaction,
@@ -78,7 +79,7 @@ export async function recoverFromWallets(
         { commitment: 'confirmed' }
       );
       
-      console.log(`✅ Recovered from ${walletAddress.substring(0, 8)}...: ${signature}`);
+      log.info(`✅ Recovered from ${walletAddress.substring(0, 8)}...: ${signature}`);
       totalRecovered += amountToRecover;
       
       results.push({
@@ -89,7 +90,7 @@ export async function recoverFromWallets(
       });
       
     } catch (error: any) {
-      console.error(`❌ Failed to recover from ${walletAddresses[i]}:`, error.message);
+      log.error(`❌ Failed to recover from ${walletAddresses[i]}:`, error.message);
       results.push({
         walletAddress: walletAddresses[i],
         amount: 0,
