@@ -408,12 +408,37 @@ async function fetchPumpFunTokens(): Promise<any[]> {
   return tokenCache.data; // Return stale cache on error
 }
 
-// /api/tokens/feed - General token feed
+// /api/tokens/feed - General token feed (DEPRECATED - use tokenFeed service instead)
+// This endpoint is kept for backward compatibility but should use tokenFeed.fetchTokens()
 app.get('/api/tokens/feed', readLimiter, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
-    const tokens = await fetchPumpFunTokens();
+    const filter = (req.query.filter as string) || 'all';
+    const minLiquidity = parseInt(req.query.minLiquidity as string) || 0;
+    const maxAge = parseInt(req.query.maxAge as string) || 1440;
 
+    // Try to use tokenFeed service first (has MongoDB and WebSocket data)
+    if (tokenFeed.isServiceStarted()) {
+      try {
+        const tokens = await tokenFeed.fetchTokens({
+          filter: filter as any,
+          minLiquidity,
+          maxAge,
+          limit
+        });
+        
+        return res.json({
+          success: true,
+          count: tokens.length,
+          tokens
+        });
+      } catch (feedError) {
+        log.warn('tokenFeed.fetchTokens failed, falling back to pump.fun API', { error: (feedError as Error).message });
+      }
+    }
+
+    // Fallback to pump.fun API
+    const tokens = await fetchPumpFunTokens();
     res.json(tokens.slice(0, limit));
   } catch (error) {
     log.error('Error in /api/tokens/feed', { error: (error as Error).message });
@@ -425,8 +450,19 @@ app.get('/api/tokens/feed', readLimiter, async (req, res) => {
 app.get('/api/tokens/new', readLimiter, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
-    const tokens = await fetchPumpFunTokens();
 
+    // Try to use tokenFeed service first
+    if (tokenFeed.isServiceStarted()) {
+      try {
+        const tokens = await tokenFeed.getNew(limit);
+        return res.json({ success: true, count: tokens.length, tokens });
+      } catch (feedError) {
+        log.warn('tokenFeed.getNew failed, falling back to pump.fun API', { error: (feedError as Error).message });
+      }
+    }
+
+    // Fallback to pump.fun API
+    const tokens = await fetchPumpFunTokens();
     const now = Date.now() / 1000;
     const thirtyMinutesAgo = now - (30 * 60);
 
@@ -449,20 +485,26 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
 app.get('/api/tokens/graduating', readLimiter, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
-    const tokens = await fetchPumpFunTokens();
 
-    // Filter tokens that are either complete or have high market cap (close to graduating)
+    // Try to use tokenFeed service first
+    if (tokenFeed.isServiceStarted()) {
+      try {
+        const tokens = await tokenFeed.getGraduating(limit);
+        return res.json({ success: true, count: tokens.length, tokens });
+      } catch (feedError) {
+        log.warn('tokenFeed.getGraduating failed, falling back to pump.fun API', { error: (feedError as Error).message });
+      }
+    }
+
+    // Fallback to pump.fun API
+    const tokens = await fetchPumpFunTokens();
     const graduatingTokens = tokens
       .filter((token: any) => {
         const marketCap = token.usd_market_cap || 0;
         const complete = token.complete || false;
-        // Consider graduating if complete or market cap > $50k
         return complete || marketCap > 50000;
       })
-      .sort((a: any, b: any) => {
-        // Sort by market cap descending
-        return (b.usd_market_cap || 0) - (a.usd_market_cap || 0);
-      })
+      .sort((a: any, b: any) => (b.usd_market_cap || 0) - (a.usd_market_cap || 0))
       .slice(0, limit);
 
     res.json(graduatingTokens);
@@ -476,9 +518,19 @@ app.get('/api/tokens/graduating', readLimiter, async (req, res) => {
 app.get('/api/tokens/trending', readLimiter, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
-    const tokens = await fetchPumpFunTokens();
 
-    // Sort by volume_24h descending
+    // Try to use tokenFeed service first
+    if (tokenFeed.isServiceStarted()) {
+      try {
+        const tokens = await tokenFeed.getTrending(limit);
+        return res.json({ success: true, count: tokens.length, tokens });
+      } catch (feedError) {
+        log.warn('tokenFeed.getTrending failed, falling back to pump.fun API', { error: (feedError as Error).message });
+      }
+    }
+
+    // Fallback to pump.fun API
+    const tokens = await fetchPumpFunTokens();
     const trendingTokens = tokens
       .filter((token: any) => (token.volume_24h || 0) > 0)
       .sort((a: any, b: any) => (b.volume_24h || 0) - (a.volume_24h || 0))

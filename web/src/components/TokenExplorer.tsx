@@ -449,19 +449,19 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
     setLoading(true);
     try {
       // Use new token feed API based on active filter
-      let endpoint = '/tokens/feed';
+      let endpoint = '/api/tokens/feed';
       const params = new URLSearchParams();
       params.set('limit', '50');
 
       switch (activeFilter) {
         case 'new':
-          endpoint = '/tokens/new';
+          endpoint = '/api/tokens/new';
           break;
         case 'graduating':
-          endpoint = '/tokens/graduating';
+          endpoint = '/api/tokens/graduating';
           break;
         case 'trending':
-          endpoint = '/tokens/trending';
+          endpoint = '/api/tokens/trending';
           break;
         default:
           params.set('filter', 'all');
