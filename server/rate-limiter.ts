@@ -1,6 +1,8 @@
 // Rate Limiter Service - Intelligent rate limiting for external APIs
 // Prevents 429 errors by tracking and limiting API requests
 
+import { log } from './logger';
+
 interface RateLimitConfig {
   max: number;        // Maximum requests
   window: number;     // Time window in milliseconds
