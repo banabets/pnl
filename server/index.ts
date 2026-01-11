@@ -54,6 +54,9 @@ import { metricsMiddleware, metricsHandler, businessMetrics } from './metrics';
 // Sentry
 import { initSentry, sentryRequestHandler, sentryTracingHandler, sentryErrorHandler } from './sentry';
 
+// Audit Service
+import { auditService } from './services/audit.service';
+
 // Resolve paths - detect if running from dist/ or source
 const isRunningFromDist = __dirname.includes('dist');
 const projectRoot = isRunningFromDist
