@@ -65,12 +65,15 @@ async function createIndexes(): Promise<void> {
     await TokenIndex.collection.createIndex({ isGraduating: 1 });
     await TokenIndex.collection.createIndex({ isTrending: 1 });
     
-    // Copy Trade indexes
-    await CopyTrade.collection.createIndex({ userId: 1, timestamp: -1 });
-    await CopyTrade.collection.createIndex({ followedWalletId: 1 });
-    
-    // Wallet Stats indexes
-    await WalletStats.collection.createIndex({ walletAddress: 1, date: -1 });
+    // Copy Trade indexes (if models exist)
+    try {
+      const { CopyTrade, WalletStats } = require('./copy-trading');
+      await CopyTrade.collection.createIndex({ userId: 1, timestamp: -1 });
+      await CopyTrade.collection.createIndex({ followedWalletId: 1 });
+      await WalletStats.collection.createIndex({ walletAddress: 1, date: -1 });
+    } catch (error) {
+      // Models may not be available, skip
+    }
     
     // Audit Log indexes
     await AuditLog.collection.createIndex({ userId: 1, timestamp: -1 });

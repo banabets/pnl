@@ -4,7 +4,7 @@
  */
 
 import { logSecurity } from '../logger';
-import { isMongoConnected } from '../database';
+import { isConnected } from '../database';
 
 interface AuditLog {
   userId: string;
@@ -64,7 +64,7 @@ class AuditService {
     }
 
     // Store in database if available
-    if (isMongoConnected()) {
+    if (isConnected()) {
       try {
         const { AuditLog } = require('../database');
         await AuditLog.create(auditLog);
@@ -82,7 +82,7 @@ class AuditService {
     userId: string,
     limit: number = 100
   ): Promise<AuditLog[]> {
-    if (isMongoConnected()) {
+    if (isConnected()) {
       try {
         const { AuditLog } = require('../database');
         return await AuditLog.find({ userId })
@@ -108,7 +108,7 @@ class AuditService {
     action: string,
     limit: number = 100
   ): Promise<AuditLog[]> {
-    if (isMongoConnected()) {
+    if (isConnected()) {
       try {
         const { AuditLog } = require('../database');
         return await AuditLog.find({ action })

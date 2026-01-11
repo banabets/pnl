@@ -131,7 +131,7 @@ export class WalletService {
       index: w.index,
       publicKey: w.publicKey,
       balance: w.balance,
-      label: w.label,
+      label: w.label ? String(w.label) : undefined,
       isActive: w.isActive
     }));
   }
@@ -155,7 +155,7 @@ export class WalletService {
         index: wallet.index,
         publicKey: wallet.publicKey,
         balance: wallet.balance,
-        label: wallet.label ?? undefined,
+        label: wallet.label ? String(wallet.label) : undefined,
         isActive: wallet.isActive,
         keypair
       };

@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import { authLimiter, readLimiter } from '../http-rate-limiter';
-import { authenticateToken, optionalAuth, AuthenticatedRequest } from '../middleware/auth-middleware';
+import { authenticateToken, optionalAuth, AuthenticatedRequest } from '../auth-middleware';
 import { validateBody, validateParams } from '../middleware/validation.middleware';
 import {
   registerSchema,

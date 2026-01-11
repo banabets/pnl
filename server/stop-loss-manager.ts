@@ -301,7 +301,7 @@ class StopLossManager {
       }
 
       // Calculate amount to sell (percentage of position)
-      const tokensToSell = (position.currentAmount * order.amount) / 100;
+      const tokensToSell = (position.tokenAmount * order.amount) / 100;
 
       log.info('Executing sell', { tokensToSell, symbol: order.tokenSymbol });
 
@@ -390,7 +390,7 @@ class StopLossManager {
       }
 
       // Calculate amount to sell (percentage of position)
-      const tokensToSell = (position.currentAmount * order.amount) / 100;
+      const tokensToSell = (position.tokenAmount * order.amount) / 100;
 
       log.info('Executing sell', { tokensToSell, symbol: order.tokenSymbol });
 
@@ -479,7 +479,7 @@ class StopLossManager {
       }
 
       // Trailing stops sell 100% of position
-      const tokensToSell = position.currentAmount;
+      const tokensToSell = position.tokenAmount;
 
       log.info('Executing Trailing Stop sell (100%)', { tokensToSell, symbol: order.tokenSymbol });
 

@@ -1312,6 +1312,7 @@ app.post('/api/master-wallet/delete', authenticateToken, async (req: Authenticat
     }
 
     // Get wallet info for balance check
+    const config = configManager.getConfig();
     const info = await masterWalletManager.getMasterWalletInfo(config.connection);
     const balance = info?.balance || 0;
 
@@ -2319,7 +2320,8 @@ app.post('/api/pumpfun/execute',
       return res.status(503).json({ error: 'PumpFunBot not available. Please rebuild the project with: npm run build' });
     }
     
-    logTrade('pumpfun-execute', 'Pump.fun execute requested - LIVE MODE', {
+    logTrade('pumpfun-execute', {
+      message: 'Pump.fun execute requested - LIVE MODE',
       userId: req.userId,
       action: req.body.action
     });
@@ -5131,7 +5133,7 @@ app.post('/api/stop-loss/take-profit', (req, res) => {
 });
 
 // Create trailing stop order
-app.post('/api/stop-loss/trailing', (req, res) => {
+app.post('/api/stop-loss/trailing', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const {
       positionId,

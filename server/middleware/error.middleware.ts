@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../errors/app.error';
 import { log } from '../logger';
-import { AuthenticatedRequest } from './auth-middleware';
+import { AuthenticatedRequest } from '../auth-middleware';
 
 /**
  * Global error handling middleware

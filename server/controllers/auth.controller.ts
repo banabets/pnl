@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from 'express';
-import { AuthenticatedRequest } from '../middleware/auth-middleware';
+import { AuthenticatedRequest } from '../auth-middleware';
 import { User } from '../database';
 import { log } from '../logger';
 import { auditService } from '../services/audit.service';
@@ -43,7 +43,7 @@ export async function registerUser(req: Request, res: Response) {
   });
 
   // Generate token
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRY as string });
 
   // Audit log
   await auditService.log(user.id, 'user_registered', 'user', {
@@ -97,7 +97,7 @@ export async function loginUser(req: Request, res: Response) {
   await user.save();
 
   // Generate token
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRY as string });
 
   // Audit log
   await auditService.log(user.id, 'user_logged_in', 'auth', {}, {
@@ -231,19 +231,33 @@ export async function updateSettings(req: AuthenticatedRequest, res: Response) {
     throw new NotFoundError('User', userId);
   }
 
+  // Initialize settings if not exists
+  if (!user.settings) {
+    user.settings = {
+      theme: 'auto',
+      notifications: {
+        email: false,
+        priceAlerts: false,
+        tradeAlerts: false,
+      },
+      trading: {
+        defaultSlippage: 1,
+        defaultWalletIndex: 0,
+      },
+    };
+  }
+
   // Update settings
   if (updates.notifications) {
-    user.settings = user.settings || {};
     user.settings.notifications = {
-      ...user.settings.notifications,
+      ...(user.settings.notifications || {}),
       ...updates.notifications,
     };
   }
 
   if (updates.trading) {
-    user.settings = user.settings || {};
     user.settings.trading = {
-      ...user.settings.trading,
+      ...(user.settings.trading || {}),
       ...updates.trading,
     };
   }

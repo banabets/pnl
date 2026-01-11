@@ -73,6 +73,13 @@ class TokenFeedService {
   private graduatedTokens: Set<string> = new Set();
   private isStarted = false;
 
+  /**
+   * Check if service is started (public method)
+   */
+  isServiceStarted(): boolean {
+    return this.isStarted;
+  }
+
   constructor() {
     // Cleanup expired cache entries every 5 minutes
     setInterval(() => this.cleanupExpiredCache(), 5 * 60 * 1000);
