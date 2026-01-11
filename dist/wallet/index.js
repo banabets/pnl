@@ -53,7 +53,7 @@ class WalletManager {
     ensureKeypairsDirectory() {
         if (!fs.existsSync(this.keypairsDir)) {
             fs.mkdirSync(this.keypairsDir, { recursive: true });
-            console.log(chalk_1.default.green(`🐒 Created ape keypairs directory: ${this.keypairsDir}`));
+            console.log(chalk_1.default.green(`💰 Created keypairs directory: ${this.keypairsDir}`));
         }
     }
     /**

@@ -80,6 +80,7 @@ class HeliusWebSocketService extends EventEmitter {
   private subscriptionIds: number[] = [];
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private tokenCache: Map<string, { data: any; timestamp: number }> = new Map();
+  private hasAuthError = false; // Track if we have authentication errors
 
   constructor() {
     super();
@@ -117,14 +118,36 @@ class HeliusWebSocketService extends EventEmitter {
         this.handleMessage(data);
       });
 
-      this.ws.on('error', (error) => {
-        console.error('❌ WebSocket error:', error.message);
+      this.ws.on('error', (error: any) => {
+        const errorMsg = error.message || String(error);
+        console.error('❌ WebSocket error:', errorMsg);
+        
+        // Check if it's an authentication error (401)
+        if (errorMsg.includes('401') || errorMsg.includes('Unauthorized') || errorMsg.includes('Unexpected server response: 401')) {
+          console.error('🚫 WebSocket authentication failed (401). This usually means:');
+          console.error('   1. The Helius API key is invalid or expired');
+          console.error('   2. The API key does not have WebSocket permissions');
+          console.error('   3. The API key format is incorrect');
+          console.error('   Please check your HELIUS_API_KEY environment variable');
+          this.hasAuthError = true;
+          // Don't try to reconnect if we have auth errors
+          return;
+        }
       });
 
-      this.ws.on('close', () => {
-        console.log('🔌 WebSocket disconnected');
+      this.ws.on('close', (code: number, reason: Buffer) => {
+        const reasonStr = reason.toString();
+        console.log(`🔌 WebSocket disconnected (code: ${code}, reason: ${reasonStr})`);
         this.isConnected = false;
         this.clearHeartbeat();
+        
+        // Don't reconnect if we have auth errors or if close code indicates auth failure
+        if (this.hasAuthError || code === 1008 || code === 4001 || reasonStr.includes('401') || reasonStr.includes('Unauthorized')) {
+          console.error('🚫 Stopping reconnection attempts due to authentication error');
+          this.hasAuthError = true;
+          return;
+        }
+        
         this.scheduleReconnect();
       });
 
@@ -478,8 +501,15 @@ class HeliusWebSocketService extends EventEmitter {
    * Schedule reconnection with exponential backoff
    */
   private scheduleReconnect(): void {
+    // Don't reconnect if we have authentication errors
+    if (this.hasAuthError) {
+      console.error('🚫 Skipping reconnection due to authentication error');
+      return;
+    }
+    
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached');
+      console.error('❌ Max reconnection attempts reached. WebSocket will not reconnect automatically.');
+      console.error('   If this is an authentication issue, please check your HELIUS_API_KEY');
       return;
     }
 
@@ -489,7 +519,9 @@ class HeliusWebSocketService extends EventEmitter {
     console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
     setTimeout(() => {
-      this.connect();
+      if (!this.hasAuthError) {
+        this.connect();
+      }
     }, delay);
   }
 
