@@ -198,11 +198,9 @@ export default function MasterWallet({ socket }: MasterWalletProps) {
 
     setLoading(true);
     try {
-      const response = await api.delete('/master-wallet', {
-        data: {
-          confirmDelete: true,
-          force: balance > 0.001,
-        },
+      const response = await api.post('/master-wallet/delete', {
+        confirmDelete: true,
+        force: balance > 0.001,
       });
 
       if (response.data.success) {

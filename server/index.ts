@@ -1241,7 +1241,8 @@ app.get('/api/master-wallet/export-key', authenticateToken, async (req: Authenti
 });
 
 // Delete Master Wallet
-app.delete('/api/master-wallet', authenticateToken, async (req: AuthenticatedRequest, res) => {
+// Using POST instead of DELETE because some clients don't send body in DELETE requests
+app.post('/api/master-wallet/delete', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.userId;
     const { confirmDelete, force } = req.body;
