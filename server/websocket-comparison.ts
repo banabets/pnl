@@ -48,7 +48,7 @@ export async function testPumpPortalAPI(timeout: number = 20000): Promise<WebSoc
           const subscribePayload = {
             method: 'subscribeNewToken',
           };
-          ws.send(JSON.stringify(subscribePayload));
+          if (ws) ws.send(JSON.stringify(subscribePayload));
           console.log('📤 PumpPortal: Sent subscription request');
         } catch (error: any) {
           result.errors.push(`Subscription error: ${error.message}`);

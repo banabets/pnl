@@ -272,6 +272,37 @@ class PortfolioTracker {
       .filter(p => p.walletIndex === walletIndex);
   }
 
+  // Get a single position by ID
+  getPosition(positionId: string): Position | undefined {
+    return this.positions.get(positionId);
+  }
+
+  // Update position after sell
+  updatePositionAfterSell(
+    positionId: string,
+    tokensSold: number,
+    solReceived: number,
+    currentPrice: number,
+    signature: string
+  ): void {
+    const position = this.positions.get(positionId);
+    if (!position) return;
+
+    position.tokenAmount -= tokensSold;
+    position.currentPrice = currentPrice;
+    position.currentValue = position.tokenAmount * currentPrice;
+
+    if (position.tokenAmount <= 0.000001) {
+      position.status = 'closed';
+      position.exitPrice = currentPrice;
+      position.exitTimestamp = Date.now() / 1000;
+    }
+
+    position.lastUpdateTimestamp = Date.now() / 1000;
+    this.positions.set(positionId, position);
+    this.saveData();
+  }
+
   // Get all trades
   getTrades(limit?: number): Trade[] {
     const sorted = this.trades.sort((a, b) => b.timestamp - a.timestamp);

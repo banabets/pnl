@@ -407,6 +407,7 @@ class TokenFeedService {
           dexId: existing.dexId,
           pairAddress: existing.pairAddress,
           liquidity: existing.liquidity,
+          createdAt: existing.createdAt || Date.now()
         });
       }
     });
@@ -756,9 +757,9 @@ class TokenFeedService {
         const supply = Number(mintInfo.supply) / Math.pow(10, mintInfo.decimals);
         
         // Store supply if we don't have it
-        if (!existing.supply || existing.supply === 0) {
-          // Note: TokenData doesn't have supply field, but we can store it in MongoDB
-        }
+        // Note: TokenData doesn't have supply field, but we can store it in MongoDB
+        // if (!existing.supply || existing.supply === 0) {
+        // }
       } catch (mintError) {
         // Ignore mint info errors
       }

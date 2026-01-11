@@ -909,7 +909,8 @@ app.post('/api/funds/emergency-recover',
           })
         );
         
-        logWallet('emergency-recovery', 'Emergency recovery initiated', {
+        logWallet('emergency-recovery', {
+          message: 'Emergency recovery initiated',
           amount: amountToRecover,
           fromWallet: walletAddress.substring(0, 8) + '...',
           toWallet: 'master'
@@ -921,7 +922,7 @@ app.post('/api/funds/emergency-recover',
           { commitment: 'confirmed' }
         );
 
-        logWallet('emergency-recovery', 'Emergency recovery successful', { signature, amount: amountToRecover });
+        logWallet('emergency-recovery', { message: 'Emergency recovery successful', signature, amount: amountToRecover });
         totalRecovered += amountToRecover;
         successCount++;
         
@@ -987,7 +988,7 @@ app.get('/api/master-wallet', authenticateToken, async (req: AuthenticatedReques
 
         // Update stored balance
         await walletService.updateMasterWalletBalance(userId, realBalance);
-        logWallet('balance-check', 'Master wallet balance updated', {
+        logWallet('balance-check', { message: 'Master wallet balance updated',
           userId,
           balance: realBalance,
           publicKey: walletInfo.publicKey
@@ -1021,7 +1022,7 @@ app.get('/api/master-wallet', authenticateToken, async (req: AuthenticatedReques
       const balanceLamports = await connection.getBalance(publicKey);
       realBalance = balanceLamports / 1e9; // Convert lamports to SOL
 
-      logWallet('balance-check', 'Master wallet balance fetched from blockchain', {
+      logWallet('balance-check', { message: 'Master wallet balance fetched from blockchain',
         balance: realBalance
       });
     } catch (balanceError) {
@@ -1177,7 +1178,7 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
     const config = configManager.getConfig();
     const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
 
-    logWallet('withdraw', 'Withdraw request initiated', {
+    logWallet('withdraw', { message: 'Withdraw request initiated',
       amount: amount || 'ALL',
       destination: destination.substring(0, 8) + '...',
       userId: req.userId
@@ -1228,7 +1229,7 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
         const newBalance = (balanceLamports - lamportsToSend - 5000) / LAMPORTS_PER_SOL;
         await walletService.updateMasterWalletBalance(userId, Math.max(0, newBalance));
 
-        logWallet('withdraw', 'Withdraw successful', {
+        logWallet('withdraw', { message: 'Withdraw successful',
           userId,
           amount: lamportsToSend / LAMPORTS_PER_SOL,
           signature: signature
@@ -1284,7 +1285,7 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
         amount ? parseFloat(amount) : undefined
       );
 
-      logWallet('withdraw', 'Withdraw completed successfully', {
+      logWallet('withdraw', { message: 'Withdraw completed successfully',
         amount: amount || 'ALL',
         destination: destination.substring(0, 8) + '...',
         signature: result.signature
@@ -1692,7 +1693,7 @@ app.post('/api/funds/distribute-from-master',
       return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
     }
     
-    logWallet('distribute-funds', 'Distributing funds from master wallet initiated', { userId: req.userId });
+    logWallet('distribute-funds', { message: 'Distributing funds from master wallet initiated', userId: req.userId });
     
     // Get master wallet info
     const config = configManager.getConfig();
@@ -1737,7 +1738,7 @@ app.post('/api/funds/distribute-from-master',
     
     const amountPerWallet = availableBalance / tradingWallets.length;
     
-    logWallet('distribute-funds', 'Distributing SOL across wallets', {
+    logWallet('distribute-funds', { message: 'Distributing SOL across wallets',
       totalAmount: availableBalance,
       walletCount: tradingWallets.length,
       amountPerWallet
@@ -1770,7 +1771,7 @@ app.post('/api/funds/distribute-from-master',
           })
         );
         
-        logWallet('distribute-funds', 'Sending SOL to trading wallet', {
+        logWallet('distribute-funds', { message: 'Sending SOL to trading wallet',
           walletIndex: wallet.index,
           amount: amountPerWallet,
           destination: destinationPublicKey.toBase58().substring(0, 8) + '...'
@@ -1782,7 +1783,7 @@ app.post('/api/funds/distribute-from-master',
           { commitment: 'confirmed' }
         );
         
-        logWallet('distribute-funds', 'Wallet funded successfully', {
+        logWallet('distribute-funds', { message: 'Wallet funded successfully',
           walletIndex: wallet.index,
           signature
         });
@@ -1811,7 +1812,7 @@ app.post('/api/funds/distribute-from-master',
     }
     
     const totalDistributed = amountPerWallet * successCount;
-    logWallet('distribute-funds', 'Distribution complete', {
+    logWallet('distribute-funds', { message: 'Distribution complete',
       successCount,
       failCount,
       totalDistributed
@@ -2043,7 +2044,7 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
         })
       );
       
-      logWallet('recover-funds', 'Recovering SOL from wallet', {
+      logWallet('recover-funds', { message: 'Recovering SOL from wallet',
         amount: amountToRecover,
         fromWallet: walletAddress.substring(0, 8) + '...'
       });
@@ -2054,7 +2055,7 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
         { commitment: 'confirmed' }
       );
       
-      logWallet('recover-funds', 'Recovery successful', {
+      logWallet('recover-funds', { message: 'Recovery successful',
         fromWallet: walletAddress.substring(0, 8) + '...',
         signature,
         amount: amountToRecover
@@ -2717,7 +2718,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
         // Filter for very recent transactions (last 2 hours for fresher tokens)
         const now = Date.now() / 1000;
         const twoHoursAgo = now - (2 * 60 * 60);
-        const recentSignatures = signatures.filter(sig => {
+        const recentSignatures = signatures.filter((sig: any) => {
           const sigTime = sig.blockTime || 0;
           return sigTime >= twoHoursAgo;
         });
@@ -4028,8 +4029,8 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
             const accounts = tx.transaction.message.accountKeys || [];
             
             // Skip if no token balance changes for our mint
-            const hasTokenChanges = preTokenBalances.some(tb => tb.mint === mint) || 
-                                   postTokenBalances.some(tb => tb.mint === mint);
+            const hasTokenChanges = preTokenBalances.some((tb: any) => tb.mint === mint) || 
+                                   postTokenBalances.some((tb: any) => tb.mint === mint);
             if (!hasTokenChanges) continue;
 
             let tokenBalanceChange = 0;
@@ -4049,7 +4050,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
             for (const preBalance of preTokenBalances) {
               if (preBalance.mint === mint && preBalance.accountIndex === signerIndex) {
                 const postBalance = postTokenBalances.find(
-                  (pb) => pb.accountIndex === signerIndex && pb.mint === mint
+                  (pb: any) => pb.accountIndex === signerIndex && pb.mint === mint
                 );
                 if (postBalance) {
                   const preAmount = parseFloat(preBalance.uiTokenAmount?.uiAmountString || '0');
@@ -4066,7 +4067,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
               for (const postBalance of postTokenBalances) {
                 if (postBalance.mint === mint) {
                   const preBalance = preTokenBalances.find(
-                    (pb) => pb.accountIndex === postBalance.accountIndex
+                    (pb: any) => pb.accountIndex === postBalance.accountIndex
                   );
                   if (!preBalance && postBalance.owner === signer) {
                     // New token account owned by signer - this is a buy
@@ -4083,7 +4084,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
             for (const preBalance of preTokenBalances) {
               if (preBalance.mint === mint) {
                 const postBalance = postTokenBalances.find(
-                  (pb) => pb.accountIndex === preBalance.accountIndex && pb.mint === mint
+                  (pb: any) => pb.accountIndex === preBalance.accountIndex && pb.mint === mint
                 );
                 if (postBalance) {
                   const preAmount = parseFloat(preBalance.uiTokenAmount?.uiAmountString || '0');
@@ -4100,7 +4101,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
             for (const postBalance of postTokenBalances) {
               if (postBalance.mint === mint) {
                 const preBalance = preTokenBalances.find(
-                  (pb) => pb.accountIndex === postBalance.accountIndex
+                  (pb: any) => pb.accountIndex === postBalance.accountIndex
                 );
                 if (!preBalance) {
                   const postAmount = parseFloat(postBalance.uiTokenAmount?.uiAmountString || '0');
@@ -4135,7 +4136,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
                 for (const preBalance of preTokenBalances) {
                   if (preBalance.mint === mint && preBalance.accountIndex === i) {
                     const postBalance = postTokenBalances.find(
-                      (pb) => pb.accountIndex === i && pb.mint === mint
+                      (pb: any) => pb.accountIndex === i && pb.mint === mint
                     );
                     if (postBalance) {
                       const preAmt = parseFloat(preBalance.uiTokenAmount?.uiAmountString || '0');
@@ -4149,7 +4150,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
                 for (const postBalance of postTokenBalances) {
                   if (postBalance.mint === mint && postBalance.accountIndex === i) {
                     const preBalance = preTokenBalances.find(
-                      (pb) => pb.accountIndex === i && pb.mint === mint
+                      (pb: any) => pb.accountIndex === i && pb.mint === mint
                     );
                     if (!preBalance) {
                       // New token account
@@ -4962,6 +4963,7 @@ app.post('/api/stop-loss/trailing', (req, res) => {
     } = req.body;
 
     const order = stopLossManager.createTrailingStop(
+      req.userId!,
       positionId,
       tokenMint,
       tokenName,

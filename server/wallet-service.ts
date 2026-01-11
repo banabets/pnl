@@ -155,7 +155,7 @@ export class WalletService {
         index: wallet.index,
         publicKey: wallet.publicKey,
         balance: wallet.balance,
-        label: wallet.label,
+        label: wallet.label ?? undefined,
         isActive: wallet.isActive,
         keypair
       };

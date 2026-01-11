@@ -316,7 +316,14 @@ class StopLossManager {
       if (result.success && result.signature) {
         order.status = 'executed';
         order.executedSignature = result.signature;
-        logTrade('sell', order.tokenMint, order.tokenName, tokensToSell, result.outputAmount, currentPrice, result.signature);
+        logTrade('sell', {
+          tokenMint: order.tokenMint,
+          tokenName: order.tokenName,
+          tokensSold: tokensToSell,
+          solReceived: result.outputAmount,
+          price: currentPrice,
+          signature: result.signature
+        });
         log.info('Stop Loss executed successfully', {
           signature: result.signature,
           received: `${result.outputAmount} SOL`,
@@ -396,7 +403,14 @@ class StopLossManager {
       if (result.success && result.signature) {
         order.status = 'executed';
         order.executedSignature = result.signature;
-        logTrade('sell', order.tokenMint, order.tokenName, tokensToSell, result.outputAmount, currentPrice, result.signature);
+        logTrade('sell', {
+          tokenMint: order.tokenMint,
+          tokenName: order.tokenName,
+          tokensSold: tokensToSell,
+          solReceived: result.outputAmount,
+          price: currentPrice,
+          signature: result.signature
+        });
         log.info('Take Profit executed successfully', {
           signature: result.signature,
           received: `${result.outputAmount} SOL`,
@@ -476,7 +490,14 @@ class StopLossManager {
       if (result.success && result.signature) {
         order.status = 'executed';
         order.executedSignature = result.signature;
-        logTrade('sell', order.tokenMint, order.tokenName, tokensToSell, result.outputAmount, currentPrice, result.signature);
+        logTrade('sell', {
+          tokenMint: order.tokenMint,
+          tokenName: order.tokenName,
+          tokensSold: tokensToSell,
+          solReceived: result.outputAmount,
+          price: currentPrice,
+          signature: result.signature
+        });
         log.info('Trailing Stop executed successfully', {
           signature: result.signature,
           received: `${result.outputAmount} SOL`,

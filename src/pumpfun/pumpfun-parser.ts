@@ -129,7 +129,7 @@ export class PumpFunTransactionParser {
       for (const preBalance of preTokenBalances) {
         if (preBalance.mint === tokenMint) {
           const postBalance = postTokenBalances.find(
-            (pb) => pb.accountIndex === preBalance.accountIndex && pb.mint === tokenMint
+            (pb: any) => pb.accountIndex === preBalance.accountIndex && pb.mint === tokenMint
           );
           
           if (postBalance) {
@@ -146,7 +146,7 @@ export class PumpFunTransactionParser {
       for (const postBalance of postTokenBalances) {
         if (postBalance.mint === tokenMint) {
           const preBalance = preTokenBalances.find(
-            (pb) => pb.accountIndex === postBalance.accountIndex
+            (pb: any) => pb.accountIndex === postBalance.accountIndex
           );
           
           if (!preBalance) {
@@ -170,10 +170,10 @@ export class PumpFunTransactionParser {
           
           // Check if this account has token changes
           const accountTokenChange = preTokenBalances
-            .filter(tb => tb.accountIndex === i && tb.mint === tokenMint)
-            .reduce((sum, tb) => {
+            .filter((tb: any) => tb.accountIndex === i && tb.mint === tokenMint)
+            .reduce((sum: number, tb: any) => {
               const postTb = postTokenBalances.find(
-                ptb => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint
+                (ptb: any) => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint
               );
               if (postTb) {
                 const preAmt = parseFloat(tb.uiTokenAmount?.uiAmountString || '0');

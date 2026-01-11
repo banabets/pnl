@@ -78,9 +78,9 @@ export const sentryTracingHandler = () => {
  * Sentry error handler middleware
  * Must be before other error handlers but after all controllers
  */
-export const sentryErrorHandler = () => {
+export const sentryErrorHandler: () => (err: any, req: any, res: any, next: any) => void = () => {
   if (!process.env.SENTRY_DSN) {
-    return (err: Error, req: Request, res: Response, next: NextFunction) => next(err);
+    return (err: Error, _req: Request, _res: Response, next: NextFunction) => next(err);
   }
   return Sentry.Handlers.errorHandler();
 };

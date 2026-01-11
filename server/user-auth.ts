@@ -700,12 +700,12 @@ export class UserAuthManager {
     }
 
     if (!user.settings) user.settings = {};
-    if (settings.theme !== undefined) user.settings.theme = settings.theme;
-    if (settings.notifications) {
+    if (settings?.theme !== undefined) user.settings.theme = settings.theme;
+    if (settings?.notifications) {
       if (!user.settings.notifications) user.settings.notifications = {};
       Object.assign(user.settings.notifications, settings.notifications);
     }
-    if (settings.trading) {
+    if (settings?.trading) {
       if (!user.settings.trading) user.settings.trading = {};
       Object.assign(user.settings.trading, settings.trading);
     }
@@ -713,7 +713,7 @@ export class UserAuthManager {
     user.updatedAt = new Date().toISOString();
     this.saveUsers();
 
-    this.logActivity(userId, 'settings_updated', { fields: Object.keys(settings) });
+    this.logActivity(userId, 'settings_updated', { fields: settings ? Object.keys(settings) : [] });
 
     return { success: true, user: { ...user, passwordHash: '' } };
   }
