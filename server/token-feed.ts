@@ -459,6 +459,7 @@ class TokenFeedService {
           txns1h: existing.txns1h,
           isTrending: existing.isTrending,
           isGraduating: existing.isGraduating,
+          createdAt: existing.createdAt || Date.now(),
         }).catch(() => {}); // Ignore errors
       }
     });
