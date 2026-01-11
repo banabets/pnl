@@ -203,22 +203,21 @@ import { connectDatabase, isConnected } from './database';
 
 // Connect to MongoDB
 connectDatabase().then(() => {
-  log.info('MongoDB connected - Optional RPC services disabled (configure HELIUS_API_KEY to enable)');
-  // Optional services disabled for testing without RPC/API key
-  // Token Explorer will work via /api/tokens/feed using pump.fun API only
-  // Uncomment below when you configure HELIUS_API_KEY:
-
-  // tokenFeed.start().then(() => {
-  //   tokenEnricherWorker.start().catch((error) => {
-  //     log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
-  //   });
-  // }).catch((error) => {
-  //   log.error('Failed to start token feed', { error: error.message, stack: error.stack });
-  // });
+  log.info('MongoDB connected - Starting token feed and enricher services');
+  // Start token feed service (requires HELIUS_API_KEY for optimal performance)
+  tokenFeed.start().then(() => {
+    log.info('Token feed service started successfully');
+    // Start enricher worker after token feed is ready
+    tokenEnricherWorker.start().catch((error) => {
+      log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
+    });
+  }).catch((error) => {
+    log.error('Failed to start token feed', { error: error.message, stack: error.stack });
+    log.warn('Token feed service disabled - Token Explorer will use pump.fun API fallback');
+  });
 }).catch((error) => {
   log.error('Failed to connect to MongoDB', { error: error.message, stack: error.stack });
-  log.warn('Continuing without MongoDB - Token Explorer will still work via pump.fun API');
-  // Optional services disabled - no RPC required for basic token explorer
+  log.warn('Continuing without MongoDB - Token Explorer will use pump.fun API');
 });
 
 const app = express();
