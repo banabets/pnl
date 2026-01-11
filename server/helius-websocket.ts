@@ -13,11 +13,28 @@ const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 
 // Helius WebSocket URL
 const getHeliusWsUrl = () => {
-  const apiKey = process.env.HELIUS_API_KEY || process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1];
+  // Try to get API key from various sources
+  let apiKey = process.env.HELIUS_API_KEY;
+  
+  // If not found, try to extract from SOLANA_RPC_URL or RPC_URL
   if (!apiKey) {
-    console.warn('No Helius API key found, using public RPC');
+    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
+    if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+      // Extract API key from URL: https://mainnet.helius-rpc.com/?api-key=KEY
+      const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
+      if (match && match[1]) {
+        apiKey = match[1];
+        console.log(`✅ Extracted Helius API key from RPC_URL: ${apiKey.substring(0, 8)}...`);
+      }
+    }
+  }
+  
+  if (!apiKey) {
+    console.warn('⚠️ No Helius API key found, using public RPC (may have rate limits)');
     return 'wss://api.mainnet-beta.solana.com';
   }
+  
+  console.log(`✅ Using Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
   return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
 };
 
@@ -84,7 +101,19 @@ class HeliusWebSocketService extends EventEmitter {
 
   constructor() {
     super();
-    const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+    // Get RPC URL, preferring SOLANA_RPC_URL or RPC_URL
+    let rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
+    
+    // If no RPC URL is set, try to construct from HELIUS_API_KEY
+    if (!rpcUrl) {
+      const heliusApiKey = process.env.HELIUS_API_KEY;
+      if (heliusApiKey) {
+        rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`;
+      } else {
+        rpcUrl = 'https://api.mainnet-beta.solana.com';
+      }
+    }
+    
     this.connection = new Connection(rpcUrl, 'confirmed');
   }
 

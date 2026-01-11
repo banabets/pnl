@@ -161,18 +161,27 @@ export function validateOrThrow(): void {
 
 // Export helper to get validated RPC URL
 export function getValidatedRpcUrl(): string {
-  const rpcUrl = process.env.RPC_URL;
-  const heliusApiKey = process.env.HELIUS_API_KEY;
+  const rpcUrl = process.env.RPC_URL || process.env.SOLANA_RPC_URL;
+  let heliusApiKey = process.env.HELIUS_API_KEY;
 
-  if (rpcUrl) {
+  // If RPC_URL is already a complete Helius URL, use it directly
+  if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+    // Extract API key if not already set
+    if (!heliusApiKey) {
+      const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
+      if (match && match[1]) {
+        heliusApiKey = match[1];
+      }
+    }
     return rpcUrl;
   }
 
+  // If we have a Helius API key, construct the URL
   if (heliusApiKey) {
     return `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`;
   }
 
   // Fallback to public RPC (not recommended for production)
-  console.warn('⚠️ Using public Solana RPC. This is SLOW and rate-limited. Set HELIUS_API_KEY for better performance.');
+  console.warn('⚠️ Using public Solana RPC. This is SLOW and rate-limited. Set HELIUS_API_KEY or RPC_URL for better performance.');
   return 'https://api.mainnet-beta.solana.com';
 }
