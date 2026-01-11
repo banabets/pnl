@@ -136,8 +136,36 @@ class HeliusWebSocketService extends EventEmitter {
    * Connect to Helius WebSocket
    */
   private async connect(): Promise<void> {
+    // Don't try to connect if we have auth errors
+    if (this.hasAuthError) {
+      console.warn('⚠️ Skipping WebSocket connection due to previous authentication error');
+      console.warn('   Please fix HELIUS_API_KEY and restart the server');
+      return;
+    }
+    
     const wsUrl = getHeliusWsUrl();
-    console.log('📡 Connecting to:', wsUrl.replace(/api-key=.*/, 'api-key=***'));
+    
+    // Validate API key before connecting
+    if (wsUrl.includes('helius-rpc.com')) {
+      const apiKeyMatch = wsUrl.match(/api-key=([^&]+)/);
+      if (apiKeyMatch && apiKeyMatch[1]) {
+        const apiKey = apiKeyMatch[1];
+        // Helius API keys are typically UUIDs (36 chars) or similar format
+        if (apiKey.length < 20) {
+          console.error('⚠️ Helius API key appears to be too short or invalid');
+          console.error(`   Key length: ${apiKey.length} characters`);
+          this.hasAuthError = true;
+          return;
+        }
+        console.log(`📡 Connecting to Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
+      } else {
+        console.error('⚠️ Could not extract API key from WebSocket URL');
+        this.hasAuthError = true;
+        return;
+      }
+    } else {
+      console.log('📡 Connecting to public Solana WebSocket (no API key)');
+    }
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -156,19 +184,56 @@ class HeliusWebSocketService extends EventEmitter {
 
       this.ws.on('error', (error: any) => {
         const errorMsg = error.message || String(error);
-        console.error('❌ WebSocket error:', errorMsg);
+        const errorStr = String(error);
         
-        // Check if it's an authentication error (401)
-        if (errorMsg.includes('401') || errorMsg.includes('Unauthorized') || errorMsg.includes('Unexpected server response: 401')) {
+        // Check if it's an authentication error (401) - check multiple formats
+        const is401Error = errorMsg.includes('401') || 
+                          errorMsg.includes('Unauthorized') || 
+                          errorMsg.includes('Unexpected server response: 401') ||
+                          errorStr.includes('401') ||
+                          errorStr.includes('Unauthorized') ||
+                          error?.code === 401 ||
+                          error?.statusCode === 401;
+        
+        if (is401Error) {
           console.error('🚫 WebSocket authentication failed (401). This usually means:');
           console.error('   1. The Helius API key is invalid or expired');
           console.error('   2. The API key does not have WebSocket permissions');
           console.error('   3. The API key format is incorrect');
-          console.error('   Please check your HELIUS_API_KEY environment variable');
+          console.error('   4. The API key was not properly extracted from RPC_URL');
+          console.error('');
+          console.error('   Current HELIUS_API_KEY status:');
+          const apiKey = process.env.HELIUS_API_KEY;
+          if (apiKey) {
+            console.error(`   - Found: ${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}`);
+            console.error(`   - Length: ${apiKey.length} characters (expected: 36 for UUID format)`);
+          } else {
+            console.error('   - NOT SET in environment variables');
+            const rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
+            if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+              console.error('   - Attempting to extract from RPC_URL...');
+              const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
+              if (match && match[1]) {
+                console.error(`   - Extracted: ${match[1].substring(0, 8)}...${match[1].substring(match[1].length - 4)}`);
+              } else {
+                console.error('   - Could not extract API key from RPC_URL');
+              }
+            }
+          }
+          console.error('');
+          console.error('   Solution:');
+          console.error('   1. Get a valid API key from https://helius.dev');
+          console.error('   2. Set HELIUS_API_KEY environment variable');
+          console.error('   3. Ensure the API key has WebSocket permissions enabled');
+          console.error('   4. Restart the server after setting the variable');
+          
           this.hasAuthError = true;
           // Don't try to reconnect if we have auth errors
           return;
         }
+        
+        // Log other errors
+        console.error('❌ WebSocket error:', errorMsg);
       });
 
       this.ws.on('close', (code: number, reason: Buffer) => {
