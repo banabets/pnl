@@ -58,11 +58,9 @@ RUN apk del python3 make g++
 # Copy built application from builder
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 
-# Copy web build (if exists) - vite builds to 'build' directory
-RUN mkdir -p /app/web && \
-    if [ -d "/app/web/build" ]; then \
-      cp -r /app/web/build /app/web/build; \
-    fi
+# Copy web build (vite builds to 'build' directory)
+# If web build exists in builder stage, copy it; otherwise this will fail
+# which is fine - it means web wasn't built
 COPY --from=builder --chown=nodejs:nodejs /app/web/build ./web/build
 
 # Create logs directory
