@@ -23,14 +23,14 @@ export function validateEnvironment(): EnvValidationResult {
   // ===== CRITICAL VARIABLES (MUST be set) =====
   const isProduction = process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL;
 
-  // 1. JWT_SECRET - Generate if missing in production environments
-  let jwtSecret = process.env.JWT_SECRET;
+  // 1. JWT_SECRET
+  const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
     if (isProduction) {
-      // Auto-generate secure JWT_SECRET in production if not set
-      jwtSecret = crypto.randomBytes(64).toString('base64');
-      process.env.JWT_SECRET = jwtSecret;
-      warnings.push('JWT_SECRET was auto-generated. Consider setting it explicitly in environment variables for persistence.');
+      // In production, provide helpful error message for Railway/Vercel
+      errors.push('JWT_SECRET is not set. Set it in your deployment platform (Railway/Vercel) environment variables.');
+      errors.push('  Generate: openssl rand -base64 64');
+      errors.push('  Or use: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'base64\'))"');
     } else {
       errors.push('JWT_SECRET is not set. Generate one with: openssl rand -base64 64');
     }
@@ -38,14 +38,13 @@ export function validateEnvironment(): EnvValidationResult {
     errors.push('JWT_SECRET is using default or weak value. Must be at least 32 characters.');
   }
 
-  // 2. ENCRYPTION_KEY - Generate if missing in production environments
-  let encryptionKey = process.env.ENCRYPTION_KEY;
+  // 2. ENCRYPTION_KEY
+  const encryptionKey = process.env.ENCRYPTION_KEY;
   if (!encryptionKey) {
     if (isProduction) {
-      // Auto-generate secure ENCRYPTION_KEY in production if not set
-      encryptionKey = crypto.randomBytes(32).toString('hex');
-      process.env.ENCRYPTION_KEY = encryptionKey;
-      warnings.push('ENCRYPTION_KEY was auto-generated. Consider setting it explicitly in environment variables for persistence.');
+      // In production, provide helpful error message for Railway/Vercel
+      errors.push('ENCRYPTION_KEY is not set. Set it in your deployment platform (Railway/Vercel) environment variables.');
+      errors.push('  Generate: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
     } else {
       errors.push('ENCRYPTION_KEY is not set. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
     }
@@ -54,21 +53,27 @@ export function validateEnvironment(): EnvValidationResult {
   }
 
   // 3. HELIUS_API_KEY - Allow RPC_URL as alternative
-  const heliusApiKey = process.env.HELIUS_API_KEY;
   const rpcUrl = process.env.RPC_URL || process.env.SOLANA_RPC_URL;
+  let heliusApiKey = process.env.HELIUS_API_KEY;
   
-  if (!heliusApiKey || heliusApiKey === 'your-helius-api-key-here') {
-    if (rpcUrl && (rpcUrl.includes('helius-rpc.com') || rpcUrl.includes('api-key='))) {
-      // RPC_URL contains Helius API key, extract it
+  // Try to extract HELIUS_API_KEY from RPC_URL if not set
+  if ((!heliusApiKey || heliusApiKey === 'your-helius-api-key-here') && rpcUrl) {
+    if (rpcUrl.includes('helius-rpc.com') || rpcUrl.includes('api-key=')) {
       const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
       if (match && match[1]) {
-        process.env.HELIUS_API_KEY = match[1];
-        warnings.push('HELIUS_API_KEY extracted from RPC_URL. Consider setting it explicitly.');
-      } else {
-        warnings.push('HELIUS_API_KEY is not set, but RPC_URL is configured. Some features may be limited.');
+        heliusApiKey = match[1];
+        process.env.HELIUS_API_KEY = heliusApiKey;
+        warnings.push('HELIUS_API_KEY extracted from RPC_URL. Consider setting it explicitly for clarity.');
       }
-    } else if (rpcUrl) {
+    }
+  }
+  
+  if (!heliusApiKey || heliusApiKey === 'your-helius-api-key-here') {
+    if (rpcUrl && !rpcUrl.includes('helius-rpc.com')) {
+      // RPC_URL is set but not Helius, warn but don't error
       warnings.push('HELIUS_API_KEY is not set, but RPC_URL is configured. Some WebSocket features may not work.');
+    } else if (isProduction) {
+      errors.push('HELIUS_API_KEY is not set. Get one from https://helius.dev and set it in your deployment platform.');
     } else {
       errors.push('HELIUS_API_KEY is not set or using placeholder. Get one from https://helius.dev');
     }
@@ -172,13 +177,26 @@ export function validateOrThrow(): void {
   if (!result.valid) {
     console.error('\n🚨 ENVIRONMENT VALIDATION FAILED!\n');
     console.error('Please fix the errors above before starting the server.\n');
-    console.error('Steps to fix:');
-    console.error('  1. Copy .env.example to .env');
-    console.error('  2. Generate secure values:');
-    console.error('     - JWT_SECRET: openssl rand -base64 64');
-    console.error('     - ENCRYPTION_KEY: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
-    console.error('  3. Get HELIUS_API_KEY from https://helius.dev');
-    console.error('  4. Set MONGODB_URI to your MongoDB connection string\n');
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL;
+    
+    if (isProduction) {
+      console.error('Steps to fix (in your deployment platform):');
+      console.error('  1. Go to your deployment platform (Railway/Vercel) settings');
+      console.error('  2. Add environment variables:');
+      console.error('     - JWT_SECRET: openssl rand -base64 64');
+      console.error('     - ENCRYPTION_KEY: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+      console.error('     - HELIUS_API_KEY: Get from https://helius.dev');
+      console.error('     - MONGODB_URI: Your MongoDB connection string');
+      console.error('  3. Redeploy your application\n');
+    } else {
+      console.error('Steps to fix:');
+      console.error('  1. Copy .env.example to .env');
+      console.error('  2. Generate secure values:');
+      console.error('     - JWT_SECRET: openssl rand -base64 64');
+      console.error('     - ENCRYPTION_KEY: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+      console.error('  3. Get HELIUS_API_KEY from https://helius.dev');
+      console.error('  4. Set MONGODB_URI to your MongoDB connection string\n');
+    }
 
     process.exit(1);
   }
