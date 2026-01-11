@@ -216,20 +216,28 @@ class HeliusWebSocketService extends events_1.EventEmitter {
                 const txDetails = await this.getTransactionDetails(signature);
                 if (!txDetails)
                     return;
+                const mint = txDetails.mint || 'unknown';
                 const event = {
                     type: 'new_token',
-                    mint: txDetails.mint || 'unknown',
-                    name: txDetails.name,
-                    symbol: txDetails.symbol,
+                    mint,
+                    // SIEMPRE proporcionar valores por defecto basados en el mint
+                    name: txDetails.name || `Token ${mint.slice(0, 8)}`,
+                    symbol: txDetails.symbol || mint.slice(0, 4).toUpperCase(),
                     creator: txDetails.creator || 'unknown',
                     signature,
                     timestamp: Date.now(),
                     source: 'pumpfun',
                     bondingCurve: txDetails.bondingCurve,
                 };
-                console.log(`🆕 New PumpFun token: ${event.symbol || event.mint.slice(0, 8)}`);
+                console.log(`🆕 New PumpFun token: ${event.symbol} (${event.name})`);
                 this.emit('new_token', event);
                 this.emit('event', event);
+                // Intentar enriquecer con datos reales de pump.fun API (asíncrono, no bloquea)
+                if (mint !== 'unknown') {
+                    this.enrichTokenFromPumpFunAPI(mint, event).catch(() => {
+                        // Ignorar errores de enriquecimiento
+                    });
+                }
             }
             // Detect trades (buy/sell) - Skip if circuit breaker is open to reduce load
             if (!this.rpcCircuitBreakerOpen &&
@@ -382,6 +390,54 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             }
         }
         return result;
+    }
+    /**
+     * Enriquecer token con datos de pump.fun API
+     */
+    async enrichTokenFromPumpFunAPI(mint, event) {
+        try {
+            // Esperar 2 segundos antes de intentar (para que el token esté indexado)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const pumpApiUrl = `https://frontend-api.pump.fun/coins/${mint}`;
+            const response = await fetch(pumpApiUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                    'Accept': 'application/json',
+                    'Referer': 'https://pump.fun/',
+                },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                // Actualizar evento con información real
+                let updated = false;
+                if (data.name && data.name.trim() && data.name.toLowerCase() !== 'pump fun') {
+                    event.name = data.name;
+                    updated = true;
+                }
+                if (data.symbol && data.symbol.trim() && data.symbol.toLowerCase() !== 'pump') {
+                    event.symbol = data.symbol;
+                    updated = true;
+                }
+                // Agregar datos adicionales
+                const updatedEvent = {
+                    ...event,
+                    price: data.usd_market_cap ? data.usd_market_cap / (data.market_cap || 1) : undefined,
+                    marketCap: data.usd_market_cap || data.market_cap,
+                    liquidity: data.liquidity,
+                    volume: data.volume_24h || data.volume,
+                    holders: data.holders,
+                };
+                if (updated) {
+                    console.log(`✅ Token enriquecido: ${updatedEvent.symbol} (${updatedEvent.name})`);
+                    // Emitir evento actualizado
+                    this.emit('token_updated', updatedEvent);
+                    this.emit('event', { ...updatedEvent, type: 'token_updated' });
+                }
+            }
+        }
+        catch (error) {
+            // Ignorar errores silenciosamente
+        }
     }
     /**
      * Throttled RPC call with rate limiting and circuit breaker
@@ -586,4 +642,3 @@ class HeliusWebSocketService extends events_1.EventEmitter {
 }
 // Singleton instance
 exports.heliusWebSocket = new HeliusWebSocketService();
-//# sourceMappingURL=helius-websocket.js.map

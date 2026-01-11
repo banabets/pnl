@@ -13,30 +13,11 @@ const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 
 // Helius WebSocket URL
 const getHeliusWsUrl = () => {
-  // Check if SOLANA_RPC_URL is a complete Helius URL
-  const rpcUrl = process.env.SOLANA_RPC_URL;
-  
-  if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
-    // Extract API key from complete URL and convert to WebSocket URL
-    const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
-    if (apiKeyMatch) {
-      const apiKey = apiKeyMatch[1];
-      console.log(`✅ Using Helius WebSocket from SOLANA_RPC_URL, API key: ${apiKey.substring(0, 8)}...`);
-      return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
-    }
-  }
-  
-  // Try to get API key from env or extract from RPC URL
-  const apiKey = process.env.HELIUS_API_KEY || 
-                 rpcUrl?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
-                 '7b05747c-b100-4159-ba5f-c85e8c8d3997'; // Default Helius API key
-  
+  const apiKey = process.env.HELIUS_API_KEY || process.env.SOLANA_RPC_URL?.match(/helius.*?([a-f0-9-]{36})/)?.[1];
   if (!apiKey) {
-    console.warn('⚠️ No Helius API key found, using public RPC (may have rate limits)');
+    console.warn('No Helius API key found, using public RPC');
     return 'wss://api.mainnet-beta.solana.com';
   }
-  
-  console.log(`✅ Using Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
   return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
 };
 
@@ -99,47 +80,11 @@ class HeliusWebSocketService extends EventEmitter {
   private subscriptionIds: number[] = [];
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private tokenCache: Map<string, { data: any; timestamp: number }> = new Map();
-  // Rate limiting for RPC calls
-  private rpcCallQueue: Array<{ resolve: (value: any) => void; reject: (error: any) => void; fn: () => Promise<any> }> = [];
-  private rpcCallInProgress = false;
-  private lastRpcCallTime = 0;
-  private minRpcCallInterval = 200; // Minimum 200ms between RPC calls
-  private consecutive429Errors = 0;
-  private max429Errors = 5;
-  private rpcCircuitBreakerOpen = false;
-  private rpcCircuitBreakerResetTime = 0;
-  private readonly CIRCUIT_BREAKER_RESET_DELAY = 60000; // 1 minute
 
   constructor() {
     super();
-    // Use SOLANA_RPC_URL if it's a complete Helius URL, otherwise construct it
-    let rpcUrl = process.env.SOLANA_RPC_URL;
-    
-    // If SOLANA_RPC_URL is a complete Helius URL, use it directly
-    if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
-      // Already a complete Helius URL, use as-is
-    } else {
-      // Try to extract API key or use default
-      const heliusApiKey = process.env.HELIUS_API_KEY || 
-                          rpcUrl?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
-                          '7b05747c-b100-4159-ba5f-c85e8c8d3997';
-      
-      if (heliusApiKey) {
-        rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`;
-      } else {
-        rpcUrl = rpcUrl || 'https://api.mainnet-beta.solana.com';
-      }
-    }
-    
+    const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
     this.connection = new Connection(rpcUrl, 'confirmed');
-    const isHelius = rpcUrl.includes('helius-rpc.com');
-    console.log(`🔗 Helius WebSocket: Using ${isHelius ? 'Helius RPC (with API key)' : 'Public Solana RPC'}`);
-    if (isHelius) {
-      const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
-      if (apiKeyMatch) {
-        console.log(`   API Key: ${apiKeyMatch[1].substring(0, 8)}...`);
-      }
-    }
   }
 
   /**
@@ -274,22 +219,17 @@ class HeliusWebSocketService extends EventEmitter {
   }
 
   /**
-   * Process PumpFun transactions (with rate limiting)
+   * Process PumpFun transactions
    */
   private async processPumpFunTransaction(signature: string, logs: string[]): Promise<void> {
     const logsStr = logs.join(' ');
-
-    // Skip if circuit breaker is open
-    if (this.rpcCircuitBreakerOpen) {
-      return; // Silently skip to avoid more rate limit errors
-    }
 
     try {
       // Detect new token creation
       if (logsStr.includes('Program log: Instruction: Create') ||
           logsStr.includes('Program log: Instruction: Initialize')) {
 
-        // Get transaction details (with rate limiting)
+        // Get transaction details
         const txDetails = await this.getTransactionDetails(signature);
         if (!txDetails) return;
 
@@ -310,10 +250,9 @@ class HeliusWebSocketService extends EventEmitter {
         this.emit('event', event);
       }
 
-      // Detect trades (buy/sell) - Skip if circuit breaker is open to reduce load
-      if (!this.rpcCircuitBreakerOpen && 
-          (logsStr.includes('Program log: Instruction: Buy') ||
-           logsStr.includes('Program log: Instruction: Sell'))) {
+      // Detect trades (buy/sell)
+      if (logsStr.includes('Program log: Instruction: Buy') ||
+          logsStr.includes('Program log: Instruction: Sell')) {
 
         const isBuy = logsStr.includes('Buy');
         const txDetails = await this.getTransactionDetails(signature);
@@ -336,24 +275,16 @@ class HeliusWebSocketService extends EventEmitter {
         this.emit('event', event);
       }
 
-    } catch (error: any) {
-      // Don't log if it's a circuit breaker or rate limit error
-      if (!error?.message?.includes('circuit breaker') && !error?.message?.includes('429')) {
-        console.error('Error processing PumpFun tx:', error.message);
-      }
+    } catch (error) {
+      console.error('Error processing PumpFun tx:', error);
     }
   }
 
   /**
-   * Process Raydium transactions (detect graduations) - with rate limiting
+   * Process Raydium transactions (detect graduations)
    */
   private async processRaydiumTransaction(signature: string, logs: string[]): Promise<void> {
     const logsStr = logs.join(' ');
-
-    // Skip if circuit breaker is open
-    if (this.rpcCircuitBreakerOpen) {
-      return;
-    }
 
     try {
       // Detect new pool creation (potential graduation)
@@ -380,11 +311,8 @@ class HeliusWebSocketService extends EventEmitter {
         this.emit('event', event);
       }
 
-    } catch (error: any) {
-      // Don't log if it's a circuit breaker or rate limit error
-      if (!error?.message?.includes('circuit breaker') && !error?.message?.includes('429')) {
-        console.error('Error processing Raydium tx:', error.message);
-      }
+    } catch (error) {
+      console.error('Error processing Raydium tx:', error);
     }
   }
 
@@ -393,24 +321,8 @@ class HeliusWebSocketService extends EventEmitter {
    */
   private async getTransactionDetails(signature: string): Promise<any> {
     try {
-      // Try to get API key from env or extract from RPC URL
-      const rpcUrl = process.env.SOLANA_RPC_URL;
-      let apiKey = process.env.HELIUS_API_KEY;
-      
-      // If SOLANA_RPC_URL is a complete Helius URL, extract API key from it
-      if (!apiKey && rpcUrl && rpcUrl.includes('helius-rpc.com')) {
-        const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
-        if (apiKeyMatch) {
-          apiKey = apiKeyMatch[1];
-        }
-      }
-      
-      // Fallback to default key if nothing found
+      const apiKey = process.env.HELIUS_API_KEY;
       if (!apiKey) {
-        apiKey = '7b05747c-b100-4159-ba5f-c85e8c8d3997';
-      }
-      
-      if (!apiKey || apiKey === '') {
         // Fallback to basic RPC
         return this.getBasicTransactionDetails(signature);
       }
@@ -488,103 +400,14 @@ class HeliusWebSocketService extends EventEmitter {
   }
 
   /**
-   * Throttled RPC call with rate limiting and circuit breaker
-   */
-  private async throttledRpcCall<T>(fn: () => Promise<T>): Promise<T> {
-    // Check circuit breaker
-    if (this.rpcCircuitBreakerOpen) {
-      const now = Date.now();
-      if (now < this.rpcCircuitBreakerResetTime) {
-        // Circuit breaker still open, reject immediately
-        throw new Error('RPC circuit breaker is open due to rate limiting');
-      } else {
-        // Reset circuit breaker
-        this.rpcCircuitBreakerOpen = false;
-        this.consecutive429Errors = 0;
-        console.log('🔄 RPC circuit breaker reset');
-      }
-    }
-
-    return new Promise((resolve, reject) => {
-      this.rpcCallQueue.push({ resolve, reject, fn });
-      this.processRpcQueue();
-    });
-  }
-
-  /**
-   * Process RPC call queue with rate limiting
-   */
-  private async processRpcQueue(): Promise<void> {
-    if (this.rpcCallInProgress || this.rpcCallQueue.length === 0) {
-      return;
-    }
-
-    this.rpcCallInProgress = true;
-
-    while (this.rpcCallQueue.length > 0) {
-      const item = this.rpcCallQueue.shift();
-      if (!item) break;
-
-      // Rate limiting: wait if needed
-      const now = Date.now();
-      const timeSinceLastCall = now - this.lastRpcCallTime;
-      if (timeSinceLastCall < this.minRpcCallInterval) {
-        await new Promise(resolve => setTimeout(resolve, this.minRpcCallInterval - timeSinceLastCall));
-      }
-
-      try {
-        this.lastRpcCallTime = Date.now();
-        const result = await item.fn();
-        this.consecutive429Errors = 0; // Reset on success
-        item.resolve(result);
-      } catch (error: any) {
-        // Handle 429 errors
-        if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests')) {
-          this.consecutive429Errors++;
-          console.error(`❌ RPC 429 error (${this.consecutive429Errors}/${this.max429Errors}):`, error.message);
-
-          // Open circuit breaker if too many 429 errors
-          if (this.consecutive429Errors >= this.max429Errors) {
-            this.rpcCircuitBreakerOpen = true;
-            this.rpcCircuitBreakerResetTime = Date.now() + this.CIRCUIT_BREAKER_RESET_DELAY;
-            console.error(`🚨 RPC circuit breaker opened due to ${this.consecutive429Errors} consecutive 429 errors. Will reset in ${this.CIRCUIT_BREAKER_RESET_DELAY / 1000}s`);
-            // Reject remaining items in queue
-            while (this.rpcCallQueue.length > 0) {
-              const queuedItem = this.rpcCallQueue.shift();
-              if (queuedItem) {
-                queuedItem.reject(new Error('RPC circuit breaker is open'));
-              }
-            }
-            item.reject(error);
-            break;
-          }
-
-          // Exponential backoff for 429 errors
-          const backoffDelay = Math.min(1000 * Math.pow(2, this.consecutive429Errors - 1), 10000);
-          await new Promise(resolve => setTimeout(resolve, backoffDelay));
-          item.reject(error);
-        } else {
-          // Other errors, reject immediately
-          item.reject(error);
-        }
-      }
-    }
-
-    this.rpcCallInProgress = false;
-  }
-
-  /**
-   * Fallback: Get basic transaction details from RPC (with rate limiting)
+   * Fallback: Get basic transaction details from RPC
    */
   private async getBasicTransactionDetails(signature: string): Promise<any> {
     try {
-      // Use throttled RPC call
-      const tx = await this.throttledRpcCall(() =>
-        this.connection.getParsedTransaction(signature, {
-          maxSupportedTransactionVersion: 0,
-          commitment: 'confirmed'
-        })
-      );
+      const tx = await this.connection.getParsedTransaction(signature, {
+        maxSupportedTransactionVersion: 0,
+        commitment: 'confirmed'
+      });
 
       if (!tx) return null;
 
@@ -623,11 +446,8 @@ class HeliusWebSocketService extends EventEmitter {
 
       return result;
 
-    } catch (error: any) {
-      // Don't log 429 errors here, already logged in throttledRpcCall
-      if (!error?.message?.includes('429') && !error?.message?.includes('Too Many Requests') && !error?.message?.includes('circuit breaker')) {
-        console.error('Error getting basic tx details:', error.message);
-      }
+    } catch (error) {
+      console.error('Error getting basic tx details:', error);
       return null;
     }
   }

@@ -1,8 +1,58 @@
+// ==========================================
+// 🔒 CRITICAL: Validate environment first!
+// ==========================================
+import dotenv from 'dotenv';
+dotenv.config(); // Load .env file
+
+import { validateOrThrow, getValidatedRpcUrl } from './env-validator';
+validateOrThrow(); // Will exit if environment is invalid
+
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import path from 'path';
+
+// Logging
+import logger, { log, logApiRequest, logApiResponse, logTrade, logWallet, logSecurity } from './logger';
+
+// Rate Limiting
+import {
+  generalLimiter,
+  authLimiter,
+  tradingLimiter,
+  walletLimiter,
+  adminLimiter,
+  readLimiter,
+  alertsLimiter,
+  fundsLimiter,
+} from './http-rate-limiter';
+
+// Validation
+import {
+  validateBody,
+  registerSchema,
+  loginSchema,
+  tradingExecuteSchema,
+  distributeFromMasterSchema,
+  recoverToMasterSchema,
+  emergencyRecoverSchema,
+  createAlertSchema,
+} from './validators';
+
+// Health Checks
+import {
+  healthCheckHandler,
+  livenessProbe,
+  readinessProbe,
+  startupProbe,
+} from './health-check';
+
+// Metrics
+import { metricsMiddleware, metricsHandler, businessMetrics } from './metrics';
+
+// Sentry
+import { initSentry, sentryRequestHandler, sentryTracingHandler, sentryErrorHandler } from './sentry';
 
 // Resolve paths - detect if running from dist/ or source
 const isRunningFromDist = __dirname.includes('dist');
@@ -23,25 +73,25 @@ let configManager: any;
 try {
   WalletManager = require(path.join(distPath, 'wallet')).WalletManager;
 } catch (e) {
-  console.warn('WalletManager not found');
+  log.warn('WalletManager not found');
 }
 
 try {
   FundManager = require(path.join(distPath, 'funds')).FundManager;
 } catch (e) {
-  console.warn('FundManager not found');
+  log.warn('FundManager not found');
 }
 
 try {
   VolumeBot = require(path.join(distPath, 'bot')).VolumeBot;
 } catch (e) {
-  console.warn('VolumeBot not found');
+  log.warn('VolumeBot not found');
 }
 
 try {
   MasterWalletManager = require(path.join(distPath, 'master-wallet')).MasterWalletManager;
 } catch (e) {
-  console.warn('MasterWalletManager not found');
+  log.warn('MasterWalletManager not found');
 }
 
 // Load PumpFunBot and PumpFunOnChainSearch from source
@@ -51,13 +101,13 @@ let PumpFunOnChainSearch: any;
 try {
   PumpFunBot = require(path.join(projectRoot, 'src/pumpfun/pumpfun-bot')).PumpFunBot;
 } catch (e) {
-  console.warn('PumpFunBot not found');
+  log.warn('PumpFunBot not found');
 }
 
 try {
   PumpFunOnChainSearch = require(path.join(projectRoot, 'src/pumpfun/onchain-search')).PumpFunOnChainSearch;
 } catch (e) {
-  console.warn('PumpFunOnChainSearch not found');
+  log.warn('PumpFunOnChainSearch not found');
 }
 
 // Config Persistence (must be imported before use)
@@ -67,17 +117,17 @@ const configPersistence = new ConfigPersistence();
 try {
   configManager = require(path.join(distPath, 'config')).configManager;
 } catch (e) {
-  console.warn('configManager not found, using in-memory config with persistence');
-  
+  log.warn('configManager not found, using in-memory config with persistence');
+
   // Load config from disk (persistent)
   const persistentConfig = configPersistence.loadConfig();
-  
-  let rpcUrl = persistentConfig.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+
+  // Use validated RPC URL from environment
+  let rpcUrl = persistentConfig.rpcUrl || getValidatedRpcUrl();
   let maxSolPerSwap = persistentConfig.maxSolPerSwap;
   let slippageBps = persistentConfig.slippageBps;
-  
-  console.log(`🔧 Initializing config manager. All operations are REAL (simulation mode removed)`);
-  console.log(`🔗 Using RPC: ${rpcUrl.substring(0, 50)}...`);
+
+  log.info('Initializing config manager - all operations are REAL', { rpcUrl: rpcUrl.substring(0, 50) + '...' });
   
   configManager = {
     getConfig: () => {
@@ -92,7 +142,7 @@ try {
     },
     updateSimulationMode: (enabled: boolean) => {
       // Simulation mode removed - this function does nothing
-      console.log(`⚠️ Simulation mode toggle ignored - all operations are always REAL`);
+      log.warn('Simulation mode toggle ignored - all operations are always REAL');
     },
   };
 }
@@ -100,7 +150,6 @@ try {
 // WebSocket listener (should exist)
 import { PumpFunWebSocketListener } from '../src/pumpfun/websocket-listener';
 import { TradesListener } from '../src/pumpfun/trades-listener';
-import { PumpFunRealtimeListener } from './pumpfun-realtime';
 // PumpFunTransactionParser will be loaded dynamically from dist/ if available
 
 // User Session Manager
@@ -117,35 +166,13 @@ import { walletService } from './wallet-service';
 import { isConnected as isMongoConnected } from './database';
 
 // Rate limiting for auth endpoints
-// Use dynamic require for Railway compatibility
-const rateLimitModule = require('express-rate-limit');
-const rateLimit = rateLimitModule.default || rateLimitModule;
-
-// Rate limiter for login/register (more restrictive)
-const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 requests per window (increased from 5)
-  message: 'Too many authentication attempts, please try again later',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Rate limiter for auth verification endpoints (more permissive - for checking auth status)
-const authVerifyRateLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 30, // 30 requests per minute (for checking auth status)
-  message: 'Too many requests, please wait a moment',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 // WebSocket API Comparison (optional - only if dependencies available)
 let compareWebSocketAPIs: any = null;
 try {
   const wsComparison = require('./websocket-comparison');
   compareWebSocketAPIs = wsComparison.compareWebSocketAPIs;
 } catch (e) {
-  console.warn('WebSocket comparison module not available (install ws and socket.io-client)');
+  log.warn('WebSocket comparison module not available', { suggestion: 'install ws and socket.io-client' });
 }
 
 
@@ -167,10 +194,6 @@ import { CopyTradingService, initCopyTrading, getCopyTrading, FollowedWallet, Co
 // Token Feed Service
 import { tokenFeed } from './token-feed';
 import { tokenEnricherWorker } from './token-enricher-worker';
-import { tokenIndexer } from './token-indexer';
-
-// Discord Interactions
-import { handleDiscordInteraction } from './discord-interactions';
 
 // MongoDB Connection
 import { connectDatabase, isConnected } from './database';
@@ -181,27 +204,33 @@ connectDatabase().then(() => {
   tokenFeed.start().then(() => {
     // Start enricher worker after token feed is ready
     tokenEnricherWorker.start().catch((error) => {
-      console.error('❌ Failed to start token enricher worker:', error);
+      log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
     });
   }).catch((error) => {
-    console.error('❌ Failed to start token feed:', error);
+    log.error('Failed to start token feed', { error: error.message, stack: error.stack });
   });
 }).catch((error) => {
-  console.error('❌ Failed to connect to MongoDB:', error);
-  console.warn('⚠️ Continuing without MongoDB - some features may not work');
+  log.error('Failed to connect to MongoDB', { error: error.message, stack: error.stack });
+  log.warn('Continuing without MongoDB - some features may not work');
   // Still try to start token feed even without MongoDB
   tokenFeed.start().then(() => {
     // Start enricher worker even without MongoDB
     tokenEnricherWorker.start().catch((error) => {
-      console.error('❌ Failed to start token enricher worker:', error);
+      log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
     });
   }).catch((error) => {
-    console.error('❌ Failed to start token feed:', error);
+    log.error('Failed to start token feed', { error: error.message, stack: error.stack });
   });
 });
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Railway, Heroku, etc.)
+
+// Initialize Sentry (must be first middleware)
+initSentry(app);
+app.use(sentryRequestHandler());
+app.use(sentryTracingHandler());
+
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
   cors: {
@@ -211,76 +240,10 @@ const io = new SocketServer(httpServer, {
 });
 
 app.use(cors());
-
-// Discord Interactions endpoint - MUST be BEFORE express.json() to get raw body
-// This endpoint needs the raw body for signature verification
-app.post('/api/discord/interactions', express.raw({ type: 'application/json' }), async (req, res) => {
-  try {
-    // Get raw body as Buffer and convert to string
-    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body);
-    
-    // Get signature headers
-    const signature = req.headers['x-signature-ed25519'] as string;
-    const timestamp = req.headers['x-signature-timestamp'] as string;
-
-    // Parse JSON for processing
-    let body: any;
-    try {
-      body = JSON.parse(rawBody);
-    } catch (parseError) {
-      console.error('Failed to parse JSON body:', parseError);
-      return res.status(400).json({ error: 'Invalid JSON' });
-    }
-    
-    // Handle PING immediately (Discord verification) - respond quickly
-    if (body.type === 1) {
-      console.log('📡 Discord PING received');
-      
-      // For initial verification, respond immediately to PING
-      // Discord needs a quick response (< 3 seconds)
-      // We'll verify signature but not block on it for PING
-      if (process.env.DISCORD_PUBLIC_KEY && signature && timestamp) {
-        try {
-          const { verifyDiscordSignature } = await import('./discord-interactions');
-          const isValid = verifyDiscordSignature(rawBody, signature, timestamp);
-          if (!isValid) {
-            console.error('❌ Invalid signature for PING - but responding anyway for verification');
-            // Still respond to allow Discord to verify the endpoint
-            // In production, you might want to return 401 here
-          } else {
-            console.log('✅ Signature verified for PING');
-          }
-        } catch (verifyError) {
-          console.error('Error verifying signature:', verifyError);
-          // Still respond to PING even if verification fails (for endpoint verification)
-        }
-      } else if (!process.env.DISCORD_PUBLIC_KEY) {
-        console.warn('⚠️ DISCORD_PUBLIC_KEY not set, skipping signature verification');
-      }
-      
-      // Respond with PONG (Discord requires this exact format)
-      console.log('✅ Responding to PING with PONG');
-      return res.status(200).json({ type: 1 });
-    }
-
-    // For other interactions, verify signature and handle
-    if (!signature || !timestamp) {
-      console.error('Missing signature headers');
-      return res.status(401).json({ error: 'Missing signature headers' });
-    }
-
-    req.body = body;
-    const { handleDiscordInteraction } = await import('./discord-interactions');
-    await handleDiscordInteraction(req, res, tokenFeed, rawBody);
-  } catch (error: any) {
-    console.error('❌ Error handling Discord interaction:', error);
-    console.error('Error stack:', error.stack);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Now apply express.json() for all other routes
 app.use(express.json());
+
+// Metrics middleware
+app.use(metricsMiddleware);
 
 // Serve static files from React app
 const buildPath = path.join(__dirname, '../web/build');
@@ -289,21 +252,20 @@ app.use(express.static(buildPath));
 // Initialize bot managers (only if they exist)
 const walletManager = WalletManager ? new WalletManager() : null;
 const fundManager = FundManager ? new FundManager() : null;
+const volumeBot = VolumeBot ? new VolumeBot() : null;
 const masterWalletManager = MasterWalletManager ? new MasterWalletManager() : null;
 // Initialize PumpFunBot and PumpFunOnChainSearch if available
 const pumpFunBot = PumpFunBot ? new PumpFunBot() : null;
 const onChainSearch = PumpFunOnChainSearch ? new PumpFunOnChainSearch() : null;
 const wsListener = new PumpFunWebSocketListener();
-const volumeBot = VolumeBot ? new VolumeBot() : null;
 const tradesListener = new TradesListener();
-const pumpFunRealtime = new PumpFunRealtimeListener();
 
 // Initialize Jupiter & Token Audit services
-const HELIUS_RPC = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+const HELIUS_RPC = getValidatedRpcUrl(); // Get from validated environment
 const TRADING_FEE_PERCENT = 0.5; // 0.5% trading fee
 const jupiterService = initJupiterService(HELIUS_RPC, TRADING_FEE_PERCENT);
 const tokenAuditService = initTokenAuditService(HELIUS_RPC);
-console.log('✅ Jupiter Aggregator initialized (0.5% trading fee)');
+log.info('Jupiter Aggregator initialized', { tradingFeePercent: TRADING_FEE_PERCENT });
 
 // Initialize Trading Bots
 const sniperBot = initSniperBot(HELIUS_RPC);
@@ -321,14 +283,14 @@ dcaBot.setKeypairGetter(async (userId: string, walletIndex?: number) => {
 
 // Start DCA scheduler
 dcaBot.start(60000); // Check every minute
-console.log('✅ Trading Bots initialized (Sniper, DCA, Copy Trading)');
+log.info('Trading Bots initialized', { bots: ['Sniper', 'DCA', 'Copy Trading'], checkInterval: '60000ms' });
 
 // Store active trades listeners by token mint
 const activeTradesListeners = new Map<string, TradesListener>();
 
 // Start WebSocket listener for real-time token discovery
 wsListener.startListening().catch((err) => {
-  console.error('Failed to start WebSocket listener:', err);
+  log.error('Failed to start WebSocket listener', { error: err.message, stack: err.stack });
 });
 
 // Broadcast token updates to connected clients
@@ -336,59 +298,200 @@ wsListener.onTokenUpdate((token) => {
   broadcast('token:new', token);
 });
 
-// Iniciar PumpFun Realtime Listener (suscripción directa al programa, GRATIS)
-pumpFunRealtime.start().catch((err) => {
-  console.error('Failed to start PumpFun Realtime Listener:', err);
-});
-
-// Escuchar eventos del PumpFun Realtime Listener y emitirlos vía Socket.IO
-pumpFunRealtime.on('new_token', (event: any) => {
-  console.log(`📡 Nuevo token en tiempo real: ${event.mint.substring(0, 8)}...`);
-  broadcast('token:new', {
-    mint: event.mint,
-    name: event.name,
-    symbol: event.symbol,
-    signature: event.signature,
-    timestamp: event.timestamp,
-    creator: event.creator,
-    bondingCurve: event.bondingCurve,
-    price: event.price,
-    volume: event.volume,
-    liquidity: event.liquidity,
-    marketCap: event.marketCap,
-    holders: event.holders,
-  });
-});
-
-pumpFunRealtime.on('token_updated', (event: any) => {
-  broadcast('token:updated', {
-    mint: event.mint,
-    name: event.name,
-    symbol: event.symbol,
-    price: event.price,
-    volume: event.volume,
-    liquidity: event.liquidity,
-    marketCap: event.marketCap,
-    holders: event.holders,
-  });
-});
-
-pumpFunRealtime.on('trade', (event: any) => {
-  broadcast('token:trade', {
-    mint: event.mint,
-    signature: event.signature,
-    timestamp: event.timestamp,
-  });
-});
-
 // Broadcast helper
 const broadcast = (event: string, data: any) => {
   io.emit(event, data);
 };
 
+// Connect price alert manager with broadcast for real-time notifications
+priceAlertManager.setBroadcastCallback(broadcast);
+log.info('Price Alert Manager connected to WebSocket notifications');
+
 // ==================== API ROUTES ====================
 
-// Health check
+// ==========================================
+// Health Check & Metrics Endpoints
+// ==========================================
+app.get('/health', healthCheckHandler);
+app.get('/healthz/live', livenessProbe);
+app.get('/healthz/ready', readinessProbe);
+app.get('/healthz/startup', startupProbe);
+app.get('/metrics', metricsHandler);
+
+// ==========================================
+// Token Feed Endpoints (for TokenExplorer)
+// ==========================================
+
+// Simple in-memory cache for token data
+let tokenCache: {
+  data: any[];
+  timestamp: number;
+} = { data: [], timestamp: 0 };
+
+const CACHE_DURATION = 30000; // 30 seconds cache
+
+// Helper function to fetch and cache tokens from pump.fun
+async function fetchPumpFunTokens(): Promise<any[]> {
+  const now = Date.now();
+
+  // Return cached data if still fresh
+  if (tokenCache.data.length > 0 && now - tokenCache.timestamp < CACHE_DURATION) {
+    return tokenCache.data;
+  }
+
+  try {
+    const pumpUrl = 'https://frontend-api.pump.fun/coins?offset=0&limit=100&sort=created_timestamp&order=DESC';
+    const response = await fetch(pumpUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        // Filter and enrich tokens - transform to frontend format
+        const enrichedTokens = data
+          .filter((token: any) => {
+            const name = (token.name || '').toLowerCase().trim();
+            const symbol = (token.symbol || '').toLowerCase().trim();
+            const isGeneric = name === 'pump.fun' || name === 'pump fun' || symbol === 'pumpfun';
+            return !isGeneric;
+          })
+          .map((token: any) => {
+            const createdTimestamp = token.created_timestamp || 0;
+            const now = Date.now() / 1000;
+            const ageSeconds = now - createdTimestamp;
+
+            return {
+              // Keep original pump.fun format for compatibility
+              ...token,
+              // Add frontend-expected camelCase fields
+              mint: token.mint,
+              name: (token.name && token.name.length > 2) ? token.name : (token.symbol || `Token ${token.mint?.substring(0, 8) || 'Unknown'}`),
+              symbol: token.symbol || 'UNK',
+              imageUrl: token.image_uri || '',
+              marketCap: token.usd_market_cap || token.market_cap || 0,
+              createdAt: createdTimestamp * 1000, // Convert to milliseconds
+              liquidity: token.liquidity || 0,
+              holders: token.holders || 0,
+              volume24h: token.volume_24h || 0,
+              price: token.price_usd || 0,
+              dexId: token.complete ? 'raydium' : 'pumpfun',
+              age: ageSeconds,
+              isNew: ageSeconds < 1800, // < 30 min
+              isGraduating: token.complete || (token.usd_market_cap || 0) > 50000,
+              isTrending: (token.volume_24h || 0) > 1000,
+              // Optional fields
+              priceChange5m: token.priceChange?.m5 || 0,
+              priceChange1h: token.priceChange?.h1 || 0,
+              priceChange24h: token.priceChange?.h24 || 0,
+              volume5m: token.volume?.m5 || 0,
+              volume1h: token.volume?.h1 || 0,
+              txns5m: token.txns?.m5?.buys || 0,
+              txns1h: token.txns?.h1?.buys || 0,
+              txns24h: token.txns?.h24?.buys || 0,
+              riskScore: 0,
+            };
+          });
+
+        // Update cache
+        tokenCache = { data: enrichedTokens, timestamp: now };
+        return enrichedTokens;
+      }
+    }
+  } catch (error) {
+    log.error('Error fetching pump.fun tokens', { error: (error as Error).message });
+  }
+
+  return tokenCache.data; // Return stale cache on error
+}
+
+// /api/tokens/feed - General token feed
+app.get('/api/tokens/feed', readLimiter, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const tokens = await fetchPumpFunTokens();
+
+    res.json(tokens.slice(0, limit));
+  } catch (error) {
+    log.error('Error in /api/tokens/feed', { error: (error as Error).message });
+    res.status(500).json({ error: 'Failed to fetch token feed' });
+  }
+});
+
+// /api/tokens/new - New tokens (< 30 minutes old)
+app.get('/api/tokens/new', readLimiter, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const tokens = await fetchPumpFunTokens();
+
+    const now = Date.now() / 1000;
+    const thirtyMinutesAgo = now - (30 * 60);
+
+    const newTokens = tokens
+      .filter((token: any) => {
+        const tokenTime = token.created_timestamp || 0;
+        return tokenTime >= thirtyMinutesAgo;
+      })
+      .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0))
+      .slice(0, limit);
+
+    res.json(newTokens);
+  } catch (error) {
+    log.error('Error in /api/tokens/new', { error: (error as Error).message });
+    res.status(500).json({ error: 'Failed to fetch new tokens' });
+  }
+});
+
+// /api/tokens/graduating - Tokens near bonding curve completion
+app.get('/api/tokens/graduating', readLimiter, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const tokens = await fetchPumpFunTokens();
+
+    // Filter tokens that are either complete or have high market cap (close to graduating)
+    const graduatingTokens = tokens
+      .filter((token: any) => {
+        const marketCap = token.usd_market_cap || 0;
+        const complete = token.complete || false;
+        // Consider graduating if complete or market cap > $50k
+        return complete || marketCap > 50000;
+      })
+      .sort((a: any, b: any) => {
+        // Sort by market cap descending
+        return (b.usd_market_cap || 0) - (a.usd_market_cap || 0);
+      })
+      .slice(0, limit);
+
+    res.json(graduatingTokens);
+  } catch (error) {
+    log.error('Error in /api/tokens/graduating', { error: (error as Error).message });
+    res.status(500).json({ error: 'Failed to fetch graduating tokens' });
+  }
+});
+
+// /api/tokens/trending - High volume tokens
+app.get('/api/tokens/trending', readLimiter, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const tokens = await fetchPumpFunTokens();
+
+    // Sort by volume_24h descending
+    const trendingTokens = tokens
+      .filter((token: any) => (token.volume_24h || 0) > 0)
+      .sort((a: any, b: any) => (b.volume_24h || 0) - (a.volume_24h || 0))
+      .slice(0, limit);
+
+    res.json(trendingTokens);
+  } catch (error) {
+    log.error('Error in /api/tokens/trending', { error: (error as Error).message });
+    res.status(500).json({ error: 'Failed to fetch trending tokens' });
+  }
+});
+
+// Legacy health check (keep for backwards compatibility)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -469,7 +572,7 @@ app.get('/api/transactions', async (req, res) => {
 // ============================================
 
 // Register (with rate limiting)
-app.post('/api/auth/register', authRateLimiter, async (req, res) => {
+app.post('/api/auth/register', authLimiter, validateBody(registerSchema), async (req, res) => {
   try {
     const { username, email, password } = req.body;
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
@@ -487,7 +590,7 @@ app.post('/api/auth/register', authRateLimiter, async (req, res) => {
 });
 
 // Login (with rate limiting)
-app.post('/api/auth/login', authRateLimiter, async (req, res) => {
+app.post('/api/auth/login', authLimiter, validateBody(loginSchema), async (req, res) => {
   try {
     const { usernameOrEmail, password } = req.body;
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
@@ -522,7 +625,7 @@ app.post('/api/auth/logout', authenticateToken, async (req: AuthenticatedRequest
 });
 
 // Verify token / Get current user (with more permissive rate limiting)
-app.get('/api/auth/me', authVerifyRateLimiter, authenticateToken, async (req: AuthenticatedRequest, res) => {
+app.get('/api/auth/me', readLimiter, authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     res.json({ success: true, user: req.user });
   } catch (error) {
@@ -639,7 +742,7 @@ app.post('/api/auth/user/:userId/change-password', authenticateToken, async (req
 });
 
 // Request password reset
-app.post('/api/auth/forgot-password', authRateLimiter, async (req, res) => {
+app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     
@@ -710,7 +813,13 @@ app.get('/api/auth/user/:userId/stats', authenticateToken, async (req: Authentic
 });
 
 // Emergency recovery endpoint - recover from wallets with private keys
-app.post('/api/funds/emergency-recover', async (req, res) => {
+// 🔒 CRITICAL: Admin-only endpoint - handles external private keys
+app.post('/api/funds/emergency-recover',
+  adminLimiter,
+  authenticateToken,
+  requireRole(['admin']),
+  validateBody(emergencyRecoverSchema),
+  async (req: AuthenticatedRequest, res) => {
   try {
     const { walletAddresses, privateKeys } = req.body;
     
@@ -733,7 +842,7 @@ app.post('/api/funds/emergency-recover', async (req, res) => {
     const config = configManager.getConfig();
     if (!config.connection) {
       const { Connection } = require('@solana/web3.js');
-      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+      const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
       config.connection = new Connection(rpcUrl, 'confirmed');
     }
     
@@ -800,15 +909,19 @@ app.post('/api/funds/emergency-recover', async (req, res) => {
           })
         );
         
-        console.log(`💸 Emergency recovery: ${amountToRecover.toFixed(4)} SOL from ${walletAddress.substring(0, 8)}...`);
+        logWallet('emergency-recovery', 'Emergency recovery initiated', {
+          amount: amountToRecover,
+          fromWallet: walletAddress.substring(0, 8) + '...',
+          toWallet: 'master'
+        });
         const signature = await sendAndConfirmTransaction(
           config.connection,
           transaction,
           [keypair],
           { commitment: 'confirmed' }
         );
-        
-        console.log(`✅ Emergency recovery successful: ${signature}`);
+
+        logWallet('emergency-recovery', 'Emergency recovery successful', { signature, amount: amountToRecover });
         totalRecovered += amountToRecover;
         successCount++;
         
@@ -820,7 +933,11 @@ app.post('/api/funds/emergency-recover', async (req, res) => {
         });
         
       } catch (error: any) {
-        console.error(`❌ Emergency recovery failed for ${walletAddresses[i]}:`, error.message);
+        log.error('Emergency recovery failed', {
+          walletAddress: walletAddresses[i],
+          error: error.message,
+          stack: error.stack
+        });
         results.push({
           walletAddress: walletAddresses[i],
           amount: 0,
@@ -862,7 +979,7 @@ app.get('/api/master-wallet', authenticateToken, async (req: AuthenticatedReques
       try {
         const { Connection, PublicKey } = require('@solana/web3.js');
         const config = configManager.getConfig();
-        const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+        const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
         const connection = new Connection(rpcUrl, 'confirmed');
         const publicKey = new PublicKey(walletInfo.publicKey);
         const balanceLamports = await connection.getBalance(publicKey);
@@ -870,9 +987,13 @@ app.get('/api/master-wallet', authenticateToken, async (req: AuthenticatedReques
 
         // Update stored balance
         await walletService.updateMasterWalletBalance(userId, realBalance);
-        console.log(`📊 User ${userId} master wallet balance: ${realBalance.toFixed(4)} SOL`);
+        logWallet('balance-check', 'Master wallet balance updated', {
+          userId,
+          balance: realBalance,
+          publicKey: walletInfo.publicKey
+        });
       } catch (balanceError) {
-        console.error('Error fetching real balance:', balanceError);
+        log.error('Error fetching real balance', { error: (balanceError as Error).message });
       }
 
       return res.json({
@@ -894,15 +1015,17 @@ app.get('/api/master-wallet', authenticateToken, async (req: AuthenticatedReques
     let realBalance = 0;
     try {
       const { Connection, PublicKey } = require('@solana/web3.js');
-      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+      const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
       const connection = new Connection(rpcUrl, 'confirmed');
       const publicKey = new PublicKey(info.publicKey);
       const balanceLamports = await connection.getBalance(publicKey);
       realBalance = balanceLamports / 1e9; // Convert lamports to SOL
 
-      console.log(`📊 Master wallet REAL balance from blockchain: ${realBalance.toFixed(4)} SOL`);
+      logWallet('balance-check', 'Master wallet balance fetched from blockchain', {
+        balance: realBalance
+      });
     } catch (balanceError) {
-      console.error('Error fetching real balance:', balanceError);
+      log.error('Error fetching real balance', { error: (balanceError as Error).message });
       // Fallback to info.balance if real fetch fails
       realBalance = info.balance !== undefined && info.balance !== null
         ? parseFloat(info.balance.toString())
@@ -916,7 +1039,7 @@ app.get('/api/master-wallet', authenticateToken, async (req: AuthenticatedReques
       publicKey: info.publicKey
     });
   } catch (error) {
-    console.error('Error getting master wallet info:', error);
+    log.error('Error getting master wallet info', { error: (error as Error).message, stack: (error as Error).stack });
     return res.status(500).json({ error: String(error) });
   }
 });
@@ -1015,9 +1138,13 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
     }
 
     const config = configManager.getConfig();
-    const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+    const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
 
-    console.log(`💸 Withdraw request: ${amount || 'ALL'} SOL to ${destination.substring(0, 8)}...`);
+    logWallet('withdraw', 'Withdraw request initiated', {
+      amount: amount || 'ALL',
+      destination: destination.substring(0, 8) + '...',
+      userId: req.userId
+    });
 
     // If MongoDB is connected, use per-user wallet service
     if (isMongoConnected() && userId) {
@@ -1064,7 +1191,11 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
         const newBalance = (balanceLamports - lamportsToSend - 5000) / LAMPORTS_PER_SOL;
         await walletService.updateMasterWalletBalance(userId, Math.max(0, newBalance));
 
-        console.log(`✅ Withdraw successful for user ${userId}: ${lamportsToSend / LAMPORTS_PER_SOL} SOL`);
+        logWallet('withdraw', 'Withdraw successful', {
+          userId,
+          amount: lamportsToSend / LAMPORTS_PER_SOL,
+          signature: signature
+        });
 
         broadcast('master-wallet:withdrawn', {
           destination,
@@ -1083,7 +1214,7 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
         return;
       } catch (withdrawError) {
         const errorMsg = withdrawError instanceof Error ? withdrawError.message : String(withdrawError);
-        console.error('❌ Withdraw execution error:', errorMsg);
+        log.error('Withdraw execution error', { error: errorMsg, userId });
         return res.status(500).json({ error: errorMsg });
       }
     }
@@ -1097,7 +1228,9 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
       return res.status(400).json({ error: 'Master wallet not found. Please create a master wallet first.' });
     }
 
-    console.log(`💸 Executing REAL withdraw (simulation mode removed - always real)`);
+    log.info('Executing REAL withdraw - legacy path', {
+      userId: req.userId
+    });
 
     try {
       // Create connection if not exists
@@ -1105,7 +1238,7 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
         config.connection = new Connection(rpcUrl, 'confirmed');
       }
 
-      console.log(`🔗 Connection: ${config.connection ? 'OK' : 'MISSING'}`);
+      log.info('Connection status check', { hasConnection: !!config.connection });
 
       // Execute the withdrawal (always real - simulation removed)
       const result = await masterWalletManager.withdrawFromMaster(
@@ -1114,8 +1247,11 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
         amount ? parseFloat(amount) : undefined
       );
 
-      console.log(`✅ Withdraw result:`, result);
-      console.log(`✅ Withdraw successful: ${amount || 'ALL'} SOL sent to ${destination.substring(0, 8)}...`);
+      logWallet('withdraw', 'Withdraw completed successfully', {
+        amount: amount || 'ALL',
+        destination: destination.substring(0, 8) + '...',
+        signature: result.signature
+      });
 
       // Wait a moment to ensure transaction is confirmed
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1125,9 +1261,9 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
       try {
         const updatedInfo = await masterWalletManager.getMasterWalletInfo(config.connection);
         balanceAfter = updatedInfo.balance;
-        console.log(`📊 Updated master wallet balance: ${updatedInfo.balance.toFixed(4)} SOL`);
+        log.info('Master wallet balance updated after withdraw', { balance: updatedInfo.balance });
       } catch (balanceError) {
-        console.error('⚠️ Could not fetch updated balance:', balanceError);
+        log.error('Could not fetch updated balance', { error: (balanceError as Error).message });
       }
 
       broadcast('master-wallet:withdrawn', {
@@ -1143,12 +1279,12 @@ app.post('/api/master-wallet/withdraw', authenticateToken, async (req: Authentic
       res.json({ success: true, message: `Successfully withdrew ${amount || 'all'} SOL to ${destination.substring(0, 8)}...` });
     } catch (withdrawError) {
       const errorMsg = withdrawError instanceof Error ? withdrawError.message : String(withdrawError);
-      console.error('❌ Withdraw execution error:', errorMsg);
+      log.error('Withdraw execution error - legacy path', { error: errorMsg, stack: (withdrawError as Error).stack });
       throw withdrawError; // Re-throw to be caught by outer catch
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('❌ Withdraw error:', errorMsg);
+    log.error('Withdraw error - legacy path', { error: errorMsg, stack: (error as Error).stack });
     res.status(500).json({ error: errorMsg });
   }
 });
@@ -1285,7 +1421,7 @@ app.get('/api/wallets', authenticateToken, async (req: AuthenticatedRequest, res
       const now = Date.now();
 
       if (cache[cacheKey] && (now - cache[cacheKey].timestamp) < 5000) {
-        console.log(`📦 Using cached wallet summary for user ${userId}`);
+        log.info('Using cached wallet summary', { userId });
         return res.json(cache[cacheKey].data);
       }
 
@@ -1319,7 +1455,7 @@ app.get('/api/wallets', authenticateToken, async (req: AuthenticatedRequest, res
     const now = Date.now();
 
     if (cache[cacheKey] && (now - cache[cacheKey].timestamp) < 5000) {
-      console.log('📦 Using cached wallet summary');
+      log.info('Using cached wallet summary (legacy)');
       return res.json(cache[cacheKey].data);
     }
 
@@ -1338,7 +1474,7 @@ app.get('/api/wallets', authenticateToken, async (req: AuthenticatedRequest, res
   } catch (error: any) {
     // Handle rate limit errors gracefully
     if (error.message && error.message.includes('429')) {
-      console.warn('⚠️ Rate limit hit, using cached data if available');
+      log.warn('Rate limit hit, using cached data if available');
       const cache = (global as any).walletCache || {};
       if (cache['wallet-summary']) {
         return res.json(cache['wallet-summary'].data);
@@ -1496,7 +1632,12 @@ app.post('/api/wallets/safe-cleanup', async (req, res) => {
 });
 
 // Fund Management
-app.post('/api/funds/distribute-from-master', async (req, res) => {
+// 🔒 CRITICAL: Authenticated endpoint - distributes funds from master wallet
+app.post('/api/funds/distribute-from-master',
+  fundsLimiter,
+  authenticateToken,
+  validateBody(distributeFromMasterSchema),
+  async (req: AuthenticatedRequest, res) => {
   try {
     if (!fundManager) {
       return res.status(503).json({ error: 'FundManager not available. Please rebuild the project.' });
@@ -1514,14 +1655,14 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
       return res.status(503).json({ error: 'WalletManager not available. Please rebuild the project.' });
     }
     
-    console.log('💰 Distributing funds from master wallet...');
+    logWallet('distribute-funds', 'Distributing funds from master wallet initiated', { userId: req.userId });
     
     // Get master wallet info
     const config = configManager.getConfig();
     if (!config.connection) {
       const { Connection } = require('@solana/web3.js');
       // Use premium Helius RPC if available
-      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+      const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
       config.connection = new Connection(rpcUrl, 'confirmed');
     }
     
@@ -1559,7 +1700,11 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
     
     const amountPerWallet = availableBalance / tradingWallets.length;
     
-    console.log(`📊 Distributing ${availableBalance.toFixed(4)} SOL across ${tradingWallets.length} wallets (${amountPerWallet.toFixed(4)} SOL each)`);
+    logWallet('distribute-funds', 'Distributing SOL across wallets', {
+      totalAmount: availableBalance,
+      walletCount: tradingWallets.length,
+      amountPerWallet
+    });
     
     // Distribute funds
     const { SystemProgram, sendAndConfirmTransaction, LAMPORTS_PER_SOL, Transaction } = require('@solana/web3.js');
@@ -1588,7 +1733,11 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
           })
         );
         
-        console.log(`💸 Sending ${amountPerWallet.toFixed(4)} SOL to wallet ${wallet.index} (${destinationPublicKey.toBase58().substring(0, 8)}...)...`);
+        logWallet('distribute-funds', 'Sending SOL to trading wallet', {
+          walletIndex: wallet.index,
+          amount: amountPerWallet,
+          destination: destinationPublicKey.toBase58().substring(0, 8) + '...'
+        });
         const signature = await sendAndConfirmTransaction(
           config.connection,
           transaction,
@@ -1596,7 +1745,10 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
           { commitment: 'confirmed' }
         );
         
-        console.log(`✅ Wallet ${wallet.index} funded: ${signature}`);
+        logWallet('distribute-funds', 'Wallet funded successfully', {
+          walletIndex: wallet.index,
+          signature
+        });
         successCount++;
         results.push({
           walletIndex: wallet.index,
@@ -1606,7 +1758,11 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
           success: true
         });
       } catch (error: any) {
-        console.error(`❌ Failed to fund wallet ${wallet.index}:`, error.message);
+        log.error('Failed to fund wallet', {
+          walletIndex: wallet.index,
+          error: error.message,
+          stack: error.stack
+        });
         failCount++;
         results.push({
           walletIndex: wallet.index,
@@ -1617,7 +1773,11 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
       }
     }
     
-    console.log(`✅ Distribution complete: ${successCount} successful, ${failCount} failed`);
+    logWallet('distribute-funds', 'Distribution complete', {
+      successCount,
+      failCount,
+      totalDistributed
+    });
     
     // Reload master wallet balance
     const updatedMasterInfo = await masterWalletManager.getMasterWalletInfo(config.connection);
@@ -1656,9 +1816,9 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
         fileHistory.splice(1000);
       }
       fs.writeFileSync(historyFile, JSON.stringify(fileHistory, null, 2));
-      console.log(`💾 Transaction history saved to ${historyFile}`);
+      log.info('Transaction history saved to file', { historyFile });
     } catch (fileError) {
-      console.warn('⚠️ Could not save transaction history to file:', fileError);
+      log.warn('Could not save transaction history to file', { error: (fileError as Error).message });
     }
     
     broadcast('funds:distributed', { 
@@ -1685,12 +1845,17 @@ app.post('/api/funds/distribute-from-master', async (req, res) => {
     });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('❌ Distribution error:', errorMsg);
+    log.error('Distribution error', { error: errorMsg });
     res.status(500).json({ error: errorMsg });
   }
 });
 
-app.post('/api/funds/recover-to-master', async (req, res) => {
+// 🔒 CRITICAL: Authenticated endpoint - recovers funds to master wallet
+app.post('/api/funds/recover-to-master',
+  fundsLimiter,
+  authenticateToken,
+  validateBody(recoverToMasterSchema),
+  async (req: AuthenticatedRequest, res) => {
   try {
     if (!fundManager) {
       return res.status(503).json({ error: 'FundManager not available. Please rebuild the project.' });
@@ -1710,7 +1875,7 @@ app.post('/api/funds/recover-to-master', async (req, res) => {
     
     if (specificWallets && Array.isArray(specificWallets) && specificWallets.length > 0) {
       // Recover from specific wallets that are in the system
-      console.log(`🔄 Recovering funds from specific wallets: ${specificWallets.join(', ')}`);
+      log.info('Recovering funds from specific wallets', { wallets: specificWallets });
       result = await recoverFromSpecificWallets(specificWallets);
     } else {
       // Recover from all trading wallets (default behavior)
@@ -1749,7 +1914,7 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
   const config = configManager.getConfig();
   if (!config.connection) {
     const { Connection } = require('@solana/web3.js');
-    const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+    const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
     config.connection = new Connection(rpcUrl, 'confirmed');
   }
   
@@ -1763,10 +1928,12 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
   keypairs.forEach((kp: any) => {
     const pubkeyStr = kp.publicKey.toBase58();
     keypairMap.set(pubkeyStr, kp);
-    console.log(`📋 System wallet: ${pubkeyStr.substring(0, 8)}...${pubkeyStr.substring(pubkeyStr.length - 4)}`);
+    log.info('System wallet registered', {
+      publicKey: pubkeyStr.substring(0, 8) + '...' + pubkeyStr.substring(pubkeyStr.length - 4)
+    });
   });
-  
-  console.log(`📊 Total wallets in system: ${keypairs.length}`);
+
+  log.info('Total wallets in system', { count: keypairs.length });
   
   let totalRecovered = 0;
   let successCount = 0;
@@ -1780,7 +1947,10 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
       const balanceInSol = balance / LAMPORTS_PER_SOL;
       
       if (balanceInSol <= 0.000005) {
-        console.log(`⚠️ Wallet ${walletAddress.substring(0, 8)}... has insufficient balance: ${balanceInSol.toFixed(6)} SOL`);
+        log.warn('Wallet has insufficient balance', {
+          walletAddress: walletAddress.substring(0, 8) + '...',
+          balance: balanceInSol
+        });
         results.push({
           walletAddress,
           amount: 0,
@@ -1794,7 +1964,9 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
       // Check if wallet is in the system
       const keypair = keypairMap.get(walletAddress);
       if (!keypair) {
-        console.log(`⚠️ Wallet ${walletAddress.substring(0, 8)}... is NOT in the system - cannot recover without private key`);
+        log.warn('Wallet not in system - cannot recover without private key', {
+          walletAddress: walletAddress.substring(0, 8) + '...'
+        });
         results.push({
           walletAddress,
           amount: balanceInSol,
@@ -1810,7 +1982,10 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
       const lamportsToRecover = Math.floor(amountToRecover * LAMPORTS_PER_SOL);
       
       if (lamportsToRecover <= 0) {
-        console.log(`⚠️ Wallet ${walletAddress.substring(0, 8)}... has insufficient balance after fees`);
+        log.warn('Wallet has insufficient balance after fees', {
+          walletAddress: walletAddress.substring(0, 8) + '...',
+          amountAfterFees: amountToRecover
+        });
         results.push({
           walletAddress,
           amount: 0,
@@ -1830,7 +2005,10 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
         })
       );
       
-      console.log(`💸 Recovering ${amountToRecover.toFixed(4)} SOL from ${walletAddress.substring(0, 8)}...`);
+      logWallet('recover-funds', 'Recovering SOL from wallet', {
+        amount: amountToRecover,
+        fromWallet: walletAddress.substring(0, 8) + '...'
+      });
       const signature = await sendAndConfirmTransaction(
         config.connection,
         transaction,
@@ -1838,7 +2016,11 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
         { commitment: 'confirmed' }
       );
       
-      console.log(`✅ Recovered from ${walletAddress.substring(0, 8)}...: ${signature}`);
+      logWallet('recover-funds', 'Recovery successful', {
+        fromWallet: walletAddress.substring(0, 8) + '...',
+        signature,
+        amount: amountToRecover
+      });
       totalRecovered += amountToRecover;
       successCount++;
       results.push({
@@ -1849,7 +2031,11 @@ async function recoverFromSpecificWallets(walletAddresses: string[]) {
       });
       
     } catch (error: any) {
-      console.error(`❌ Failed to recover from ${walletAddress.substring(0, 8)}...:`, error.message);
+      log.error('Failed to recover from wallet', {
+        walletAddress: walletAddress.substring(0, 8) + '...',
+        error: error.message,
+        stack: error.stack
+      });
       results.push({
         walletAddress,
         amount: 0,
@@ -1901,14 +2087,21 @@ app.get('/api/wallets/check-balances', async (req, res) => {
 });
 
 // Pump.fun Bot
-app.post('/api/pumpfun/execute', async (req, res) => {
+// 🔒 CRITICAL: Authenticated endpoint - executes REAL trades with REAL money
+app.post('/api/pumpfun/execute',
+  tradingLimiter,
+  authenticateToken,
+  validateBody(tradingExecuteSchema),
+  async (req: AuthenticatedRequest, res) => {
   try {
     if (!pumpFunBot) {
       return res.status(503).json({ error: 'PumpFunBot not available. Please rebuild the project with: npm run build' });
     }
     
-    console.log(`🚀 Pump.fun execute requested. All operations are REAL (simulation removed)`);
-    console.log('⚠️ LIVE MODE: Real trades will be executed with real funds!');
+    logTrade('pumpfun-execute', 'Pump.fun execute requested - LIVE MODE', {
+      userId: req.userId,
+      action: req.body.action
+    });
     
     const config = req.body;
     
@@ -1933,7 +2126,11 @@ app.post('/api/pumpfun/execute', async (req, res) => {
   }
 });
 
-app.post('/api/pumpfun/stop', async (req, res) => {
+// 🔒 Authenticated endpoint
+app.post('/api/pumpfun/stop',
+  tradingLimiter,
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
   try {
     if (!pumpFunBot) {
       return res.status(503).json({ error: 'PumpFunBot not available. Please rebuild the project.' });
@@ -1946,235 +2143,12 @@ app.post('/api/pumpfun/stop', async (req, res) => {
   }
 });
 
-// Volume Bot - Genera volumen de trading en pump.fun
-// Con 1 SOL genera más de $25,000 USD en volumen total (compras + ventas)
-app.post('/api/volume-bot/execute', async (req, res) => {
-  try {
-    if (!volumeBot) {
-      return res.status(503).json({ error: 'VolumeBot not available. Please rebuild the project.' });
-    }
-
-    console.log(`🚀 Volume Bot execute requested`);
-    console.log('⚠️ LIVE MODE: Real trades will be executed with real funds!');
-
-    const config = req.body;
-    const {
-      tokenMint,
-      tokenName,
-      totalSolAmount = 1, // Default 1 SOL
-      targetVolumeUSD = 25000, // Default $25,000 USD
-      maxTransactions,
-      minTransactionSize = 0.01,
-      maxTransactionSize = 0.1,
-      delayBetweenTrades = 1000,
-      useMultipleWallets = true,
-      slippageBps = 100,
-      walletIndices, // Índices de wallets a usar (opcional)
-    } = config;
-
-    if (!tokenMint) {
-      return res.status(400).json({ error: 'tokenMint is required' });
-    }
-
-    // Obtener wallets
-    let wallets: any[] = [];
-    
-    // Intentar usar wallet-service si MongoDB está conectado
-    // Nota: Este endpoint no requiere autenticación por ahora, pero puede usar wallets del sistema
-    if (isMongoConnected()) {
-      try {
-        // Si hay userId en el request (de autenticación), usarlo
-        const authReq = req as any;
-        const userId = authReq.userId;
-        if (userId) {
-          // Obtener wallets del usuario
-          const userWallets = await walletService.getUserWallets(userId);
-          const walletPromises = userWallets
-            .filter((w: any) => !walletIndices || walletIndices.includes(w.index))
-            .map((w: any) => walletService.getWalletWithKey(userId, w.index));
-          
-          const walletsWithKeys = await Promise.all(walletPromises);
-          wallets = walletsWithKeys
-            .filter((wk: any) => wk && wk.keypair)
-            .map((wk: any) => wk.keypair);
-        }
-      } catch (error) {
-        console.warn('Could not load wallets from wallet-service, trying keypairs:', error);
-      }
-    }
-
-    // Si no hay wallets del wallet-service, usar keypairs
-    if (wallets.length === 0 && walletManager) {
-      const keypairs = walletManager.loadKeypairs();
-      if (walletIndices && Array.isArray(walletIndices)) {
-        wallets = walletIndices
-          .filter((idx: number) => idx > 0 && idx <= keypairs.length)
-          .map((idx: number) => keypairs[idx - 1]);
-      } else {
-        wallets = keypairs;
-      }
-    }
-
-    if (wallets.length === 0) {
-      return res.status(400).json({ error: 'No wallets available. Please ensure wallets are configured.' });
-    }
-
-    console.log(`✅ Using ${wallets.length} wallets for volume bot`);
-
-    // Inicializar bot con wallets
-    await volumeBot.initialize(wallets);
-
-    // Ejecutar bot de volumen
-    const volumeConfig = {
-      tokenMint,
-      tokenName,
-      totalSolAmount,
-      targetVolumeUSD,
-      maxTransactions,
-      minTransactionSize,
-      maxTransactionSize,
-      delayBetweenTrades,
-      useMultipleWallets,
-      slippageBps,
-    };
-
-    const result = await volumeBot.executeVolumeBot(volumeConfig);
-
-    broadcast('volume-bot:completed', result);
-    res.json({ success: result.success, result });
-  } catch (error: any) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('Volume Bot error:', errorMsg);
-    broadcast('volume-bot:error', { error: errorMsg });
-    res.status(500).json({ error: errorMsg });
-  }
-});
-
-app.post('/api/volume-bot/stop', async (req, res) => {
-  try {
-    if (!volumeBot) {
-      return res.status(503).json({ error: 'VolumeBot not available.' });
-    }
-    volumeBot.stop();
-    broadcast('volume-bot:stopped', {});
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
-  }
-});
-
-// Volume Bot - Genera volumen de trading en pump.fun
-app.post('/api/volume-bot/execute', async (req, res) => {
-  try {
-    if (!volumeBot) {
-      return res.status(503).json({ error: 'VolumeBot not available. Please rebuild the project.' });
-    }
-
-    console.log(`🚀 Volume Bot execute requested`);
-    console.log('⚠️ LIVE MODE: Real trades will be executed with real funds!');
-
-    const config = req.body;
-    const {
-      tokenMint,
-      tokenName,
-      totalSolAmount = 1, // Default 1 SOL
-      targetVolumeUSD = 25000, // Default $25,000 USD
-      maxTransactions,
-      minTransactionSize = 0.01,
-      maxTransactionSize = 0.1,
-      delayBetweenTrades = 1000,
-      useMultipleWallets = true,
-      slippageBps = 100,
-      walletIndices, // Índices de wallets a usar (opcional)
-    } = config;
-
-    if (!tokenMint) {
-      return res.status(400).json({ error: 'tokenMint is required' });
-    }
-
-    // Obtener wallets
-    let wallets: any[] = [];
-    
-    // Intentar usar wallet-service si MongoDB está conectado
-    const authReq = req as any;
-    if (isMongoConnected() && authReq.userId) {
-      try {
-        const userId = authReq.userId;
-        // Obtener wallets del usuario
-        const userWallets = await walletService.getUserWallets(userId);
-        const walletPromises = userWallets
-          .filter((w: any) => !walletIndices || walletIndices.includes(w.index))
-          .map((w: any) => walletService.getWalletWithKey(userId, w.index));
-        
-        const walletsWithKeys = await Promise.all(walletPromises);
-        wallets = walletsWithKeys
-          .filter((wk: any) => wk && wk.keypair)
-          .map((wk: any) => wk.keypair);
-      } catch (error) {
-        console.warn('Could not load wallets from wallet-service, trying keypairs:', error);
-      }
-    }
-
-    // Si no hay wallets del wallet-service, usar keypairs
-    if (wallets.length === 0 && walletManager) {
-      const keypairs = walletManager.loadKeypairs();
-      if (walletIndices && Array.isArray(walletIndices)) {
-        wallets = walletIndices
-          .filter((idx: number) => idx > 0 && idx <= keypairs.length)
-          .map((idx: number) => keypairs[idx - 1]);
-      } else {
-        wallets = keypairs;
-      }
-    }
-
-    if (wallets.length === 0) {
-      return res.status(400).json({ error: 'No wallets available. Please ensure wallets are configured.' });
-    }
-
-    // Inicializar bot con wallets
-    await volumeBot.initialize(wallets);
-
-    // Ejecutar bot de volumen
-    const volumeConfig = {
-      tokenMint,
-      tokenName,
-      totalSolAmount,
-      targetVolumeUSD,
-      maxTransactions,
-      minTransactionSize,
-      maxTransactionSize,
-      delayBetweenTrades,
-      useMultipleWallets,
-      slippageBps,
-    };
-
-    const result = await volumeBot.executeVolumeBot(volumeConfig);
-
-    broadcast('volume-bot:completed', result);
-    res.json({ success: result.success, result });
-  } catch (error: any) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('Volume Bot error:', errorMsg);
-    broadcast('volume-bot:error', { error: errorMsg });
-    res.status(500).json({ error: errorMsg });
-  }
-});
-
-app.post('/api/volume-bot/stop', async (req, res) => {
-  try {
-    if (!volumeBot) {
-      return res.status(503).json({ error: 'VolumeBot not available.' });
-    }
-    volumeBot.stop();
-    broadcast('volume-bot:stopped', {});
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
-  }
-});
-
 // Volume Bot
-app.post('/api/volume/start', async (req, res) => {
+// 🔒 Authenticated endpoint
+app.post('/api/volume/start',
+  tradingLimiter,
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
   try {
     const config = req.body;
     await volumeBot.initialize();
@@ -2188,7 +2162,11 @@ app.post('/api/volume/start', async (req, res) => {
   }
 });
 
-app.post('/api/volume/stop', async (req, res) => {
+// 🔒 Authenticated endpoint
+app.post('/api/volume/stop',
+  tradingLimiter,
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
   try {
     volumeBot.stopSession();
     broadcast('volume:stopped', {});
@@ -2218,11 +2196,11 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
     const sort = req.query.sort as string || 'created_timestamp';
     const order = req.query.order as string || 'DESC';
     
-    console.log('🔍 Fetching tokens from pump.fun...');
+    log.info('Fetching tokens from pump.fun');
     
     // Method 1: Try pump.fun API first (fastest and most reliable) ⭐
     try {
-      console.log('🔍 Trying pump.fun API (fastest method)...');
+      log.info('Trying pump.fun API (fastest method)');
       const pumpUrl = `https://frontend-api.pump.fun/coins?offset=${offset}&limit=${limit}&sort=${sort}&order=${order}`;
       const pumpResponse = await fetch(pumpUrl, {
         headers: {
@@ -2282,7 +2260,10 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
                   symbol === 'pump.fun' ||
                   symbol === 'pumpfun';
                 if (isGeneric) {
-                  console.log(`🚫 Filtered out generic token: ${token.name} (${token.symbol})`);
+                  log.info('Filtered out generic token', {
+                    name: token.name,
+                    symbol: token.symbol
+                  });
                 }
                 return !isGeneric;
               })
@@ -2309,13 +2290,24 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
                 return enriched;
               });
             
-            console.log(`✅ Found ${enrichedTokens.length} tokens from pump.fun API (${last30min.length} last 30min, ${lastHour.length} last 1h, ${lastTwoHours.length} last 2h, ${lastSixHours.length} last 6h)`);
+            log.info('Found tokens from pump.fun API', {
+              total: enrichedTokens.length,
+              last30min: last30min.length,
+              lastHour: lastHour.length,
+              lastTwoHours: lastTwoHours.length,
+              lastSixHours: lastSixHours.length
+            });
             // Log token ages for debugging
             const nowSeconds = Date.now() / 1000;
             enrichedTokens.slice(0, 10).forEach((token: any) => {
               const ageMinutes = ((nowSeconds - (token.created_timestamp || 0)) / 60).toFixed(0);
               const ageHours = ((nowSeconds - (token.created_timestamp || 0)) / 3600).toFixed(1);
-              console.log(`   • ${token.name || 'Token'} - ${ageMinutes}min / ${ageHours}h ago (ts: ${token.created_timestamp})`);
+              log.info('Token age details', {
+                name: token.name || 'Token',
+                ageMinutes,
+                ageHours,
+                timestamp: token.created_timestamp
+              });
             });
             return res.json(enrichedTokens);
           } else {
@@ -2348,20 +2340,22 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
                 dex_is_paid: token.dex_is_paid || false,
               }));
               
-              console.log(`⚠️ No tokens in last 6h, showing ${enrichedFallback.length} newest from last 24h`);
+              log.warn('No tokens in last 6h, showing newest from last 24h', {
+                count: enrichedFallback.length
+              });
               return res.json(enrichedFallback);
             }
-            console.log(`⚠️ No tokens found in last 24 hours from pump.fun API`);
+            log.warn('No tokens found in last 24 hours from pump.fun API');
             // Continue to next method
           }
         }
       }
     } catch (pumpError: any) {
-      console.log('pump.fun API failed:', pumpError.message);
+      log.error('pump.fun API failed', { error: pumpError.message });
     }
     
     // Method 2: Try DexScreener API (not blocked by Cloudflare, very fast) ⭐
-    console.log('🔍 Trying DexScreener API (no Cloudflare blocking, fast)...');
+    log.info('Trying DexScreener API (no Cloudflare blocking, fast)');
     try {
       const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
       const oneHourAgo = Date.now() - (60 * 60 * 1000);
@@ -2381,11 +2375,11 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
           const dexData = await dexResponse.json();
           if (dexData.pairs && Array.isArray(dexData.pairs)) {
             allPairs = dexData.pairs;
-            console.log(`DexScreener returned ${allPairs.length} Solana pairs`);
+            log.info('DexScreener returned Solana pairs', { count: allPairs.length });
           }
         }
       } catch (err) {
-        console.log('DexScreener pairs endpoint failed:', err);
+        log.error('DexScreener pairs endpoint failed', { error: (err as Error).message });
       }
       
       // Endpoint 2: Search for pump.fun specifically
@@ -2405,11 +2399,14 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
                 allPairs.push(pair);
               }
             }
-            console.log(`Added ${searchPairs.length} pairs from pump.fun search (total: ${allPairs.length})`);
+            log.info('Added pairs from pump.fun search', {
+              searchPairs: searchPairs.length,
+              total: allPairs.length
+            });
           }
         }
       } catch (err) {
-        console.log('DexScreener search endpoint failed:', err);
+        log.error('DexScreener search endpoint failed', { error: (err as Error).message });
       }
       
       // Endpoint 3: Try trending tokens
@@ -2429,11 +2426,14 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
                 allPairs.push(pair);
               }
             }
-            console.log(`Added ${trendingPairs.length} pairs from trending (total: ${allPairs.length})`);
+            log.info('Added pairs from trending', {
+              trendingPairs: trendingPairs.length,
+              total: allPairs.length
+            });
           }
         }
       } catch (err) {
-        console.log('DexScreener trending endpoint failed:', err);
+        log.error('DexScreener trending endpoint failed', { error: (err as Error).message });
       }
       
       if (allPairs.length > 0) {
@@ -2457,7 +2457,10 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
 
           // REJECT only truly generic placeholder tokens
           if (isGenericPumpName || isGenericPumpSymbol) {
-            console.log(`🚫 REJECTED generic token: ${pair.baseToken?.name} (${pair.baseToken?.symbol})`);
+            log.info('Rejected generic token from DexScreener', {
+              name: pair.baseToken?.name,
+              symbol: pair.baseToken?.symbol
+            });
             return false;
           }
           
@@ -2476,7 +2479,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
         });
         
         solanaPairs.sort((a, b) => (b.pairCreatedAt || 0) - (a.pairCreatedAt || 0));
-        console.log(`Filtered to ${solanaPairs.length} recent Solana pump.fun pairs`);
+        log.info('Filtered Solana pump.fun pairs', { count: solanaPairs.length });
         
         // Remove duplicates by token address, keep most recent
         const uniqueTokens = new Map<string, any>();
@@ -2602,20 +2605,34 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
                 symbol === 'pumpfun';
 
               if (isGeneric) {
-                console.log(`🚫 FINAL FILTER: Rejected generic token: ${token.name} (${token.symbol})`);
+                log.info('FINAL FILTER: Rejected generic token', {
+                  name: token.name,
+                  symbol: token.symbol
+                });
                 return false;
               }
               return true;
             })
             .slice(0, limit);
           
-          console.log(`✅ Found ${pumpFunTokens.length} tokens from DexScreener (${last30min.length} last 30min, ${lastHour.length} last 1h, ${lastTwoHours.length} last 2h, ${lastSixHours.length} last 6h)`);
+          log.info('Found tokens from DexScreener', {
+            total: pumpFunTokens.length,
+            last30min: last30min.length,
+            lastHour: lastHour.length,
+            lastTwoHours: lastTwoHours.length,
+            lastSixHours: lastSixHours.length
+          });
           // Log token ages for debugging
           const nowSeconds = Date.now() / 1000;
           pumpFunTokens.slice(0, 10).forEach((token: any) => {
             const ageMinutes = ((nowSeconds - token.created_timestamp) / 60).toFixed(0);
             const ageHours = ((nowSeconds - token.created_timestamp) / 3600).toFixed(1);
-            console.log(`   • ${token.name} - ${ageMinutes}min / ${ageHours}h ago (ts: ${token.created_timestamp})`);
+            log.info('DexScreener token age details', {
+              name: token.name,
+              ageMinutes,
+              ageHours,
+              timestamp: token.created_timestamp
+            });
           });
           return res.json(pumpFunTokens);
         } else {
@@ -2629,22 +2646,24 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
             const sorted = fallbackTokens
               .sort((a: any, b: any) => b.created_timestamp - a.created_timestamp)
               .slice(0, limit);
-            console.log(`⚠️ No tokens in last 6h from DexScreener, showing ${sorted.length} newest from last 24h`);
+            log.warn('No tokens in last 6h from DexScreener, showing newest from last 24h', {
+              count: sorted.length
+            });
             return res.json(sorted);
           }
-          console.log(`⚠️ No tokens found in last 24 hours from DexScreener`);
+          log.warn('No tokens found in last 24 hours from DexScreener');
         }
       }
     } catch (dexError) {
-      console.log('DexScreener API failed:', dexError);
+      log.error('DexScreener API failed', { error: (dexError as Error).message });
     }
     
     // Method 2.5: Try on-chain search for recent pump.fun tokens (slower, as fallback)
-    console.log('🔍 Trying on-chain search for recent pump.fun tokens (fallback)...');
+    log.info('Trying on-chain search for recent pump.fun tokens (fallback)');
     try {
       const { Connection, PublicKey } = require('@solana/web3.js');
       const config = configManager.getConfig();
-      const connection = new Connection(config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997', 'confirmed');
+      const connection = new Connection(config.rpcUrl || getValidatedRpcUrl(), 'confirmed');
       const PUMP_FUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
       
       // Get recent transactions from pump.fun program - get more for better coverage
@@ -2655,7 +2674,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
       );
       
       if (signatures.length > 0) {
-        console.log(`📝 Found ${signatures.length} recent pump.fun transactions`);
+        log.info('Found recent pump.fun transactions', { count: signatures.length });
         
         // Filter for very recent transactions (last 2 hours for fresher tokens)
         const now = Date.now() / 1000;
@@ -2665,7 +2684,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
           return sigTime >= twoHoursAgo;
         });
         
-        console.log(`📝 Filtered to ${recentSignatures.length} transactions from last 2 hours`);
+        log.info('Filtered transactions from last 2 hours', { count: recentSignatures.length });
         
         // Process transactions to extract token mints (process more for better results)
         const tokensFound = new Map<string, number>();
@@ -2741,20 +2760,23 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
             .slice(0, limit);
           
           if (onChainTokens.length > 0) {
-            console.log(`✅ Found ${onChainTokens.length} recent tokens from on-chain search (last 2h)`);
+            log.info('Found recent tokens from on-chain search', {
+              count: onChainTokens.length,
+              timeframe: 'last 2h'
+            });
             return res.json(onChainTokens);
           }
         }
       }
     } catch (onChainError) {
-      console.log('On-chain direct search failed:', onChainError);
+      log.error('On-chain direct search failed', { error: (onChainError as Error).message });
     }
     
     // Method 3: Try WebSocket listener for real-time tokens
-    console.log('🔍 Trying WebSocket listener for real-time tokens...');
+    log.info('Trying WebSocket listener for real-time tokens');
     const wsTokens = wsListener.getRecentTokens(limit * 2);
     if (wsTokens.length > 0) {
-      console.log(`✅ Found ${wsTokens.length} tokens from WebSocket listener`);
+      log.info('Found tokens from WebSocket listener', { count: wsTokens.length });
       // Filter for recent tokens (last 6 hours)
       const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
       const recentWsTokens = wsTokens.filter(token => token.timestamp >= sixHoursAgo);
@@ -2794,16 +2816,19 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
             insider_holdings_percent: 0,
             dex_is_paid: false,
           }));
-        console.log(`✅ Returning ${formattedTokens.length} recent tokens from WebSocket (last 6h)`);
+        log.info('Returning recent tokens from WebSocket', {
+          count: formattedTokens.length,
+          timeframe: 'last 6h'
+        });
         return res.json(formattedTokens);
       }
     }
 
     // Method 4: Try using public Solana RPC directly (bypass Helius restrictions)
-    console.log('⚠️ All APIs failed, trying public Solana RPC...');
+    log.warn('All APIs failed, trying public Solana RPC');
     try {
       const publicRpc = new (require('@solana/web3.js').Connection)(
-        'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997',
+        getValidatedRpcUrl(),
         'confirmed'
       );
       
@@ -2814,7 +2839,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
         'confirmed'
       );
 
-      console.log(`Found ${recentSignatures.length} recent pump.fun transactions`);
+      log.info('Found recent pump.fun transactions from public RPC', { count: recentSignatures.length });
 
       const tokenMints = new Set<string>();
       
@@ -2842,7 +2867,7 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
       }
 
       if (tokenMints.size > 0) {
-        console.log(`✅ Found ${tokenMints.size} token mints from public RPC`);
+        log.info('Found token mints from public RPC', { count: tokenMints.size });
         
         // Convert to token format
         const tokens = Array.from(tokenMints).slice(0, limit).map((mint, idx) => ({
@@ -2858,12 +2883,12 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
         return res.json(tokens);
       }
     } catch (publicRpcError) {
-      console.error('Public RPC search failed:', publicRpcError);
+      log.error('Public RPC search failed', { error: (publicRpcError as Error).message });
     }
 
     // Method 3: Fallback to on-chain search with Helius (may fail due to permissions)
     if (onChainSearch) {
-      console.log('⚠️ Trying on-chain search with configured RPC...');
+      log.warn('Trying on-chain search with configured RPC');
       try {
         const [pumpFunTokens, programTokens] = await Promise.allSettled([
           onChainSearch.searchRecentTokens(limit),
@@ -2873,12 +2898,12 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
         const allTokens: any[] = [];
         
         if (pumpFunTokens.status === 'fulfilled' && pumpFunTokens.value.length > 0) {
-          console.log(`✅ Found ${pumpFunTokens.value.length} tokens from on-chain search`);
+          log.info('Found tokens from on-chain search', { count: pumpFunTokens.value.length });
           allTokens.push(...pumpFunTokens.value);
         }
         
         if (programTokens.status === 'fulfilled' && programTokens.value.length > 0) {
-          console.log(`✅ Found ${programTokens.value.length} tokens from program accounts`);
+          log.info('Found tokens from program accounts', { count: programTokens.value.length });
           allTokens.push(...programTokens.value);
         }
 
@@ -2894,24 +2919,25 @@ app.get('/api/pumpfun/tokens', async (req, res) => {
             return timeB - timeA;
           });
           
-          console.log(`✅ Returning ${uniqueTokens.length} unique tokens from on-chain`);
+          log.info('Returning unique tokens from on-chain', { count: uniqueTokens.length });
           return res.json(uniqueTokens.slice(0, limit));
         }
       } catch (onChainError) {
-        console.error('On-chain search also failed:', onChainError);
+        log.error('On-chain search also failed', { error: (onChainError as Error).message });
       }
     }
 
     // If all methods fail, return helpful message with example tokens
-    console.warn('⚠️ No tokens found via any method');
-    console.log('💡 Tip: Users can manually enter token mint addresses in the Pump.fun tab');
+    log.warn('No tokens found via any method', {
+      tip: 'Users can manually enter token mint addresses in the Pump.fun tab'
+    });
     
     // Return empty array - the UI will show helpful instructions
     // Note: The WebSocket listener will detect new tokens in real-time when they're created
     return res.json([]);
 
   } catch (error) {
-    console.error('Token search error:', error);
+    log.error('Token search error', { error: (error as Error).message, stack: (error as Error).stack });
     return res.status(500).json({ error: String(error) });
   }
 });
@@ -2926,7 +2952,7 @@ app.get('/api/pumpfun/test-websockets', async (req, res) => {
       });
     }
 
-    console.log('🔍 Testing WebSocket APIs for Token Explorer...');
+    log.info('Testing WebSocket APIs for Token Explorer');
     const comparison = await compareWebSocketAPIs();
     
     res.json({
@@ -2935,7 +2961,7 @@ app.get('/api/pumpfun/test-websockets', async (req, res) => {
       timestamp: Date.now(),
     });
   } catch (error) {
-    console.error('Error testing WebSocket APIs:', error);
+    log.error('Error testing WebSocket APIs', { error: (error as Error).message });
     res.status(500).json({ 
       success: false, 
       error: error instanceof Error ? error.message : String(error) 
@@ -2946,7 +2972,7 @@ app.get('/api/pumpfun/test-websockets', async (req, res) => {
 // Test WebSocket APIs for Token Explorer
 app.get('/api/pumpfun/test-websockets', async (req, res) => {
   try {
-    console.log('🔍 Testing WebSocket APIs for Token Explorer...');
+    log.info('Testing WebSocket APIs for Token Explorer');
     
     // Import comparison function dynamically to avoid issues if dependencies aren't available
     let comparison: any;
@@ -2966,7 +2992,7 @@ app.get('/api/pumpfun/test-websockets', async (req, res) => {
       timestamp: Date.now(),
     });
   } catch (error) {
-    console.error('Error testing WebSocket APIs:', error);
+    log.error('Error testing WebSocket APIs', { error: (error as Error).message });
     res.status(500).json({ 
       success: false, 
       error: error instanceof Error ? error.message : String(error) 
@@ -3021,10 +3047,10 @@ app.get('/api/pumpfun/tokens-api', async (req, res) => {
     }
 
     // If all endpoints fail, return empty array
-    console.warn('Pump.fun API unavailable');
+    log.warn('Pump.fun API unavailable');
     return res.json([]);
   } catch (error) {
-    console.error('Pump.fun API error:', error);
+    log.error('Pump.fun API error', { error: (error as Error).message });
     return res.json([]);
   }
 });
@@ -3078,7 +3104,7 @@ app.get('/api/pumpfun/token/:mint/chart', async (req, res) => {
   try {
     const { mint } = req.params;
     const type = (req.query.type as string) || '1D'; // 1H, 4H, 1D, 1W
-    console.log(`📊 Fetching OHLCV chart for: ${mint} (${type})`);
+    log.info('Fetching OHLCV chart', { mint, type });
     
     // Method 1: Try Birdeye API
     try {
@@ -3095,7 +3121,7 @@ app.get('/api/pumpfun/token/:mint/chart', async (req, res) => {
         if (birdeyeResponse.ok) {
           const birdeyeData = await birdeyeResponse.json();
           if (birdeyeData.data && birdeyeData.data.items) {
-            console.log(`✅ Found OHLCV data from Birdeye`);
+            log.info('Found OHLCV data from Birdeye', { dataPoints: data.items?.length || 0 });
             const ohlcv = birdeyeData.data.items.map((item: any) => ({
               time: new Date(item.unixTime * 1000).toISOString(),
               open: parseFloat(item.o || 0),
@@ -3109,7 +3135,7 @@ app.get('/api/pumpfun/token/:mint/chart', async (req, res) => {
         }
       }
     } catch (birdeyeError) {
-      console.log('Birdeye API failed:', birdeyeError);
+      log.error('Birdeye API failed', { error: (birdeyeError as Error).message });
     }
 
     // Method 2: Try DexScreener (doesn't have OHLCV directly, but we can get price history)
@@ -3117,7 +3143,7 @@ app.get('/api/pumpfun/token/:mint/chart', async (req, res) => {
     return res.json([]);
 
   } catch (error) {
-    console.error('Get chart error:', error);
+    log.error('Get chart error', { error: (error as Error).message, stack: (error as Error).stack });
     return res.status(500).json({ error: String(error) });
   }
 });
@@ -3126,7 +3152,7 @@ app.get('/api/pumpfun/token/:mint/chart', async (req, res) => {
 app.post('/api/pumpfun/token/:mint/trades/start', async (req, res) => {
   try {
     const { mint } = req.params;
-    console.log(`🚀 Starting real-time trades listener for: ${mint}`);
+    log.info('Starting real-time trades listener', { mint });
 
     // Respond immediately to avoid timeout
     res.json({ success: true, message: 'Real-time trades listener starting...' });
@@ -3138,20 +3164,20 @@ app.post('/api/pumpfun/token/:mint/trades/start', async (req, res) => {
       // Start listening in background (don't await to avoid timeout)
       listener.startListening(mint).then(() => {
         activeTradesListeners.set(mint, listener);
-        console.log(`✅ Real-time trades listener started for: ${mint}`);
+        log.info('Real-time trades listener started', { mint });
         
         // Broadcast trades to connected clients
         listener.onTrade((trade) => {
           broadcast('trade:new', { mint, trade });
         });
       }).catch((error) => {
-        console.error('Error starting trades listener:', error);
+        log.error('Error starting trades listener', { error: (error as Error).message });
       });
     } else {
-      console.log(`⚠️ Listener already exists for: ${mint}`);
+      log.warn('Listener already exists for mint', { mint });
     }
   } catch (error) {
-    console.error('Error starting trades listener:', error);
+    log.error('Error in trades listener endpoint', { error: (error as Error).message });
     // Still respond even if there's an error
     if (!res.headersSent) {
       res.status(500).json({ error: String(error) });
@@ -3164,11 +3190,11 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
   try {
     const { mint } = req.params;
     const limit = parseInt(req.query.limit as string) || 30;
-    console.log(`📊 Fetching trades for: ${mint}`);
+    log.info('Fetching trades', { mint });
 
     // Method 1: Try pump.fun API first (most reliable for pump.fun tokens)
     try {
-      console.log('🔍 Trying pump.fun API for trades...');
+      log.info('Trying pump.fun API for trades');
       const pumpTradesUrl = `https://frontend-api.pump.fun/trades/latest/${mint}?limit=${limit}`;
       const pumpResponse = await fetch(pumpTradesUrl, {
         headers: {
@@ -3180,7 +3206,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
       if (pumpResponse.ok) {
         const pumpTrades = await pumpResponse.json();
         if (pumpTrades && Array.isArray(pumpTrades) && pumpTrades.length > 0) {
-          console.log(`✅ Found ${pumpTrades.length} trades from pump.fun API`);
+          log.info('Found trades from pump.fun API', { count: pumpTrades.length });
 
           const trades = pumpTrades.map((trade: any) => ({
             signature: trade.signature || trade.tx_hash || '',
@@ -3198,12 +3224,12 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
         }
       }
     } catch (pumpError: any) {
-      console.log('pump.fun trades API failed:', pumpError.message);
+      log.error('pump.fun trades API failed', { error: pumpError.message });
     }
 
     // Method 2: Try alternative pump.fun endpoint
     try {
-      console.log('🔍 Trying alternative pump.fun trades endpoint...');
+      log.info('Trying alternative pump.fun trades endpoint');
       const pumpTradesUrl2 = `https://frontend-api.pump.fun/trades/${mint}?limit=${limit}&offset=0`;
       const pumpResponse2 = await fetch(pumpTradesUrl2, {
         headers: {
@@ -3215,7 +3241,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
       if (pumpResponse2.ok) {
         const pumpTrades2 = await pumpResponse2.json();
         if (pumpTrades2 && Array.isArray(pumpTrades2) && pumpTrades2.length > 0) {
-          console.log(`✅ Found ${pumpTrades2.length} trades from pump.fun API (alt)`);
+          log.info('Found trades from pump.fun API (alt)', { count: pumpTrades2.length });
 
           const trades = pumpTrades2.map((trade: any) => {
             const solAmountLamports = parseFloat(trade.sol_amount || 0);
@@ -3239,14 +3265,14 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
         }
       }
     } catch (pumpError2: any) {
-      console.log('pump.fun alt trades API failed:', pumpError2.message);
+      log.error('pump.fun alt trades API failed', { error: pumpError2.message });
     }
 
     // Method 3: Try Helius API for transactions (if API key available)
     try {
       const heliusApiKey = process.env.HELIUS_API_KEY || 'b8baac5d-2270-45ba-8324-9d7024c3f828';
       if (heliusApiKey) {
-        console.log('🔍 Trying Helius API for transactions...');
+        log.info('Trying Helius API for transactions');
         const heliusUrl = `https://api.helius.xyz/v0/addresses/${mint}/transactions?api-key=${heliusApiKey}&limit=${limit}`;
         const heliusResponse = await fetch(heliusUrl, {
           headers: { 'Accept': 'application/json' },
@@ -3255,7 +3281,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
         if (heliusResponse.ok) {
           const heliusData = await heliusResponse.json();
           if (heliusData && Array.isArray(heliusData) && heliusData.length > 0) {
-            console.log(`✅ Found ${heliusData.length} transactions from Helius`);
+            log.info('Found transactions from Helius', { count: heliusData.length });
             
             const trades: any[] = [];
             for (const tx of heliusData.slice(0, limit)) {
@@ -3336,14 +3362,14 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
             }
 
             if (trades.length > 0) {
-              console.log(`✅ Parsed ${trades.length} trades from Helius`);
+              log.info('Parsed trades from Helius', { count: trades.length });
               return res.json(trades);
             }
           }
         }
       }
     } catch (heliusError: any) {
-      console.log('Helius API failed:', heliusError.message);
+      log.error('Helius API failed', { error: heliusError.message });
     }
 
     // Method 4: Get trades from real-time listener (if active)
@@ -3351,7 +3377,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
     if (activeListener) {
       const realTimeTrades = activeListener.getRecentTrades(limit);
       if (realTimeTrades.length > 0) {
-        console.log(`✅ Found ${realTimeTrades.length} trades from real-time listener`);
+        log.info('Found trades from real-time listener', { count: realTimeTrades.length });
         return res.json(realTimeTrades.map(trade => ({
           signature: trade.signature,
           timestamp: trade.timestamp,
@@ -3368,7 +3394,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
 
     // Method 5: Use PumpFunTransactionParser
     try {
-      console.log('🔍 Using PumpFunTransactionParser for pump.fun specific trades...');
+      log.info('Using PumpFunTransactionParser for pump.fun specific trades');
       let PumpFunParser: any = null;
       try {
         PumpFunParser = require(path.join(distPath, 'pumpfun/pumpfun-parser')).PumpFunTransactionParser;
@@ -3385,7 +3411,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
         const pumpFunTrades = await parser.getTradesFromPumpFunProgram(mint, limit);
         
         if (pumpFunTrades && pumpFunTrades.length > 0) {
-          console.log(`✅ Found ${pumpFunTrades.length} trades from pump.fun program`);
+          log.info('Found trades from pump.fun program', { count: pumpFunTrades.length });
           return res.json(pumpFunTrades.map((trade: any) => ({
             signature: trade.signature,
             timestamp: trade.timestamp,
@@ -3400,12 +3426,12 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
         }
       }
     } catch (parserError: any) {
-      console.log('PumpFunTransactionParser failed:', parserError.message);
+      log.error('PumpFunTransactionParser failed', { error: parserError.message });
     }
 
     // Method 6: Try to get trades from bonding curve (on-chain)
     const { Connection, PublicKey } = require('@solana/web3.js');
-    const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+    const rpcUrl = process.env.RPC_URL || getValidatedRpcUrl();
     const connection = new Connection(rpcUrl, 'confirmed');
     const mintPubkey = new PublicKey(mint);
     const PUMP_FUN_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
@@ -3421,24 +3447,24 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
       
       // Get signatures for bonding curve (where trades happen)
       const bondingCurveSigs = await connection.getSignaturesForAddress(bondingCurve, { limit: limit * 3 });
-      console.log(`Found ${bondingCurveSigs.length} transactions on bonding curve`);
+      log.info('Found transactions on bonding curve', { count: bondingCurveSigs.length });
       signatures = bondingCurveSigs;
     } catch (bondingError) {
-      console.log('Could not get bonding curve, trying mint address:', bondingError);
+      log.warn('Could not get bonding curve, trying mint address', { error: (bondingError as Error).message });
       // Fallback to mint address
       try {
         const mintSigs = await connection.getSignaturesForAddress(mintPubkey, { limit: limit * 2 });
-        console.log(`Found ${mintSigs.length} transactions on mint address`);
+        log.info('Found transactions on mint address', { count: mintSigs.length });
         signatures = mintSigs;
       } catch (mintError) {
-        console.log('Could not get mint signatures:', mintError);
+        log.error('Could not get mint signatures', { error: (mintError as Error).message });
       }
     }
 
-    console.log(`Using ${signatures.length} transactions to parse trades`);
+    log.info('Using transactions to parse trades', { count: signatures.length });
 
     if (signatures.length === 0) {
-      console.log('⚠️ No transactions found after trying all methods');
+      log.warn('No transactions found after trying all methods');
       return res.json([]);
     }
 
@@ -3551,14 +3577,25 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
           solAmount = Math.max(totalSolSpent, totalSolReceived);
         }
 
-        console.log(`🔍 Trade: signer=${signerSolChange.toFixed(6)} SOL, spent=${totalSolSpent.toFixed(4)}, rcvd=${totalSolReceived.toFixed(4)} => ${side.toUpperCase()} | ${solAmount.toFixed(4)} SOL | ${tokenAmount.toFixed(0)} tokens`);
+        log.info('Trade detected', {
+          side: side.toUpperCase(),
+          solAmount,
+          tokenAmount,
+          signerSolChange,
+          totalSolSpent,
+          totalSolReceived
+        });
 
         // Skip if values don't make sense
         if (solAmount < 0.0001 || tokenAmount < 0.0001) continue;
 
         const price = tokenAmount > 0 ? solAmount / tokenAmount : 0;
 
-        console.log(`✅ Trade: ${side.toUpperCase()} | ${solAmount.toFixed(4)} SOL | ${tokenAmount.toFixed(2)} tokens`);
+        log.info('Trade confirmed', {
+          side: side.toUpperCase(),
+          solAmount,
+          tokenAmount
+        });
 
         trades.push({
           signature: sig.signature,
@@ -3580,18 +3617,18 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
       }
     }
 
-    console.log(`📊 Returning ${trades.length} trades`);
+    log.info('Returning trades', { count: trades.length });
     
     // If no trades found, return empty array with a message
     if (trades.length === 0) {
-      console.log(`⚠️ No trades found after trying all methods for ${mint}`);
+      log.warn('No trades found after trying all methods', { mint });
       return res.json([]);
     }
     
     return res.json(trades);
 
   } catch (error) {
-    console.error('Get trades error:', error);
+    log.error('Get trades error', { error: (error as Error).message, stack: (error as Error).stack });
     return res.status(500).json({ error: String(error) });
   }
 });
@@ -3601,11 +3638,11 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
   try {
     const { mint } = req.params;
     const limit = parseInt(req.query.limit as string) || 50;
-    console.log(`📊 OLD: Fetching recent trades for: ${mint}`);
+    log.info('OLD: Fetching recent trades', { mint });
 
     // Method 1: Try pump.fun API for trades (most accurate for pump.fun tokens)
     try {
-      console.log('🔍 Trying pump.fun API for trades...');
+      log.info('Trying pump.fun API for trades');
       const pumpTradesUrl = `https://frontend-api.pump.fun/trades/latest/${mint}?limit=${limit}`;
       const pumpResponse = await fetch(pumpTradesUrl, {
         headers: {
@@ -3617,7 +3654,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
       if (pumpResponse.ok) {
         const pumpTrades = await pumpResponse.json();
         if (pumpTrades && Array.isArray(pumpTrades) && pumpTrades.length > 0) {
-          console.log(`✅ Found ${pumpTrades.length} trades from pump.fun API`);
+          log.info('Found trades from pump.fun API', { count: pumpTrades.length });
 
           const trades = pumpTrades.map((trade: any) => ({
             signature: trade.signature || trade.tx_hash || '',
@@ -3635,12 +3672,12 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
         }
       }
     } catch (pumpError: any) {
-      console.log('pump.fun trades API failed:', pumpError.message);
+      log.error('pump.fun trades API failed', { error: pumpError.message });
     }
 
     // Method 1b: Try alternative pump.fun trades endpoint
     try {
-      console.log('🔍 Trying alternative pump.fun trades endpoint...');
+      log.info('Trying alternative pump.fun trades endpoint');
       const pumpTradesUrl2 = `https://frontend-api.pump.fun/trades/${mint}?limit=${limit}&offset=0`;
       const pumpResponse2 = await fetch(pumpTradesUrl2, {
         headers: {
@@ -3652,7 +3689,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
       if (pumpResponse2.ok) {
         const pumpTrades2 = await pumpResponse2.json();
         if (pumpTrades2 && Array.isArray(pumpTrades2) && pumpTrades2.length > 0) {
-          console.log(`✅ Found ${pumpTrades2.length} trades from pump.fun API (alt)`);
+          log.info('Found trades from pump.fun API (alt)', { count: pumpTrades2.length });
 
           const trades = pumpTrades2.map((trade: any) => {
             // pump.fun API returns sol_amount in lamports
@@ -3677,12 +3714,12 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
         }
       }
     } catch (pumpError2: any) {
-      console.log('pump.fun alt trades API failed:', pumpError2.message);
+      log.error('pump.fun alt trades API failed', { error: pumpError2.message });
     }
 
     // Method 1c: Try DexScreener API for trades (free, no API key needed)
     try {
-      console.log('🔍 Trying DexScreener API for trades...');
+      log.info('Trying DexScreener API for trades');
       const dexUrl = `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
       const dexResponse = await fetch(dexUrl, {
         headers: { 'Accept': 'application/json' },
@@ -3697,20 +3734,20 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
           // DexScreener doesn't have direct trades endpoint, but we can use pair data
           // Try to get transactions from the pair address
           if (mainPair.pairAddress) {
-            console.log(`✅ Found pair ${mainPair.pairAddress} from DexScreener`);
+            log.info('Found pair from DexScreener', { pairAddress: mainPair.pairAddress });
             // We'll use this pair address to get transactions
           }
         }
       }
     } catch (dexError: any) {
-      console.log('DexScreener trades check failed:', dexError.message);
+      log.error('DexScreener trades check failed', { error: dexError.message });
     }
 
     // Method 2: Try Helius API for transactions (if API key available)
     try {
       const heliusApiKey = process.env.HELIUS_API_KEY || 'b8baac5d-2270-45ba-8324-9d7024c3f828';
       if (heliusApiKey) {
-        console.log('🔍 Trying Helius API for transactions...');
+        log.info('Trying Helius API for transactions');
         const heliusUrl = `https://api.helius.xyz/v0/addresses/${mint}/transactions?api-key=${heliusApiKey}&limit=${limit}`;
         const heliusResponse = await fetch(heliusUrl, {
           headers: { 'Accept': 'application/json' },
@@ -3719,7 +3756,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
         if (heliusResponse.ok) {
           const heliusData = await heliusResponse.json();
           if (heliusData && Array.isArray(heliusData) && heliusData.length > 0) {
-            console.log(`✅ Found ${heliusData.length} transactions from Helius`);
+            log.info('Found transactions from Helius', { count: heliusData.length });
             
             // Parse Helius transactions to extract trades
             const trades: any[] = [];
@@ -3809,7 +3846,12 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
                   // Calculate price
                   const price = tokenAmount > 0 && solAmount > 0 ? solAmount / tokenAmount : 0;
 
-                  console.log(`📊 Helius Trade: ${isBuy ? 'BUY' : 'SELL'} | SOL: ${solAmount.toFixed(4)} | Tokens: ${tokenAmount.toFixed(2)} | Trader: ${trader.substring(0, 8)}...`);
+                  log.info('Helius Trade OLD endpoint', {
+                    type: isBuy ? 'BUY' : 'SELL',
+                    solAmount,
+                    tokenAmount,
+                    trader: trader.substring(0, 8) + '...'
+                  });
 
                   // Only add trade if we have meaningful data
                   if (solAmount > 0.0001 && tokenAmount > 0) {
@@ -3832,16 +3874,16 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
             }
 
             if (trades.length > 0) {
-              console.log(`✅ Parsed ${trades.length} trades from Helius`);
+              log.info('Parsed trades from Helius', { count: trades.length });
               return res.json(trades);
             }
           }
         } else {
-          console.log(`Helius API returned status ${heliusResponse.status}`);
+          log.warn('Helius API returned non-ok status', { status: heliusResponse.status });
         }
       }
     } catch (heliusError: any) {
-      console.log('Helius API failed:', heliusError.message);
+      log.error('Helius API failed', { error: heliusError.message });
     }
 
     // Method 3: Get trades from real-time listener (if active)
@@ -3849,7 +3891,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
     if (activeListener) {
       const realTimeTrades = activeListener.getRecentTrades(limit);
       if (realTimeTrades.length > 0) {
-        console.log(`✅ Found ${realTimeTrades.length} trades from real-time listener`);
+        log.info('Found trades from real-time listener', { count: realTimeTrades.length });
         return res.json(realTimeTrades.map(trade => ({
           signature: trade.signature,
           timestamp: trade.timestamp,
@@ -3866,7 +3908,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
 
     // Method 4: Use PumpFunTransactionParser to get trades from pump.fun program
     try {
-      console.log('🔍 Using PumpFunTransactionParser for pump.fun specific trades...');
+      log.info('Using PumpFunTransactionParser for pump.fun specific trades');
       let PumpFunParser: any = null;
       try {
         PumpFunParser = require(path.join(distPath, 'pumpfun/pumpfun-parser')).PumpFunTransactionParser;
@@ -3883,7 +3925,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
         const pumpFunTrades = await parser.getTradesFromPumpFunProgram(mint, limit);
         
         if (pumpFunTrades && pumpFunTrades.length > 0) {
-          console.log(`✅ Found ${pumpFunTrades.length} trades from pump.fun program`);
+          log.info('Found trades from pump.fun program', { count: pumpFunTrades.length });
           return res.json(pumpFunTrades.map((trade: any) => ({
             signature: trade.signature,
             timestamp: trade.timestamp,
@@ -3898,17 +3940,17 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
         }
       }
     } catch (parserError: any) {
-      console.log('PumpFunTransactionParser failed:', parserError.message);
+      log.error('PumpFunTransactionParser failed', { error: parserError.message });
     }
 
     // Method 5: Parse real trades from on-chain transactions (improved)
     try {
       const { Connection, PublicKey } = require('@solana/web3.js');
-      const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+      const rpcUrl = process.env.RPC_URL || getValidatedRpcUrl();
       const connection = new Connection(rpcUrl, 'confirmed');
       const mintPubkey = new PublicKey(mint);
       
-      console.log('📊 Parsing real trades from Solana blockchain...');
+      log.info('Parsing real trades from Solana blockchain');
       
       // Get recent signatures for the token mint
       // CRITICAL: When searching by token mint, we get ALL transactions involving the token
@@ -3920,7 +3962,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
       );
 
       if (signatures.length > 0) {
-        console.log(`Found ${signatures.length} recent transactions for token mint`);
+        log.info('Found recent transactions for token mint', { count: signatures.length });
         
         const trades: any[] = [];
         
@@ -4091,7 +4133,11 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
                       // This is the actual trader (buyer)
                       actualTraderTokenChange = accountTokenChange;
                       signerTokenChange = accountTokenChange; // Update for side detection
-                      console.log(`  ✅ Found BUYER: account[${i}] lost ${solLoss.toFixed(6)} SOL, gained ${accountTokenChange.toFixed(4)} tokens`);
+                      log.info('Found BUYER in transaction', {
+                        accountIndex: i,
+                        solLoss,
+                        tokenGain: accountTokenChange
+                      });
                     }
                   }
                 }
@@ -4108,7 +4154,11 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
                       // This is the actual trader (seller)
                       actualTraderTokenChange = accountTokenChange;
                       signerTokenChange = accountTokenChange; // Update for side detection
-                      console.log(`  ✅ Found SELLER: account[${i}] gained ${solGain.toFixed(6)} SOL, lost ${Math.abs(accountTokenChange).toFixed(4)} tokens`);
+                      log.info('Found SELLER in transaction', {
+                        accountIndex: i,
+                        solGain,
+                        tokenLoss: Math.abs(accountTokenChange)
+                      });
                     }
                   }
                 }
@@ -4266,7 +4316,19 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
               }
               
               // Debug logging with all details
-              console.log(`🔍 Trade: ${tradeSide.toUpperCase()} | Reason: ${sideReason} | SOL: ${finalSolAmount.toFixed(6)} | Tokens: ${tokenAmount.toFixed(4)} | actualTraderTokenChange: ${actualTraderTokenChange.toFixed(4)} | signerTokenChange: ${signerTokenChange.toFixed(4)} | tokenBalanceChange: ${tokenBalanceChange.toFixed(4)} | buyerSol: ${buyerSolChange.toFixed(6)} | sellerSol: ${sellerSolChange.toFixed(6)} | buyerAccount: ${buyerAccount ? buyerAccount.substring(0, 8) + '...' : 'N/A'} | sellerAccount: ${sellerAccount ? sellerAccount.substring(0, 8) + '...' : 'N/A'}`);
+              log.info('Trade analysis - OLD endpoint', {
+                side: tradeSide.toUpperCase(),
+                reason: sideReason,
+                solAmount: finalSolAmount,
+                tokenAmount,
+                actualTraderTokenChange,
+                signerTokenChange,
+                tokenBalanceChange,
+                buyerSolChange,
+                sellerSolChange,
+                buyerAccount: buyerAccount ? buyerAccount.substring(0, 8) + '...' : 'N/A',
+                sellerAccount: sellerAccount ? sellerAccount.substring(0, 8) + '...' : 'N/A'
+              });
               
               trades.push({
                 signature: sig.signature,
@@ -4289,32 +4351,24 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
         }
 
         if (trades.length > 0) {
-          console.log(`✅ Parsed ${trades.length} real trades from blockchain`);
+          log.info('Parsed real trades from blockchain', { count: trades.length });
           return res.json(trades);
         }
       }
     } catch (rpcError: any) {
-      console.log('RPC trades parsing failed:', rpcError.message);
+      log.error('RPC trades parsing failed', { error: rpcError.message });
     }
 
     // Method 6: All methods failed - return empty array
-    console.log('⚠️ No real trades found after trying all methods');
-    console.log('💡 Methods tried:');
-    console.log('   1. DexScreener API');
-    console.log('   2. Helius API');
-    console.log('   3. PumpFunTransactionParser');
-    console.log('   4. Real-time WebSocket listener');
-    console.log('   5. On-chain parsing');
-    console.log('💡 Possible reasons:');
-    console.log('   • Token has no recent activity');
-    console.log('   • RPC is slow or rate-limited');
-    console.log('   • Token is too new');
-    console.log('   • Transactions are still processing');
-    console.log('💡 The system only shows 100% real trades from blockchain - no fake data');
+    log.warn('No real trades found after trying all methods', {
+      methodsTried: ['DexScreener API', 'Helius API', 'PumpFunTransactionParser', 'Real-time WebSocket listener', 'On-chain parsing'],
+      possibleReasons: ['Token has no recent activity', 'RPC is slow or rate-limited', 'Token is too new', 'Transactions are still processing'],
+      note: 'The system only shows 100% real trades from blockchain - no fake data'
+    });
     return res.json([]);
 
   } catch (error) {
-    console.error('Get trades error:', error);
+    log.error('Get trades error', { error: (error as Error).message, stack: (error as Error).stack });
     return res.status(500).json({ error: String(error) });
   }
 });
@@ -4322,7 +4376,7 @@ app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
 app.get('/api/pumpfun/token/:mint', async (req, res) => {
   try {
     const { mint } = req.params;
-    console.log(`🔍 Fetching token info for: ${mint}`);
+    log.info('Fetching token info', { mint });
     
     const tokenInfo: any = {
       mint,
@@ -4371,7 +4425,7 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
         const dexData = await dexResponse.json();
         if (dexData.pairs && dexData.pairs.length > 0) {
           const pair = dexData.pairs[0]; // Get the most liquid pair
-          console.log(`✅ Found token info from DexScreener`);
+          log.info('Found token info from DexScreener');
           
           tokenInfo.name = pair.baseToken?.name || tokenInfo.name;
           tokenInfo.symbol = pair.baseToken?.symbol || tokenInfo.symbol;
@@ -4391,11 +4445,15 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
           // DexScreener free API has limited data, paid has more detailed info
           tokenInfo.dex_is_paid = !!(pair.liquidity?.usd && pair.volume?.h24 && pair.priceChange?.h24);
           
-          console.log(`📊 DexScreener data: Liquidity=${tokenInfo.liquidity}, Volume=${tokenInfo.volume_24h}, Holders=${tokenInfo.holders}`);
+          log.info('DexScreener token data', {
+            liquidity: tokenInfo.liquidity,
+            volume24h: tokenInfo.volume_24h,
+            holders: tokenInfo.holders
+          });
         }
       }
     } catch (dexError) {
-      console.log('DexScreener API failed:', dexError);
+      log.error('DexScreener API failed', { error: (dexError as Error).message });
     }
 
     // Method 2: Try pump.fun API
@@ -4410,7 +4468,7 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
 
       if (pumpResponse.ok) {
         const pumpData = await pumpResponse.json();
-        console.log(`✅ Found token info from pump.fun API`);
+        log.info('Found token info from pump.fun API');
         
         // Merge pump.fun data (may have more details)
         if (pumpData.name && !tokenInfo.name) tokenInfo.name = pumpData.name;
@@ -4455,7 +4513,7 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
         }
       }
     } catch (pumpError) {
-      console.log('Pump.fun API failed:', pumpError);
+      log.error('Pump.fun API failed', { error: (pumpError as Error).message });
     }
 
     // Method 3: Get on-chain data (supply, decimals, holders, liquidity, metadata)
@@ -4464,7 +4522,7 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
       const { getMint } = require('@solana/spl-token');
 
       const config = configManager.getConfig();
-      const rpcUrl = config.rpcUrl || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+      const rpcUrl = config.rpcUrl || getValidatedRpcUrl();
       const connection = new Connection(rpcUrl, 'confirmed');
       const mintPubkey = new PublicKey(mint);
 
@@ -4544,10 +4602,14 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
           tokenInfo.insider_holdings = insiderTotal;
           tokenInfo.insider_holdings_percent = (insiderTotal / totalSupply) * 100;
           
-          console.log(`📊 Holdings analysis: Dev=${tokenInfo.dev_holdings_percent.toFixed(2)}%, Snipers=${tokenInfo.sniper_holdings_percent.toFixed(2)}%, Insiders=${tokenInfo.insider_holdings_percent.toFixed(2)}%`);
+          log.info('Holdings analysis', {
+            devHoldingsPercent: tokenInfo.dev_holdings_percent,
+            sniperHoldingsPercent: tokenInfo.sniper_holdings_percent,
+            insiderHoldingsPercent: tokenInfo.insider_holdings_percent
+          });
         }
       } catch (holderError) {
-        console.log('Could not analyze holdings:', holderError);
+        log.warn('Could not analyze holdings', { error: (holderError as Error).message });
       }
 
       // Get liquidity from bonding curve (pump.fun specific)
@@ -4569,10 +4631,13 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
           if (liquiditySOL > 0) {
             // Estimate USD value (rough SOL price estimate)
             tokenInfo.liquidity = liquiditySOL * 200; // Approximate SOL price
-            console.log(`📊 Liquidity from bonding curve: ${liquiditySOL.toFixed(4)} SOL (~$${tokenInfo.liquidity.toFixed(2)})`);
+            log.info('Liquidity from bonding curve', {
+              liquiditySOL,
+              liquidityUSD: tokenInfo.liquidity
+            });
           }
         } catch (liquidityError) {
-          console.log('Could not get bonding curve liquidity:', liquidityError);
+          log.warn('Could not get bonding curve liquidity', { error: (liquidityError as Error).message });
         }
       }
 
@@ -4603,7 +4668,7 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
 
             if (uriMatch) {
               const metadataUri = uriMatch[0].replace(/\x00/g, '');
-              console.log(`📊 Found metadata URI: ${metadataUri}`);
+              log.info('Found metadata URI', { metadataUri });
 
               // Fetch the JSON metadata
               try {
@@ -4614,19 +4679,19 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
                   const metaJson = await metaResponse.json();
                   if (metaJson.image) {
                     tokenInfo.image_uri = metaJson.image;
-                    console.log(`📊 Found image from metadata: ${tokenInfo.image_uri}`);
+                    log.info('Found image from metadata', { imageUri: tokenInfo.image_uri });
                   }
                   if (metaJson.name && !tokenInfo.name) tokenInfo.name = metaJson.name;
                   if (metaJson.symbol && !tokenInfo.symbol) tokenInfo.symbol = metaJson.symbol;
                   if (metaJson.description && !tokenInfo.description) tokenInfo.description = metaJson.description;
                 }
               } catch (fetchError) {
-                console.log('Could not fetch metadata JSON:', fetchError);
+                log.warn('Could not fetch metadata JSON', { error: (fetchError as Error).message });
               }
             }
           }
         } catch (metadataError) {
-          console.log('Could not get Metaplex metadata:', metadataError);
+          log.warn('Could not get Metaplex metadata', { error: (metadataError as Error).message });
         }
       }
 
@@ -4663,7 +4728,10 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
                       if (solChange > 0.0001) {
                         tokenInfo.price_sol = solChange / tokenChange;
                         tokenInfo.price_usd = tokenInfo.price_sol * 200; // Approximate SOL price
-                        console.log(`📊 Price from trade: ${tokenInfo.price_sol.toFixed(10)} SOL`);
+                        log.info('Price calculated from trade', {
+                          priceSol: tokenInfo.price_sol,
+                          priceUsd: tokenInfo.price_usd
+                        });
                         break;
                       }
                     }
@@ -4674,12 +4742,12 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
             }
           }
         } catch (priceError) {
-          console.log('Could not calculate price from trades:', priceError);
+          log.warn('Could not calculate price from trades', { error: (priceError as Error).message });
         }
       }
 
     } catch (onChainError) {
-      console.log('On-chain data fetch failed:', onChainError);
+      log.error('On-chain data fetch failed', { error: (onChainError as Error).message });
     }
 
     // If we still don't have a name, use a default
@@ -4693,7 +4761,7 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
     return res.json(tokenInfo);
 
   } catch (error) {
-    console.error('Get token error:', error);
+    log.error('Get token error', { error: (error as Error).message, stack: (error as Error).stack });
     return res.status(500).json({ error: String(error) });
   }
 });
@@ -4889,29 +4957,51 @@ app.post('/api/stop-loss/cancel/:orderId', (req, res) => {
 
 // ==================== PRICE ALERTS API ====================
 
-// Get all active alerts
-app.get('/api/alerts', (req, res) => {
+// Get user's alerts
+// 🔒 Authenticated endpoint
+app.get('/api/alerts',
+  readLimiter,
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
   try {
-    const alerts = priceAlertManager.getActiveAlerts();
+    if (!req.userId) {
+      return res.status(401).json({ error: 'User ID not found' });
+    }
+
+    const alerts = priceAlertManager.getAlertsByUser(req.userId);
     res.json({ alerts });
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }
 });
 
-// Get alerts by token
-app.get('/api/alerts/:tokenMint', (req, res) => {
+// Get alerts by token (user's alerts for that token)
+// 🔒 Authenticated endpoint
+app.get('/api/alerts/:tokenMint', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const { tokenMint } = req.params;
-    const alerts = priceAlertManager.getAlertsByToken(tokenMint);
-    res.json({ alerts });
+
+    if (!req.userId) {
+      return res.status(401).json({ error: 'User ID not found' });
+    }
+
+    // Get user's alerts for this specific token
+    const allAlerts = priceAlertManager.getAlertsByToken(tokenMint);
+    const userAlerts = allAlerts.filter(a => a.userId === req.userId);
+
+    res.json({ alerts: userAlerts });
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }
 });
 
 // Create alert
-app.post('/api/alerts/create', (req, res) => {
+// 🔒 Authenticated endpoint
+app.post('/api/alerts/create',
+  alertsLimiter,
+  authenticateToken,
+  validateBody(createAlertSchema),
+  async (req: AuthenticatedRequest, res) => {
   try {
     const {
       tokenMint,
@@ -4921,7 +5011,12 @@ app.post('/api/alerts/create', (req, res) => {
       targetValue,
     } = req.body;
 
+    if (!req.userId) {
+      return res.status(401).json({ error: 'User ID not found' });
+    }
+
     const alert = priceAlertManager.createAlert(
+      req.userId,
       tokenMint,
       tokenName,
       tokenSymbol,
@@ -4936,7 +5031,11 @@ app.post('/api/alerts/create', (req, res) => {
 });
 
 // Cancel alert
-app.post('/api/alerts/cancel/:alertId', (req, res) => {
+// 🔒 Authenticated endpoint
+app.post('/api/alerts/cancel/:alertId',
+  alertsLimiter,
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
   try {
     const { alertId } = req.params;
     const cancelled = priceAlertManager.cancelAlert(alertId);
@@ -5479,13 +5578,9 @@ app.get('/api/subscription/plans', (req, res) => {
 app.get('/api/tokens/feed', async (req, res) => {
   try {
     const filter = (req.query.filter as string) || 'all';
-    // Default to 0 to allow new tokens with low/no liquidity
-    const minLiquidity = req.query.minLiquidity !== undefined ? parseInt(req.query.minLiquidity as string) : 0;
+    const minLiquidity = parseInt(req.query.minLiquidity as string) || 1000;
     const maxAge = parseInt(req.query.maxAge as string) || 1440;
     const limit = parseInt(req.query.limit as string) || 50;
-
-    console.log(`🔍 /api/tokens/feed: filter=${filter}, minLiquidity=${minLiquidity}, maxAge=${maxAge}, limit=${limit}`);
-    console.log(`📊 TokenFeed status: isStarted=${tokenFeed.isServiceStarted() ? 'yes' : 'no'}, onChainTokens=${tokenFeed.getOnChainTokens().size}`);
 
     const tokens = await tokenFeed.fetchTokens({
       filter: filter as any,
@@ -5494,21 +5589,13 @@ app.get('/api/tokens/feed', async (req, res) => {
       limit
     });
 
-    console.log(`✅ /api/tokens/feed: Returning ${tokens.length} tokens`);
-
     res.json({
       success: true,
       count: tokens.length,
       tokens
     });
   } catch (error: any) {
-    console.error('❌ /api/tokens/feed error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message,
-      count: 0,
-      tokens: []
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -5545,138 +5632,66 @@ app.get('/api/tokens/trending', async (req, res) => {
   }
 });
 
-// Get specific token by mint - Enhanced endpoint for Discord bots and external use
+// Get specific token by mint
 app.get('/api/tokens/:mint', async (req, res) => {
   try {
-    const mint = req.params.mint;
-    console.log(`🔍 Token lookup requested for: ${mint.substring(0, 8)}...`);
-    
-    // Try to get from tokenFeed first (most up-to-date)
-    let token = await tokenFeed.getToken(mint);
-    
-    // If not found, try to get from MongoDB (if available)
-    if (!token && tokenIndexer.isActive()) {
-      const dbToken = await tokenIndexer.getToken(mint);
-      if (dbToken) {
-        // Convert TokenIndexData to TokenData format
-        token = {
-          mint: dbToken.mint,
-          name: dbToken.name || `Token ${dbToken.mint.slice(0, 8)}`,
-          symbol: dbToken.symbol || 'UNK',
-          imageUrl: dbToken.imageUrl,
-          price: dbToken.price || 0,
-          priceChange5m: dbToken.priceChange5m || 0,
-          priceChange1h: dbToken.priceChange1h || 0,
-          priceChange24h: dbToken.priceChange24h || 0,
-          volume5m: dbToken.volume5m || 0,
-          volume1h: dbToken.volume1h || 0,
-          volume24h: dbToken.volume24h || 0,
-          liquidity: dbToken.liquidity || 0,
-          marketCap: dbToken.marketCap || 0,
-          fdv: dbToken.marketCap || 0,
-          holders: dbToken.holders,
-          txns5m: dbToken.txns5m || { buys: 0, sells: 0 },
-          txns1h: dbToken.txns1h || { buys: 0, sells: 0 },
-          txns24h: dbToken.txns24h || { buys: 0, sells: 0 },
-          createdAt: dbToken.createdAt,
-          pairAddress: dbToken.pairAddress || '',
-          dexId: dbToken.dexId || 'unknown',
-          age: dbToken.age || 0,
-          isNew: dbToken.isNew || false,
-          isGraduating: dbToken.isGraduating || false,
-          isTrending: dbToken.isTrending || false,
-          riskScore: dbToken.riskScore || 50,
-        };
-      }
-    }
-    
+    const token = await tokenFeed.getToken(req.params.mint);
     if (!token) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Token not found',
-        mint: mint
-      });
+      return res.status(404).json({ error: 'Token not found' });
     }
-    
-    // Return comprehensive token data
-    res.json({ 
-      success: true, 
-      token: {
-        // Basic info
-        mint: token.mint,
-        name: token.name,
-        symbol: token.symbol,
-        imageUrl: token.imageUrl,
-        
-        // Price data
-        price: token.price,
-        priceChange5m: token.priceChange5m,
-        priceChange1h: token.priceChange1h,
-        priceChange24h: token.priceChange24h,
-        
-        // Market data
-        marketCap: token.marketCap,
-        liquidity: token.liquidity,
-        fdv: token.fdv,
-        holders: token.holders,
-        
-        // Volume data
-        volume5m: token.volume5m,
-        volume1h: token.volume1h,
-        volume24h: token.volume24h,
-        
-        // Transaction data
-        txns5m: token.txns5m,
-        txns1h: token.txns1h,
-        txns24h: token.txns24h,
-        
-        // Metadata
-        createdAt: token.createdAt,
-        age: token.age, // in minutes
-        pairAddress: token.pairAddress,
-        dexId: token.dexId,
-        
-        // Flags
-        isNew: token.isNew,
-        isGraduating: token.isGraduating,
-        isTrending: token.isTrending,
-        riskScore: token.riskScore,
-        
-        // Links (for Discord embeds)
-        dexScreenerUrl: `https://dexscreener.com/solana/${token.pairAddress || token.mint}`,
-        birdeyeUrl: `https://birdeye.so/token/${token.mint}`,
-        solscanUrl: `https://solscan.io/token/${token.mint}`,
-      }
-    });
+    res.json({ success: true, token });
   } catch (error: any) {
-    console.error('Error fetching token:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Discord Interactions endpoint is defined above (before express.json())
+// ==========================================
+// Error Handlers (must be after all routes)
+// ==========================================
 
-// Catch all handler: send back React's index.html file
+// Sentry error handler (must be before other error handlers)
+app.use(sentryErrorHandler());
+
+// Global error handler
+app.use((err: any, req: any, res: any, next: any) => {
+  log.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    userId: (req as any).user?.userId,
+  });
+
+  res.status(err.status || 500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred',
+  });
+});
+
+// Catch all handler: send back React's index.html file (must be last)
 app.get('*', (req, res) => {
   res.sendFile(path.join(buildPath, 'index.html'));
 });
 
 // WebSocket connection
 io.on('connection', (socket) => {
-  console.log('✅ Client connected:', socket.id, 'from', socket.handshake.address);
+  log.info('Client connected', {
+    socketId: socket.id,
+    address: socket.handshake.address
+  });
   
   // Send a welcome message
   socket.emit('connected', { message: 'Connected to server', timestamp: Date.now() });
   
   socket.on('disconnect', (reason) => {
-    console.log('❌ Client disconnected:', socket.id, 'reason:', reason);
+    log.info('Client disconnected', {
+      socketId: socket.id,
+      reason
+    });
   });
 
   socket.on('error', (error) => {
-    console.error('❌ Socket error:', error);
+    log.error('Socket error', { error: error.message, stack: error.stack });
   });
 });
 
@@ -5684,17 +5699,23 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0'; // Listen on all interfaces for local network access
 
 httpServer.listen(PORT, HOST as string, () => {
-  console.log(`🚀 Server running on http://${HOST}:${PORT}`);
-  console.log(`📊 Web interface available at:`);
-  console.log(`   - http://localhost:${PORT}`);
-  console.log(`   - http://127.0.0.1:${PORT}`);
+  log.info('Server started', {
+    host: HOST,
+    port: PORT,
+    urls: [
+      `http://localhost:${PORT}`,
+      `http://127.0.0.1:${PORT}`
+    ]
+  });
   // Try to detect and show local IP
   const os = require('os');
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.')) {
-        console.log(`   - http://${iface.address}:${PORT}`);
+        log.info('Network interface available', {
+          url: `http://${iface.address}:${PORT}`
+        });
       }
     }
   }

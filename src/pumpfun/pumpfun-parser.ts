@@ -27,7 +27,7 @@ export class PumpFunTransactionParser {
 
   constructor(rpcUrl?: string) {
     this.connection = new Connection(
-      rpcUrl || process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997',
+      rpcUrl || process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`,
       'confirmed'
     );
   }

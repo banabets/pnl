@@ -1,0 +1,178 @@
+// Environment Variables Validator
+// This module validates that all required environment variables are set correctly
+// MUST be imported at the very beginning of server/index.ts
+
+import crypto from 'crypto';
+
+interface EnvValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Validates all required environment variables
+ * Throws error if critical variables are missing or invalid
+ */
+export function validateEnvironment(): EnvValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  console.log('🔍 Validating environment variables...');
+
+  // ===== CRITICAL VARIABLES (MUST be set) =====
+
+  // 1. JWT_SECRET
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    errors.push('JWT_SECRET is not set. Generate one with: openssl rand -base64 64');
+  } else if (jwtSecret === 'your-secret-key-change-in-production' || jwtSecret.length < 32) {
+    errors.push('JWT_SECRET is using default or weak value. Must be at least 32 characters.');
+  }
+
+  // 2. ENCRYPTION_KEY
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    errors.push('ENCRYPTION_KEY is not set. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  } else if (encryptionKey.length !== 64 || !/^[0-9a-f]{64}$/i.test(encryptionKey)) {
+    errors.push('ENCRYPTION_KEY must be exactly 64 hexadecimal characters (32 bytes).');
+  }
+
+  // 3. HELIUS_API_KEY
+  const heliusApiKey = process.env.HELIUS_API_KEY;
+  if (!heliusApiKey || heliusApiKey === 'your-helius-api-key-here') {
+    errors.push('HELIUS_API_KEY is not set or using placeholder. Get one from https://helius.dev');
+  } else if (heliusApiKey === '7b05747c-b100-4159-ba5f-c85e8c8d3997') {
+    errors.push('⚠️ CRITICAL: HELIUS_API_KEY is using the EXPOSED key from code! This key is PUBLIC and must be revoked immediately!');
+  }
+
+  // 4. MONGODB_URI (warn if not set, but allow fallback for development)
+  const mongodbUri = process.env.MONGODB_URI || process.env.MONGO_URL;
+  if (!mongodbUri) {
+    warnings.push('MONGODB_URI is not set. Using default: mongodb://localhost:27017/pnl-onl');
+    warnings.push('⚠️ Without MongoDB, data will be stored in JSON files and lost on restart!');
+  }
+
+  // ===== IMPORTANT VARIABLES (Should be set) =====
+
+  // 5. RPC_URL
+  const rpcUrl = process.env.RPC_URL;
+  if (!rpcUrl) {
+    warnings.push('RPC_URL is not set. Will use Helius RPC with HELIUS_API_KEY.');
+  }
+
+  // 6. NODE_ENV
+  const nodeEnv = process.env.NODE_ENV;
+  if (!nodeEnv) {
+    warnings.push('NODE_ENV is not set. Defaulting to "development".');
+  } else if (nodeEnv === 'production') {
+    // Additional checks for production
+    if (!mongodbUri) {
+      errors.push('MONGODB_URI is REQUIRED in production environment!');
+    }
+    if (jwtSecret && jwtSecret.includes('change-me')) {
+      errors.push('JWT_SECRET cannot contain placeholder text in production!');
+    }
+  }
+
+  // 7. JWT_EXPIRY
+  const jwtExpiry = process.env.JWT_EXPIRY;
+  if (!jwtExpiry) {
+    warnings.push('JWT_EXPIRY is not set. Defaulting to "7d".');
+  }
+
+  // ===== TRADING CONFIGURATION (Optional but recommended) =====
+
+  const slippageBps = process.env.SLIPPAGE_BPS;
+  if (slippageBps && (parseInt(slippageBps) < 0 || parseInt(slippageBps) > 10000)) {
+    warnings.push('SLIPPAGE_BPS should be between 0 and 10000 (0-100%).');
+  }
+
+  const maxSolPerSwap = process.env.MAX_SOL_PER_SWAP;
+  if (maxSolPerSwap && parseFloat(maxSolPerSwap) > 100) {
+    warnings.push('MAX_SOL_PER_SWAP is very high (>100 SOL). Consider lowering for safety.');
+  }
+
+  // ===== PRINT RESULTS =====
+
+  if (errors.length > 0) {
+    console.error('\n❌ CRITICAL ENVIRONMENT ERRORS:');
+    errors.forEach((error, i) => {
+      console.error(`   ${i + 1}. ${error}`);
+    });
+  }
+
+  if (warnings.length > 0) {
+    console.warn('\n⚠️  ENVIRONMENT WARNINGS:');
+    warnings.forEach((warning, i) => {
+      console.warn(`   ${i + 1}. ${warning}`);
+    });
+  }
+
+  if (errors.length === 0 && warnings.length === 0) {
+    console.log('✅ All environment variables validated successfully!\n');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+/**
+ * Generate secure environment variables for new installations
+ */
+export function generateSecureEnvVars(): { JWT_SECRET: string; ENCRYPTION_KEY: string } {
+  const jwtSecret = crypto.randomBytes(64).toString('base64');
+  const encryptionKey = crypto.randomBytes(32).toString('hex');
+
+  return {
+    JWT_SECRET: jwtSecret,
+    ENCRYPTION_KEY: encryptionKey
+  };
+}
+
+/**
+ * Validate and throw error if environment is invalid
+ * Use this at the start of your application
+ */
+export function validateOrThrow(): void {
+  const result = validateEnvironment();
+
+  if (!result.valid) {
+    console.error('\n🚨 ENVIRONMENT VALIDATION FAILED!\n');
+    console.error('Please fix the errors above before starting the server.\n');
+    console.error('Steps to fix:');
+    console.error('  1. Copy .env.example to .env');
+    console.error('  2. Generate secure values:');
+    console.error('     - JWT_SECRET: openssl rand -base64 64');
+    console.error('     - ENCRYPTION_KEY: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+    console.error('  3. Get HELIUS_API_KEY from https://helius.dev');
+    console.error('  4. Set MONGODB_URI to your MongoDB connection string\n');
+
+    process.exit(1);
+  }
+
+  if (result.warnings.length > 0) {
+    console.warn('\n⚠️  Some warnings were detected. Review them carefully.\n');
+  }
+}
+
+// Export helper to get validated RPC URL
+export function getValidatedRpcUrl(): string {
+  const rpcUrl = process.env.RPC_URL;
+  const heliusApiKey = process.env.HELIUS_API_KEY;
+
+  if (rpcUrl) {
+    return rpcUrl;
+  }
+
+  if (heliusApiKey) {
+    return `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`;
+  }
+
+  // Fallback to public RPC (not recommended for production)
+  console.warn('⚠️ Using public Solana RPC. This is SLOW and rate-limited. Set HELIUS_API_KEY for better performance.');
+  return 'https://api.mainnet-beta.solana.com';
+}

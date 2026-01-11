@@ -22,19 +22,19 @@ class TokenEnricherWorker {
     this.isRunning = true;
     console.log('🔄 Starting Token Enricher Worker...');
 
-    // Enrich tokens every 10 minutes (reduced frequency to avoid rate limits)
+    // Enrich tokens every 5 minutes
     this.interval = setInterval(async () => {
       if (!this.processing) {
         await this.enrichBatch();
       }
-    }, 10 * 60 * 1000); // 10 minutes (was 5)
+    }, 5 * 60 * 1000); // 5 minutes
 
-    // First execution after 2 minutes (give server time to start and accumulate tokens)
+    // First execution after 30 seconds (give server time to start)
     setTimeout(() => {
       if (this.isRunning && !this.processing) {
         this.enrichBatch();
       }
-    }, 120000); // 2 minutes (was 30 seconds)
+    }, 30000);
   }
 
   /**
@@ -90,28 +90,29 @@ class TokenEnricherWorker {
 
       console.log(`🔄 Enriching ${uniqueMints.length} tokens in background...`);
 
-      // 3. Process sequentially to avoid rate limits (DexScreener is very strict)
+      // 3. Process in small batches to avoid rate limits
+      const batchSize = 5;
       let enriched = 0;
       let failed = 0;
 
-      // Process one at a time with delays to respect rate limits
-      for (let i = 0; i < uniqueMints.length; i++) {
-        const mint = uniqueMints[i];
-        
-        try {
-          const success = await this.enrichToken(mint);
-          if (success) {
+      for (let i = 0; i < uniqueMints.length; i += batchSize) {
+        const batch = uniqueMints.slice(i, i + batchSize);
+
+        const results = await Promise.allSettled(
+          batch.map(mint => this.enrichToken(mint))
+        );
+
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value) {
             enriched++;
           } else {
             failed++;
           }
-        } catch (error) {
-          failed++;
         }
 
-        // Delay between tokens to avoid rate limits (8 requests/min = ~7.5s between requests)
-        if (i < uniqueMints.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 8000)); // 8 second delay
+        // Delay between batches to avoid rate limits
+        if (i + batchSize < uniqueMints.length) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
         }
       }
 
@@ -164,8 +165,8 @@ class TokenEnricherWorker {
       }
     }
 
-    // Limit to 10 tokens per batch (to avoid rate limits with DexScreener)
-    return tokens.slice(0, 10);
+    // Limit to 50 tokens per batch
+    return tokens.slice(0, 50);
   }
 
   /**

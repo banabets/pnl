@@ -1,6 +1,5 @@
 // Token Indexer Service - Persist tokens discovered on-chain to MongoDB
 import { TokenIndex, isConnected } from './database';
-import mongoose from 'mongoose';
 
 export interface TokenIndexData {
   mint: string;
@@ -59,13 +58,6 @@ class TokenIndexerService {
       return; // Silently skip if MongoDB not available
     }
 
-    // Get TokenIndex model - try exported one first, then from mongoose.models
-    const TokenModel = TokenIndex || (mongoose.models.TokenIndex as typeof TokenIndex);
-    if (!TokenModel || !isConnected()) {
-      // Silently skip - MongoDB might not be fully initialized yet
-      return;
-    }
-
     try {
       const tokenDoc = {
         mint: data.mint,
@@ -102,10 +94,7 @@ class TokenIndexerService {
       };
 
       // Use upsert to update if exists, create if not
-      const TokenModel = TokenIndex || (mongoose.models.TokenIndex as typeof TokenIndex);
-      if (!TokenModel) return;
-      
-      await TokenModel.findOneAndUpdate(
+      await TokenIndex.findOneAndUpdate(
         { mint: data.mint },
         { $set: tokenDoc },
         { upsert: true, new: true }
@@ -113,10 +102,7 @@ class TokenIndexerService {
 
     } catch (error: any) {
       // Log but don't throw - indexing failures shouldn't break the app
-      // Only log if it's not a connection error (to avoid spam)
-      if (!error.message?.includes('connection') && !error.message?.includes('undefined')) {
-        console.error(`Failed to index token ${data.mint?.substring(0, 8) || 'unknown'}:`, error.message);
-      }
+      console.error(`Failed to index token ${data.mint}:`, error.message);
     }
   }
 
@@ -153,9 +139,9 @@ class TokenIndexerService {
               priceChange5m: token.priceChange5m,
               priceChange1h: token.priceChange1h,
               priceChange24h: token.priceChange24h,
-              txns5m: token.txns5m ? { buys: token.txns5m.buys || 0, sells: token.txns5m.sells || 0 } : { buys: 0, sells: 0 },
-              txns1h: token.txns1h ? { buys: token.txns1h.buys || 0, sells: token.txns1h.sells || 0 } : { buys: 0, sells: 0 },
-              txns24h: token.txns24h ? { buys: token.txns24h.buys || 0, sells: token.txns24h.sells || 0 } : { buys: 0, sells: 0 },
+              txns5m: token.txns5m,
+              txns1h: token.txns1h,
+              txns24h: token.txns24h,
               lastEnrichedAt: token.lastEnrichedAt ? new Date(token.lastEnrichedAt) : undefined,
               enrichmentSource: token.enrichmentSource,
               isNew: token.isNew,
@@ -227,13 +213,7 @@ class TokenIndexerService {
           break;
       }
 
-      // Get TokenIndex model - try exported one first, then from mongoose.models
-      const TokenModel = TokenIndex || (mongoose.models.TokenIndex as typeof TokenIndex);
-      if (!TokenModel || !isConnected()) {
-        return [];
-      }
-
-      const tokens = await TokenModel.find(query)
+      const tokens = await TokenIndex.find(query)
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();
@@ -259,9 +239,9 @@ class TokenIndexerService {
         priceChange5m: token.priceChange5m,
         priceChange1h: token.priceChange1h,
         priceChange24h: token.priceChange24h,
-        txns5m: token.txns5m ? { buys: token.txns5m.buys || 0, sells: token.txns5m.sells || 0 } : { buys: 0, sells: 0 },
-        txns1h: token.txns1h ? { buys: token.txns1h.buys || 0, sells: token.txns1h.sells || 0 } : { buys: 0, sells: 0 },
-        txns24h: token.txns24h ? { buys: token.txns24h.buys || 0, sells: token.txns24h.sells || 0 } : { buys: 0, sells: 0 },
+        txns5m: token.txns5m,
+        txns1h: token.txns1h,
+        txns24h: token.txns24h,
         lastEnrichedAt: token.lastEnrichedAt?.getTime(),
         enrichmentSource: token.enrichmentSource,
         isNew: token.isNew,
@@ -288,11 +268,7 @@ class TokenIndexerService {
     }
 
     try {
-      const TokenModel = TokenIndex || (mongoose.models.TokenIndex as typeof TokenIndex);
-      if (!TokenModel || !isConnected()) {
-        return null;
-      }
-      const token = await TokenModel.findOne({ mint }).lean();
+      const token = await TokenIndex.findOne({ mint }).lean();
       if (!token) {
         return null;
       }
@@ -317,9 +293,9 @@ class TokenIndexerService {
         priceChange5m: token.priceChange5m,
         priceChange1h: token.priceChange1h,
         priceChange24h: token.priceChange24h,
-        txns5m: token.txns5m ? { buys: token.txns5m.buys || 0, sells: token.txns5m.sells || 0 } : { buys: 0, sells: 0 },
-        txns1h: token.txns1h ? { buys: token.txns1h.buys || 0, sells: token.txns1h.sells || 0 } : { buys: 0, sells: 0 },
-        txns24h: token.txns24h ? { buys: token.txns24h.buys || 0, sells: token.txns24h.sells || 0 } : { buys: 0, sells: 0 },
+        txns5m: token.txns5m,
+        txns1h: token.txns1h,
+        txns24h: token.txns24h,
         lastEnrichedAt: token.lastEnrichedAt?.getTime(),
         enrichmentSource: token.enrichmentSource,
         isNew: token.isNew,
@@ -345,14 +321,8 @@ class TokenIndexerService {
       return;
     }
 
-    // Get TokenIndex model - try exported one first, then from mongoose.models
-    const TokenModel = TokenIndex || (mongoose.models.TokenIndex as typeof TokenIndex);
-    if (!TokenModel || !isConnected()) {
-      return; // Silently skip if model not available or not connected
-    }
-
     try {
-      await TokenModel.findOneAndUpdate(
+      await TokenIndex.findOneAndUpdate(
         { mint },
         {
           $set: {
@@ -378,14 +348,8 @@ class TokenIndexerService {
     try {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       
-      // Get TokenIndex model
-      const TokenModel = TokenIndex || (mongoose.models.TokenIndex as typeof TokenIndex);
-      if (!TokenModel || !isConnected()) {
-        return [];
-      }
-      
       // Priority: tokens created in last hour without enrichment, or with old enrichment
-      const tokens = await TokenModel.find({
+      const tokens = await TokenIndex.find({
         $or: [
           { lastEnrichedAt: { $exists: false } },
           { lastEnrichedAt: { $lt: oneHourAgo } }

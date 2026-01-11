@@ -6,7 +6,19 @@ import mongoose from 'mongoose';
 
 // Encriptación de private keys usando AES-256
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+
+// ENCRYPTION_KEY - MUST be set in environment
+// CRITICAL: If this changes, ALL encrypted wallets become inaccessible!
+if (!process.env.ENCRYPTION_KEY) {
+  throw new Error(
+    'ENCRYPTION_KEY must be set in environment variables.\n' +
+    'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+  );
+}
+if (process.env.ENCRYPTION_KEY.length !== 64 || !/^[0-9a-f]{64}$/i.test(process.env.ENCRYPTION_KEY)) {
+  throw new Error('ENCRYPTION_KEY must be exactly 64 hexadecimal characters (32 bytes)');
+}
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 // Derive encryption key from user password (en producción, usar bcrypt)
 function deriveKeyFromPassword(password: string, salt: string): Buffer {

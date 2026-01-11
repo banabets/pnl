@@ -23,7 +23,7 @@ export class PumpFunOnChainSearch {
   private rpcUrl: string;
 
   constructor(rpcUrl?: string) {
-    this.rpcUrl = rpcUrl || process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+    this.rpcUrl = rpcUrl || process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`;
     this.connection = new Connection(this.rpcUrl, 'confirmed');
   }
 

@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+web/node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.bak
+.env.backup
+.env.test
+
+# Build outputs (will be built in Docker)
+dist/
+web/build/
+web/dist/
+
+# Tests
+tests/
+coverage/
+.nyc_output/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+*.tmp
+*.temp
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Keypairs (will be mounted as volume)
+keypairs/
+
+# Data directories
+data/
+sessions/

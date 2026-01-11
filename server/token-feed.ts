@@ -7,13 +7,6 @@ import { rateLimiter } from './rate-limiter';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { getMint } from '@solana/spl-token';
 
-// Tokens conocidos a excluir (Wrapped SOL, tokens genéricos, etc.)
-const EXCLUDED_MINTS = new Set([
-  'So11111111111111111111111111111111111111112', // Wrapped SOL
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
-]);
-
 interface TokenData {
   mint: string;
   name: string;
@@ -389,8 +382,7 @@ class TokenFeedService {
       });
 
       // Fetch additional metadata from DexScreener after a delay
-      // Use longer delay to avoid rate limits when many tokens are created at once
-      setTimeout(() => this.enrichTokenData(event.mint), 30000); // 30 seconds instead of 5
+      setTimeout(() => this.enrichTokenData(event.mint), 5000);
     });
 
     // Listen for graduations
@@ -411,7 +403,6 @@ class TokenFeedService {
         // Update in MongoDB
         await tokenIndexer.indexToken({
           mint: existing.mint,
-          createdAt: existing.createdAt,
           isGraduating: existing.isGraduating,
           dexId: existing.dexId,
           pairAddress: existing.pairAddress,
@@ -453,7 +444,6 @@ class TokenFeedService {
         // Update in MongoDB (async, don't wait)
         tokenIndexer.indexToken({
           mint: existing.mint,
-          createdAt: existing.createdAt,
           price: existing.price,
           volume5m: existing.volume5m,
           volume1h: existing.volume1h,
@@ -473,13 +463,6 @@ class TokenFeedService {
    */
   getOnChainTokens(): Map<string, TokenData> {
     return this.onChainTokens;
-  }
-
-  /**
-   * Check if service is started
-   */
-  isServiceStarted(): boolean {
-    return this.isStarted;
   }
 
   /**
@@ -531,56 +514,36 @@ class TokenFeedService {
         existing.priceChange24h = cachedPriceChanges.priceChange24h || existing.priceChange24h;
       }
 
-      // 6. If we have cached metadata (name, symbol, image), that's often enough
-      // Only fetch from API if we're missing critical metadata AND rate limit allows
-      const hasBasicMetadata = cachedMetadata && (cachedMetadata.name || cachedMetadata.symbol);
-      
-      if (hasBasicMetadata && cachedPrice !== null && cachedVolume && cachedMarketData) {
-        console.log(`✅ Sufficient data cached for ${mint.slice(0, 8)}..., skipping API call`);
+      // 6. If we have all cached data, skip API call
+      if (cachedMetadata && cachedPrice !== null && cachedVolume && cachedMarketData && cachedPriceChanges) {
+        console.log(`✅ All data cached for ${mint.slice(0, 8)}..., skipping API call`);
         this.onChainTokens.set(mint, existing);
         return;
       }
 
-      // 7. Check rate limit BEFORE waiting (to avoid unnecessary waits)
+      // 7. Fetch from API only if cache is missing/expired
+      // Wait if rate limit is reached
+      await rateLimiter.waitIfNeeded('dexscreener');
+      
+      // Check if we can make request
       if (!rateLimiter.canMakeRequest('dexscreener')) {
-        console.log(`⏳ Rate limit reached for DexScreener, using cached/on-chain data for ${mint.slice(0, 8)}...`);
-        // Try on-chain fallback first
+        console.log(`⏳ Rate limit reached for DexScreener, using on-chain fallback for ${mint.slice(0, 8)}...`);
         const onChainResult = await this.enrichTokenDataOnChain(mint);
         if (onChainResult) {
           return;
         }
-        // If on-chain fails, use what we have from cache
-        this.onChainTokens.set(mint, existing);
+        // If on-chain fails, use cached data
         return;
       }
 
-      // 8. Wait if needed (but we already checked canMakeRequest, so this should be quick)
-      await rateLimiter.waitIfNeeded('dexscreener', 5000); // Max 5 second wait
-      
-      // Double check after waiting
-      if (!rateLimiter.canMakeRequest('dexscreener')) {
-        console.log(`⏳ Still rate limited after wait, using cached/on-chain data for ${mint.slice(0, 8)}...`);
-        const onChainResult = await this.enrichTokenDataOnChain(mint);
-        if (onChainResult) {
-          return;
-        }
-        this.onChainTokens.set(mint, existing);
-        return;
-      }
-
-      const remaining = rateLimiter.getRemainingRequests('dexscreener');
-      console.log(`🔍 Fetching fresh data from DexScreener for ${mint.slice(0, 8)}... (${remaining} requests remaining)`);
-      
-      // Record the request BEFORE making it (to prevent concurrent requests)
-      rateLimiter.recordRequest('dexscreener');
-      
+      console.log(`🔍 Fetching fresh data from DexScreener for ${mint.slice(0, 8)}... (${rateLimiter.getRemainingRequests('dexscreener')} requests remaining)`);
       const response = await fetch(
         `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
-        { 
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(10000) // 10 second timeout
-        }
+        { headers: { 'Accept': 'application/json' } }
       );
+
+      // Record the request
+      rateLimiter.recordRequest('dexscreener');
 
       if (!response.ok) {
         // If API fails, try on-chain fallback
@@ -787,13 +750,15 @@ class TokenFeedService {
         updated = true;
       }
 
-      // 7. Get mint info (supply, decimals) - can be stored in MongoDB if needed
+      // 7. Get mint info (supply, decimals)
       try {
         const mintInfo = await getMint(connection, mintPubkey);
         const supply = Number(mintInfo.supply) / Math.pow(10, mintInfo.decimals);
         
-        // Note: TokenData doesn't have supply field, but we can store it in MongoDB via tokenIndexer
-        // if needed in the future
+        // Store supply if we don't have it
+        if (!existing.supply || existing.supply === 0) {
+          // Note: TokenData doesn't have supply field, but we can store it in MongoDB
+        }
       } catch (mintError) {
         // Ignore mint info errors
       }
@@ -831,24 +796,6 @@ class TokenFeedService {
    * Fetch latest tokens from on-chain + DexScreener
    */
   async fetchTokens(options: Partial<TokenFeedOptions> = {}): Promise<TokenData[]> {
-    // Filtrar tokens excluidos
-    const filterExcluded = (tokens: TokenData[]): TokenData[] => {
-      return tokens.filter(token => {
-        // Excluir tokens conocidos
-        if (EXCLUDED_MINTS.has(token.mint)) {
-          return false;
-        }
-        // Excluir tokens sin nombre o con nombres genéricos
-        if (!token.name || token.name.trim() === '' || 
-            token.name.toLowerCase() === 'pump fun' ||
-            token.name.toLowerCase() === 'pump.fun' ||
-            token.name.toLowerCase() === 'wrapped solana' ||
-            token.name.toLowerCase() === 'wrapped sol') {
-          return false;
-        }
-        return true;
-      });
-    };
     const {
       filter = 'all',
       minLiquidity = 0, // Allow 0 liquidity for new tokens
@@ -859,9 +806,6 @@ class TokenFeedService {
     try {
       const allTokens: TokenData[] = [];
       const now = Date.now();
-      let dbTokensCount = 0;
-      let onChainTokensCount = 0;
-      let dexscreenerTokensCount = 0;
 
       // 1. Try to get tokens from MongoDB first (if available)
       if (tokenIndexer.isActive()) {
@@ -872,9 +816,6 @@ class TokenFeedService {
             maxAge,
             limit: limit * 2 // Get more to merge with in-memory
           });
-
-          dbTokensCount = dbTokens.length;
-          console.log(`📊 TokenFeed: Found ${dbTokensCount} tokens from MongoDB`);
 
           // Convert to TokenData format
           for (const dbToken of dbTokens) {
@@ -909,16 +850,11 @@ class TokenFeedService {
             allTokens.push(tokenData);
           }
         } catch (error) {
-          console.error('❌ TokenFeed: Failed to fetch from MongoDB:', error);
+          console.error('Failed to fetch from MongoDB, using fallback:', error);
         }
-      } else {
-        console.log('⚠️ TokenFeed: MongoDB not active, skipping database tokens');
       }
 
       // 2. Add on-chain tokens (real-time) - these take priority
-      onChainTokensCount = this.onChainTokens.size;
-      console.log(`📊 TokenFeed: Found ${onChainTokensCount} tokens from on-chain WebSocket`);
-      
       for (const [mint, token] of this.onChainTokens) {
         // Update age
         token.age = Math.floor((now - token.createdAt) / 60000);
@@ -935,8 +871,7 @@ class TokenFeedService {
         }
       }
 
-      // 3. Fetch from DexScreener for additional tokens
-      console.log('📊 TokenFeed: Fetching from DexScreener...');
+      // 2. Fetch from DexScreener for additional tokens
       const searchPromises = [
         this.fetchFromDexScreenerSearch('pump'),
         this.fetchFromDexScreenerPairs(),
@@ -946,19 +881,14 @@ class TokenFeedService {
 
       for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
-          dexscreenerTokensCount += result.value.length;
           for (const token of result.value) {
             // Don't overwrite on-chain tokens
             if (!this.onChainTokens.has(token.mint)) {
               allTokens.push(token);
             }
           }
-        } else if (result.status === 'rejected') {
-          console.error('❌ TokenFeed: DexScreener request failed:', result.reason);
         }
       }
-
-      console.log(`📊 TokenFeed: Found ${dexscreenerTokensCount} tokens from DexScreener`);
 
       // Remove duplicates by mint address, prefer on-chain data
       const uniqueTokens = new Map<string, TokenData>();
@@ -971,33 +901,9 @@ class TokenFeedService {
 
       let tokens = Array.from(uniqueTokens.values());
 
-      // Apply base filters (but be lenient for new tokens)
-      const beforeFilter = tokens.length;
+      // Apply base filters
       tokens = tokens.filter(t => {
-        // Excluir tokens conocidos (Wrapped SOL, USDC, USDT, etc.)
-        if (EXCLUDED_MINTS.has(t.mint)) {
-          return false;
-        }
-        
-        // Excluir tokens sin nombre o con nombres genéricos
-        if (!t.name || t.name.trim() === '' || 
-            t.name.toLowerCase() === 'pump fun' ||
-            t.name.toLowerCase() === 'pump.fun' ||
-            t.name.toLowerCase() === 'wrapped solana' ||
-            t.name.toLowerCase() === 'wrapped sol' ||
-            t.name.toLowerCase() === 'solana' ||
-            t.symbol?.toLowerCase() === 'wsol' ||
-            t.symbol?.toLowerCase() === 'sol') {
-          return false;
-        }
-        
-        // For 'new' filter, allow tokens with 0 liquidity
-        if (filter === 'new') {
-          if (t.age > maxAge) return false;
-          return true; // Allow all new tokens regardless of liquidity
-        }
-        // For other filters, apply minLiquidity but be lenient (allow 0 if explicitly set)
-        if (minLiquidity > 0 && t.liquidity < minLiquidity) return false;
+        if (filter !== 'new' && t.liquidity < minLiquidity) return false;
         if (t.age > maxAge) return false;
         return true;
       });
@@ -1022,150 +928,10 @@ class TokenFeedService {
       // Sort by creation time (newest first)
       tokens.sort((a, b) => b.createdAt - a.createdAt);
 
-      console.log(`📊 TokenFeed: Found ${tokens.length} tokens after filtering (${beforeFilter} before filter, ${dbTokensCount} from DB, ${onChainTokensCount} on-chain, ${dexscreenerTokensCount} from DexScreener)`);
-
-      // 4. FALLBACK: If no tokens or very few tokens found, use pump.fun API as last resort
-      if (tokens.length === 0 || (tokens.length < 5 && beforeFilter === 0)) {
-        console.log(`⚠️ TokenFeed: Only ${tokens.length} tokens found from primary sources, trying pump.fun API fallback...`);
-        try {
-          const fallbackTokens = await this.fetchFromPumpFunAPI(limit);
-          if (fallbackTokens.length > 0) {
-            console.log(`✅ TokenFeed: Fallback successful! Found ${fallbackTokens.length} tokens from pump.fun API`);
-            // Apply filters to fallback tokens too
-            let filteredFallback = fallbackTokens;
-            if (filter !== 'new' && minLiquidity > 0) {
-              filteredFallback = fallbackTokens.filter(t => t.liquidity >= minLiquidity);
-            }
-            if (filteredFallback.length > 0) {
-              return filteredFallback.slice(0, limit);
-            }
-            // If filters too strict, return unfiltered fallback tokens
-            return fallbackTokens.slice(0, limit);
-          }
-        } catch (fallbackError) {
-          console.error('❌ TokenFeed: Fallback to pump.fun failed:', fallbackError);
-        }
-        console.log('❌ TokenFeed: All sources failed, returning what we have');
-      }
-
+      console.log(`TokenFeed: Found ${tokens.length} tokens with filter: ${filter} (${this.onChainTokens.size} on-chain)`);
       return tokens.slice(0, limit);
     } catch (error) {
-      console.error('❌ TokenFeed: Error fetching tokens:', error);
-      // Last resort fallback
-      console.log('🔄 TokenFeed: Trying pump.fun API as emergency fallback...');
-      try {
-        const fallbackTokens = await this.fetchFromPumpFunAPI(limit);
-        if (fallbackTokens.length > 0) {
-          console.log(`✅ TokenFeed: Emergency fallback successful! Found ${fallbackTokens.length} tokens`);
-          return fallbackTokens;
-        }
-      } catch (fallbackError) {
-        console.error('❌ TokenFeed: Emergency fallback also failed:', fallbackError);
-      }
-      return [];
-    }
-  }
-
-  /**
-   * Fallback: Fetch from pump.fun API (last resort when all other sources fail)
-   */
-  private async fetchFromPumpFunAPI(limit: number): Promise<TokenData[]> {
-    try {
-      console.log('🔄 TokenFeed: Fetching from pump.fun API...');
-      const pumpUrl = `https://frontend-api.pump.fun/coins?offset=0&limit=${limit}&sort=created_timestamp&order=DESC`;
-      const pumpResponse = await fetch(pumpUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-          'Accept': 'application/json',
-        },
-      });
-
-      if (!pumpResponse.ok) {
-        console.error(`❌ TokenFeed: pump.fun API returned status ${pumpResponse.status}`);
-        return [];
-      }
-
-      const pumpData = await pumpResponse.json();
-      if (!Array.isArray(pumpData) || pumpData.length === 0) {
-        console.log('⚠️ TokenFeed: pump.fun API returned empty or invalid data');
-        return [];
-      }
-
-      const now = Date.now();
-      const tokens: TokenData[] = [];
-
-      // Filter tokens from last 24 hours
-      const oneDayAgo = now - (24 * 60 * 60 * 1000);
-
-      for (const token of pumpData) {
-        const createdAt = (token.created_timestamp || 0) * 1000; // Convert to milliseconds
-        if (createdAt < oneDayAgo) continue; // Skip old tokens
-
-        const age = Math.floor((now - createdAt) / 60000); // Age in minutes
-
-        // Excluir tokens conocidos
-        const mint = token.mint || token.address || '';
-        if (EXCLUDED_MINTS.has(mint)) {
-          continue;
-        }
-        
-        // Filter out generic pump.fun tokens
-        const name = (token.name || '').toLowerCase().trim();
-        const symbol = (token.symbol || '').toLowerCase().trim();
-        const isGeneric =
-          name === 'pump.fun' ||
-          name === 'pump fun' ||
-          name === 'pumpfun' ||
-          name === 'wrapped solana' ||
-          name === 'wrapped sol' ||
-          name === 'solana' ||
-          symbol === 'pump.fun' ||
-          symbol === 'pumpfun' ||
-          symbol === 'wsol' ||
-          symbol === 'sol' ||
-          !name || name.trim() === ''; // Excluir tokens sin nombre
-        
-        if (isGeneric) continue;
-
-        const tokenData: TokenData = {
-          mint: token.mint || token.address || '',
-          name: token.name || `Token ${(token.mint || token.address || '').substring(0, 8)}`,
-          symbol: token.symbol || 'UNK',
-          imageUrl: token.image_uri || token.image_uri || '',
-          price: token.usd_market_cap ? token.usd_market_cap / (token.supply || 1) : 0,
-          priceChange5m: 0,
-          priceChange1h: 0,
-          priceChange24h: token.price_change_24h || 0,
-          volume5m: 0,
-          volume1h: 0,
-          volume24h: token.volume_24h || 0,
-          liquidity: token.liquidity || 0,
-          marketCap: token.usd_market_cap || 0,
-          fdv: token.usd_market_cap || 0,
-          holders: token.holders || 0,
-          txns5m: { buys: 0, sells: 0 },
-          txns1h: { buys: 0, sells: 0 },
-          txns24h: { buys: 0, sells: 0 },
-          createdAt,
-          pairAddress: token.associated_market || token.bonding_curve || '',
-          dexId: token.complete ? 'raydium' : 'pumpfun',
-          age,
-          isNew: age < 30,
-          isGraduating: !token.complete && (token.liquidity || 0) > 20000,
-          isTrending: (token.volume_24h || 0) > 50000,
-          riskScore: age < 10 ? 70 : (token.liquidity || 0) < 5000 ? 60 : 50,
-        };
-
-        tokens.push(tokenData);
-      }
-
-      // Sort by creation time (newest first)
-      tokens.sort((a, b) => b.createdAt - a.createdAt);
-
-      console.log(`✅ TokenFeed: Converted ${tokens.length} tokens from pump.fun API`);
-      return tokens.slice(0, limit);
-    } catch (error: any) {
-      console.error('❌ TokenFeed: Error fetching from pump.fun API:', error.message);
+      console.error('Error fetching tokens:', error);
       return [];
     }
   }

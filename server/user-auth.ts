@@ -10,7 +10,12 @@ import { walletService } from './wallet-service';
 const USERS_FILE = path.join(__dirname, '../data/users.json');
 const SESSIONS_FILE = path.join(__dirname, '../data/sessions.json');
 const ACTIVITY_LOG_FILE = path.join(__dirname, '../data/user-activity.json');
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+
+// JWT Configuration - MUST be set in environment
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in environment variables');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRY: string = process.env.JWT_EXPIRY || '7d';
 
 // Ensure data directory exists

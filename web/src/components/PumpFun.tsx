@@ -293,7 +293,7 @@ export default function PumpFun({ socket }: PumpFunProps) {
               onClick={() => setTradingMethod('pumpfun')}
               className={`flex-1 sm:flex-none px-4 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
                 tradingMethod === 'pumpfun'
-                  ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25'
+                  ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black shadow-lg shadow-yellow-500/25'
                   : 'bg-white/5 text-white/70 hover:bg-white/10 border border-white/10'
               }`}
             >
@@ -327,7 +327,7 @@ export default function PumpFun({ socket }: PumpFunProps) {
             </div>
           )}
           {tradingMethod === 'pumpfun' && (
-            <div className="mt-3 text-xs text-primary-400/80 bg-primary-500/10 p-2 rounded border border-primary-500/20">
+            <div className="mt-3 text-xs text-yellow-400/80 bg-yellow-500/10 p-2 rounded">
               PumpFun opera directamente en la bonding curve. Solo funciona con tokens que aún no han graduado.
             </div>
           )}

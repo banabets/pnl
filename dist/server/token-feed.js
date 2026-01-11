@@ -8,6 +8,12 @@ const token_indexer_1 = require("./token-indexer");
 const rate_limiter_1 = require("./rate-limiter");
 const web3_js_1 = require("@solana/web3.js");
 const spl_token_1 = require("@solana/spl-token");
+// Tokens conocidos a excluir (Wrapped SOL, tokens genéricos, etc.)
+const EXCLUDED_MINTS = new Set([
+    'So11111111111111111111111111111111111111112', // Wrapped SOL
+    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
+]);
 class TokenFeedService {
     constructor() {
         // Cache inteligente con diferentes TTLs según tipo de dato
@@ -334,6 +340,33 @@ class TokenFeedService {
                     dexId: existing.dexId,
                     pairAddress: existing.pairAddress,
                     liquidity: existing.liquidity,
+                });
+            }
+        });
+        // Listen for token updates (enriched data)
+        helius_websocket_1.heliusWebSocket.on('token_updated', async (event) => {
+            console.log(`🔄 Token updated: ${event.symbol || event.mint.slice(0, 8)}`);
+            const existing = this.onChainTokens.get(event.mint);
+            if (existing) {
+                // Update with enriched data
+                existing.name = event.name || existing.name;
+                existing.symbol = event.symbol || existing.symbol;
+                existing.price = event.price || existing.price;
+                existing.marketCap = event.marketCap || existing.marketCap;
+                existing.liquidity = event.liquidity || existing.liquidity;
+                existing.volume24h = event.volume || existing.volume24h;
+                // Broadcast updated data immediately
+                this.broadcast([existing]);
+                // Update in MongoDB
+                await token_indexer_1.tokenIndexer.indexToken({
+                    mint: existing.mint,
+                    name: existing.name,
+                    symbol: existing.symbol,
+                    createdAt: existing.createdAt,
+                    price: existing.price,
+                    marketCap: existing.marketCap,
+                    liquidity: existing.liquidity,
+                    volume24h: existing.volume24h,
                 });
             }
         });
@@ -687,6 +720,24 @@ class TokenFeedService {
      * Fetch latest tokens from on-chain + DexScreener
      */
     async fetchTokens(options = {}) {
+        // Filtrar tokens excluidos
+        const filterExcluded = (tokens) => {
+            return tokens.filter(token => {
+                // Excluir tokens conocidos
+                if (EXCLUDED_MINTS.has(token.mint)) {
+                    return false;
+                }
+                // Excluir tokens sin nombre o con nombres genéricos
+                if (!token.name || token.name.trim() === '' ||
+                    token.name.toLowerCase() === 'pump fun' ||
+                    token.name.toLowerCase() === 'pump.fun' ||
+                    token.name.toLowerCase() === 'wrapped solana' ||
+                    token.name.toLowerCase() === 'wrapped sol') {
+                    return false;
+                }
+                return true;
+            });
+        };
         const { filter = 'all', minLiquidity = 0, // Allow 0 liquidity for new tokens
         maxAge = 1440, // 24 hours default
         limit = 50 } = options;
@@ -799,6 +850,21 @@ class TokenFeedService {
             // Apply base filters (but be lenient for new tokens)
             const beforeFilter = tokens.length;
             tokens = tokens.filter(t => {
+                // Excluir tokens conocidos (Wrapped SOL, USDC, USDT, etc.)
+                if (EXCLUDED_MINTS.has(t.mint)) {
+                    return false;
+                }
+                // Excluir tokens sin nombre o con nombres genéricos
+                if (!t.name || t.name.trim() === '' ||
+                    t.name.toLowerCase() === 'pump fun' ||
+                    t.name.toLowerCase() === 'pump.fun' ||
+                    t.name.toLowerCase() === 'wrapped solana' ||
+                    t.name.toLowerCase() === 'wrapped sol' ||
+                    t.name.toLowerCase() === 'solana' ||
+                    t.symbol?.toLowerCase() === 'wsol' ||
+                    t.symbol?.toLowerCase() === 'sol') {
+                    return false;
+                }
                 // For 'new' filter, allow tokens with 0 liquidity
                 if (filter === 'new') {
                     if (t.age > maxAge)
@@ -905,14 +971,25 @@ class TokenFeedService {
                 if (createdAt < oneDayAgo)
                     continue; // Skip old tokens
                 const age = Math.floor((now - createdAt) / 60000); // Age in minutes
+                // Excluir tokens conocidos
+                const mint = token.mint || token.address || '';
+                if (EXCLUDED_MINTS.has(mint)) {
+                    continue;
+                }
                 // Filter out generic pump.fun tokens
                 const name = (token.name || '').toLowerCase().trim();
                 const symbol = (token.symbol || '').toLowerCase().trim();
                 const isGeneric = name === 'pump.fun' ||
                     name === 'pump fun' ||
                     name === 'pumpfun' ||
+                    name === 'wrapped solana' ||
+                    name === 'wrapped sol' ||
+                    name === 'solana' ||
                     symbol === 'pump.fun' ||
-                    symbol === 'pumpfun';
+                    symbol === 'pumpfun' ||
+                    symbol === 'wsol' ||
+                    symbol === 'sol' ||
+                    !name || name.trim() === ''; // Excluir tokens sin nombre
                 if (isGeneric)
                     continue;
                 const tokenData = {
@@ -1236,4 +1313,3 @@ class TokenFeedService {
 }
 // Singleton instance
 exports.tokenFeed = new TokenFeedService();
-//# sourceMappingURL=token-feed.js.map

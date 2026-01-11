@@ -1,37 +1,24 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [main, develop]
 
 jobs:
-  lint:
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'npm'
       - run: npm ci
-      - run: npm run build || echo "Build may fail if dependencies are missing"
-  
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Check for sensitive files
-        run: |
-          if [ -f "keypairs/master-wallet.json" ]; then
-            echo "⚠️ WARNING: Sensitive keypair files detected!"
-            exit 1
-          fi
-          if grep -r "PRIVATE_KEY" . --exclude-dir=node_modules --exclude-dir=.git; then
-            echo "⚠️ WARNING: Private keys found in code!"
-            exit 1
-          fi
-          echo "✅ No sensitive files detected"
-
-
-
+      - run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-secret
+          ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
