@@ -334,7 +334,9 @@ class StopLossManager {
         portfolioTracker.updatePositionAfterSell(
           order.positionId,
           tokensToSell,
-          result.outputAmount
+          result.outputAmount,
+          currentPrice,
+          result.signature
         );
       } else {
         throw new Error(result.error || 'Sell failed');
@@ -421,7 +423,9 @@ class StopLossManager {
         portfolioTracker.updatePositionAfterSell(
           order.positionId,
           tokensToSell,
-          result.outputAmount
+          result.outputAmount,
+          currentPrice,
+          result.signature
         );
       } else {
         throw new Error(result.error || 'Sell failed');
@@ -508,7 +512,9 @@ class StopLossManager {
         portfolioTracker.updatePositionAfterSell(
           order.positionId,
           tokensToSell,
-          result.outputAmount
+          result.outputAmount,
+          currentPrice,
+          result.signature
         );
       } else {
         throw new Error(result.error || 'Sell failed');
