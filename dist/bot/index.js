@@ -289,7 +289,7 @@ class VolumeBot {
         };
         const keypairs = this.walletManager.loadKeypairs();
         const results = [];
-        console.log(chalk_1.default.green('\n🐒 Apes are climbing the hill! Volume generation starting...'));
+        console.log(chalk_1.default.green('\n💰 PNL Trading Bot - Volume generation starting...'));
         console.log(chalk_1.default.green('═'.repeat(40)));
         try {
             for (let cycle = 1; cycle <= volumeConfig.numberOfCycles && this.isRunning; cycle++) {
@@ -358,14 +358,14 @@ class VolumeBot {
             return;
         const duration = (Date.now() - this.session.startTime.getTime()) / 1000 / 60; // minutes
         const successRate = (this.session.successfulTrades / this.session.totalTrades) * 100;
-        console.log(chalk_1.default.cyan('\n�️ Ape Session Complete - Hill Conquered!'));
+        console.log(chalk_1.default.cyan('\n�️ PNL Trading Session Complete - Trading Complete!'));
         console.log(chalk_1.default.cyan('═'.repeat(50)));
-        console.log(`Duration: ${duration.toFixed(1)} minutes of ape domination`);
-        console.log(`Total Trades: ${this.session.totalTrades} ape moves`);
+        console.log(`Duration: ${duration.toFixed(1)} minutes of trading`);
+        console.log(`Total Trades: ${this.session.totalTrades} trades executed`);
         console.log(`Successful: ${chalk_1.default.green(this.session.successfulTrades)} 🍌`);
         console.log(`Failed: ${chalk_1.default.red(this.session.failedTrades)} 💔`);
-        console.log(`Success Rate: ${successRate.toFixed(1)}% ape efficiency`);
-        console.log(`Total Volume: ${chalk_1.default.yellow(this.session.totalVolume.toFixed(4))} SOL conquered`);
+        console.log(`Success Rate: ${successRate.toFixed(1)}% efficiency`);
+        console.log(`Total Volume: ${chalk_1.default.yellow(this.session.totalVolume.toFixed(4))} SOL traded`);
         console.log(`Trading Pair: ${this.session.tradingPair.name}`);
         console.log(chalk_1.default.cyan('═'.repeat(50)));
     }
@@ -382,7 +382,7 @@ class VolumeBot {
      * Display current bot status
      */
     async displayBotStatus() {
-        console.log(chalk_1.default.cyan('\n🐒 Ape Of The Hill Status'));
+        console.log(chalk_1.default.cyan('\n💰 PNL Trading Bot Status'));
         console.log(chalk_1.default.cyan('═'.repeat(40)));
         const walletCount = this.walletManager.getWalletCount();
         console.log(`Wallets: ${walletCount}`);

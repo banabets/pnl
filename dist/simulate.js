@@ -22,9 +22,9 @@ class VolumeSimulation {
      * Run a comprehensive simulation
      */
     async runSimulation() {
-        console.log(chalk_1.default.blue('🐒 Ape Of The Hill Volume Bot - Simulation Mode'));
+        console.log(chalk_1.default.blue('🐒 PNL Trading Bot - Simulation Mode'));
         console.log(chalk_1.default.cyan('═'.repeat(60)));
-        console.log(chalk_1.default.yellow('This simulation will test all ape functionality safely! 🏔️\n'));
+        console.log(chalk_1.default.yellow('This simulation will test all trading functionality safely! 💰\n'));
         try {
             // Ensure we're in simulation mode
             config_1.configManager.updateSimulationMode(true);
@@ -142,9 +142,9 @@ class VolumeSimulation {
      * Display final simulation results
      */
     async displaySimulationResults() {
-        console.log(chalk_1.default.cyan('\n🐒 Ape Simulation Complete! 🏔️'));
+        console.log(chalk_1.default.cyan('\n💰 PNL Simulation Complete! 💰'));
         console.log(chalk_1.default.cyan('═'.repeat(50)));
-        console.log(chalk_1.default.green('✅ All ape systems tested successfully!'));
+        console.log(chalk_1.default.green('✅ All trading systems tested successfully!'));
         console.log('');
         console.log(chalk_1.default.yellow('🦍 Next steps to dominate the hill:'));
         console.log(chalk_1.default.gray('1. Fund the generated wallets with real SOL'));
@@ -175,7 +175,7 @@ process.on('SIGINT', () => {
 // Main simulation runner
 async function runSimulation() {
     const simulation = new VolumeSimulation();
-    console.log(chalk_1.default.green('🐒 Welcome to Ape Of The Hill Simulation!'));
+    console.log(chalk_1.default.green('🐒 Welcome to PNL Trading Bot Simulation!'));
     console.log(chalk_1.default.yellow('Time to test our ape powers safely! 🏔️\n'));
     try {
         await simulation.runSimulation();

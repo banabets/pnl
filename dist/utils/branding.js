@@ -4,26 +4,26 @@ exports.APE_TIPS = exports.APE_BANNER = void 0;
 exports.getRandomApeTip = getRandomApeTip;
 exports.displayApeBanner = displayApeBanner;
 exports.APE_BANNER = `
-    🐒 APE OF THE HILL VOLUME BOT 🏔️
+    💰 PNL - Profit & Loss Trading Bot 💰
     
-       🍌    /\\   /\\    🍌
+       📈    /\\   /\\    📈
           \\  /  \\_/  \\  /
-           \\/   🐒   \\/
+           \\/   💰   \\/
             \\        /
              \\  /\\  /
               \\/  \\/
-               🏔️
+               📊
                
-    "Those who control the volume,
-     control the hill!"
+    "Track your profits,
+     minimize your losses!"
      
-    Built by apes, for apes! 🦍
+    Built for traders, by traders! 🚀
 `;
 exports.APE_TIPS = [
-    "🦍 Smart apes always test in simulation mode first!",
-    "🍌 Don't risk all your bananas on one trade!",
-    "🏔️ Slow and steady wins the hill climb!",
-    "🐒 Ape together strong - but trade responsibly!",
+    "📊 Always test in simulation mode first!",
+    "💰 Don't risk more than you can afford to lose!",
+    "📈 Slow and steady wins the trading race!",
+    "🎯 Trade responsibly and manage your risk!",
     "🌙 Diamond hands, but paper losses hurt less!",
     "🚀 To the moon, but keep feet on the ground!",
     "💎 HODL the good trades, cut the bad ones!",

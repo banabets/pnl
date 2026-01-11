@@ -1,7 +1,7 @@
 {
-  "name": "ape-of-the-hill-volume-bot",
+  "name": "pnl",
   "version": "1.0.0",
-  "description": "Ape Of The Hill Volume Bot - A secure and transparent Solana volume bot",
+  "description": "PNL - A secure and transparent Solana trading bot",
   "main": "dist/index.js",
   "scripts": {
     "build": "cd web && npm install && npm run build",
@@ -29,10 +29,11 @@
     "volume",
     "trading",
     "defi",
-    "ape",
-    "hill"
+    "pnl",
+    "profit",
+    "loss"
   ],
-  "author": "Ape Of The Hill Team",
+  "author": "PNL Team",
   "license": "MIT",
   "dependencies": {
     "@coral-xyz/anchor": "^0.29.0",

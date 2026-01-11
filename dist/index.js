@@ -76,7 +76,7 @@ class SecureVolumeBotCLI {
                         break;
                 }
             }
-            console.log(chalk_1.default.green('\n� Thanks for choosing Ape Of The Hill! Keep climbing! 🏔️'));
+            console.log(chalk_1.default.green('\n� Thanks for choosing PNL Trading Bot! Happy trading! 🏔️'));
             process.exit(0);
         }
         catch (error) {
@@ -90,10 +90,10 @@ class SecureVolumeBotCLI {
     displayWelcome() {
         console.clear();
         console.log(chalk_1.default.cyan('╔═══════════════════════════════════════════════╗'));
-        console.log(chalk_1.default.cyan('║      🐒 APE OF THE HILL VOLUME BOT v1.0      ║'));
+        console.log(chalk_1.default.cyan('║      💰 PNL TRADING BOT v1.0      ║'));
         console.log(chalk_1.default.cyan('║                                               ║'));
         console.log(chalk_1.default.cyan('║  🔒 Secure • 🧪 Testable • 📊 Transparent     ║'));
-        console.log(chalk_1.default.cyan('║        "Control the volume, own the hill!"   ║'));
+        console.log(chalk_1.default.cyan('║        "Track profits, minimize losses!"   ║'));
         console.log(chalk_1.default.cyan('╚═══════════════════════════════════════════════╝'));
         console.log(chalk_1.default.yellow('\n⚠️  IMPORTANT DISCLAIMERS:'));
         console.log(chalk_1.default.yellow('   • Use at your own risk'));

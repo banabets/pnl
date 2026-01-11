@@ -1,8 +1,8 @@
-# 🐒 Ape Of The Hill Volume Bot - Project Summary
+# 💰 PNL Trading Bot - Project Summary
 
 ## 🎯 Mission Accomplished!
 
-We successfully transformed a potentially dangerous volume bot repository into a **secure, transparent, and educational Solana volume bot** with proper ape branding! 
+We successfully transformed a potentially dangerous volume bot repository into a **secure, transparent, and educational Solana trading bot** with proper PNL tracking! 
 
 ## 📊 What We Built
 
@@ -20,16 +20,16 @@ We successfully transformed a potentially dangerous volume bot repository into a
 - ✅ **Rate Limiting**: Configurable delays to prevent excessive trading
 - ✅ **Error Handling**: Robust error management and logging
 
-### 🐒 **Ape-Themed Features**
-- ✅ **Ape Of The Hill Branding**: Fun, memorable theming throughout
-- ✅ **Ape Wisdom Tips**: Educational messages promoting safe trading
-- ✅ **Hill Climbing Metaphor**: Makes volume generation concept more approachable
-- ✅ **Community Focus**: "Ape together strong" mentality with safety emphasis
+### 💰 **PNL Features**
+- ✅ **PNL Branding**: Professional trading bot branding
+- ✅ **Trading Tips**: Educational messages promoting safe trading
+- ✅ **Profit & Loss Tracking**: Comprehensive P&L tracking and reporting
+- ✅ **Risk Management**: Built-in risk management tools and safety features
 
 ## 📁 **Project Structure**
 
 ```
-ape-of-the-hill-volume-bot/
+pnl/
 ├── src/
 │   ├── index.ts              # Main CLI interface
 │   ├── simulate.ts           # Comprehensive simulation
@@ -48,7 +48,7 @@ ape-of-the-hill-volume-bot/
 
 ## 🔍 **Original vs. Our Secure Version**
 
-| **Aspect** | **Original (Risky)** | **Ape Of The Hill (Secure)** |
+| **Aspect** | **Original (Risky)** | **PNL (Secure)** |
 |------------|---------------------|------------------------------|
 | **Program** | ❌ Unknown custom program `Axz6g5nH...` | ✅ Framework for official Raydium SDK |
 | **Wallets** | ❌ Pre-made keypairs included | ✅ Fresh generation every time |
@@ -181,7 +181,7 @@ JITO_TIP_LAMPORTS=10000         # Jito tip amount
 
 ## 🚀 **What's Next?**
 
-The "Ape Of The Hill Volume Bot" is now ready for:
+The "PNL Trading Bot" is now ready for:
 
 1. **Educational Use**: Learn about volume generation safely
 2. **Testing**: Extensive simulation and small-scale testing

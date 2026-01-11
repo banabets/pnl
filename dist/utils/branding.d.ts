@@ -1,4 +1,4 @@
-export declare const APE_BANNER = "\n    \uD83D\uDC12 APE OF THE HILL VOLUME BOT \uD83C\uDFD4\uFE0F\n    \n       \uD83C\uDF4C    /\\   /\\    \uD83C\uDF4C\n          \\  /  \\_/  \\  /\n           \\/   \uD83D\uDC12   \\/\n            \\        /\n             \\  /\\  /\n              \\/  \\/\n               \uD83C\uDFD4\uFE0F\n               \n    \"Those who control the volume,\n     control the hill!\"\n     \n    Built by apes, for apes! \uD83E\uDD8D\n";
+export declare const APE_BANNER = "\n    \uD83D\uDCB0 PNL - Profit & Loss Trading Bot \uD83D\uDCB0\n    \n       \uD83D\uDCC8    /\\   /\\    \uD83D\uDCC8\n          \\  /  \\_/  \\  /\n           \\/   \uD83D\uDCB0   \\/\n            \\        /\n             \\  /\\  /\n              \\/  \\/\n               \uD83D\uDCC8\n               \n    \"Track your profits,\n     minimize your losses!\"\n     \n    Built for traders, by traders! \uD83D\uDE80\n";
 export declare const APE_TIPS: string[];
 export declare function getRandomApeTip(): string;
 export declare function displayApeBanner(): void;
