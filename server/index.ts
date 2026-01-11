@@ -231,6 +231,20 @@ initSentry(app);
 app.use(sentryRequestHandler());
 app.use(sentryTracingHandler());
 
+// Security headers with Helmet
+import helmet from 'helmet';
+const isProduction = process.env.NODE_ENV === 'production';
+app.use(helmet({
+  contentSecurityPolicy: isProduction ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+    },
+  } : false,
+}));
+
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
   cors: {
@@ -317,6 +331,14 @@ app.get('/healthz/live', livenessProbe);
 app.get('/healthz/ready', readinessProbe);
 app.get('/healthz/startup', startupProbe);
 app.get('/metrics', metricsHandler);
+
+// Prometheus metrics endpoint
+import { getMetricsHandler } from './utils/prometheus.metrics';
+app.get('/prometheus/metrics', getMetricsHandler());
+
+// Swagger API Documentation
+import { setupSwagger } from './utils/swagger';
+setupSwagger(app);
 
 // ==========================================
 // Token Feed Endpoints (for TokenExplorer)
@@ -624,6 +646,11 @@ app.get('/api/transactions', async (req, res) => {
 // ============================================
 
 // Register (with rate limiting)
+// Import modular routes
+import authRoutes from './routes/auth.routes';
+app.use('/api/auth', authRoutes);
+
+// Legacy routes (to be migrated gradually)
 app.post('/api/auth/register', authLimiter, validateBody(registerSchema), async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -5691,21 +5718,14 @@ app.get('/api/tokens/:mint', async (req, res) => {
 // Sentry error handler (must be before other error handlers)
 app.use(sentryErrorHandler());
 
-// Global error handler
-app.use((err: any, req: any, res: any, next: any) => {
-  log.error('Unhandled error', {
-    error: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-    userId: (req as any).user?.userId,
-  });
+// Use new error handling middleware
+import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 
-  res.status(err.status || 500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred',
-  });
-});
+// 404 handler (must be before error handler)
+app.use(notFoundHandler);
+
+// Global error handler (must be last)
+app.use(errorHandler);
 
 // Catch all handler: send back React's index.html file (must be last)
 app.get('*', (req, res) => {

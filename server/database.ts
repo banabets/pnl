@@ -7,11 +7,79 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || 'mongodb
 // Connect to MongoDB
 export async function connectDatabase(): Promise<void> {
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI, {
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      maxIdleTimeMS: 30000,
+      serverSelectionTimeoutMS: 5000,
+    });
     console.log('✅ Connected to MongoDB');
+    
+    // Create indexes after connection
+    await createIndexes();
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
     throw error;
+  }
+}
+
+// Create optimized indexes
+async function createIndexes(): Promise<void> {
+  try {
+    // User indexes
+    await User.collection.createIndex({ username: 1 }, { unique: true });
+    await User.collection.createIndex({ email: 1 }, { unique: true });
+    await User.collection.createIndex({ 'stats.totalProfit': -1 });
+    
+    // Wallet indexes
+    await Wallet.collection.createIndex({ userId: 1, index: 1 }, { unique: true });
+    await Wallet.collection.createIndex({ publicKey: 1 });
+    
+    // Master Wallet indexes
+    await MasterWallet.collection.createIndex({ userId: 1 }, { unique: true });
+    
+    // Position indexes
+    await Position.collection.createIndex({ userId: 1, tokenMint: 1 });
+    await Position.collection.createIndex({ userId: 1, status: 1 });
+    await Position.collection.createIndex({ createdAt: -1 });
+    
+    // Trade indexes
+    await Trade.collection.createIndex({ userId: 1, timestamp: -1 });
+    await Trade.collection.createIndex({ tokenMint: 1, timestamp: -1 });
+    await Trade.collection.createIndex({ signature: 1 }, { unique: true });
+    
+    // Stop Loss indexes
+    await StopLossOrder.collection.createIndex({ userId: 1, status: 1 });
+    await StopLossOrder.collection.createIndex({ tokenMint: 1, status: 1 });
+    
+    // Price Alert indexes
+    await PriceAlert.collection.createIndex({ userId: 1, enabled: 1 });
+    await PriceAlert.collection.createIndex({ tokenMint: 1 });
+    
+    // Token Index indexes
+    await TokenIndex.collection.createIndex({ mint: 1 }, { unique: true });
+    await TokenIndex.collection.createIndex({ createdAt: -1 });
+    await TokenIndex.collection.createIndex({ marketCap: -1 });
+    await TokenIndex.collection.createIndex({ 'priceChange24h': -1 });
+    await TokenIndex.collection.createIndex({ isNew: 1, createdAt: -1 });
+    await TokenIndex.collection.createIndex({ isGraduating: 1 });
+    await TokenIndex.collection.createIndex({ isTrending: 1 });
+    
+    // Copy Trade indexes
+    await CopyTrade.collection.createIndex({ userId: 1, timestamp: -1 });
+    await CopyTrade.collection.createIndex({ followedWalletId: 1 });
+    
+    // Wallet Stats indexes
+    await WalletStats.collection.createIndex({ walletAddress: 1, date: -1 });
+    
+    // Audit Log indexes
+    await AuditLog.collection.createIndex({ userId: 1, timestamp: -1 });
+    await AuditLog.collection.createIndex({ action: 1, timestamp: -1 });
+    
+    console.log('✅ Database indexes created');
+  } catch (error) {
+    console.error('⚠️ Error creating indexes:', error);
+    // Don't throw - indexes are optional
   }
 }
 
@@ -163,6 +231,24 @@ const ActivityLogSchema = new mongoose.Schema({
   userAgent: String
 }, { timestamps: true });
 
+// Audit Log Schema - Security and compliance logging
+const AuditLogSchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  action: { type: String, required: true, index: true },
+  resource: { type: String, required: true },
+  details: mongoose.Schema.Types.Mixed,
+  ip: String,
+  userAgent: String,
+  timestamp: { type: Date, default: Date.now, index: true },
+  success: { type: Boolean, default: true },
+  error: String
+}, { timestamps: true });
+
+// Create indexes for AuditLog
+AuditLogSchema.index({ userId: 1, timestamp: -1 });
+AuditLogSchema.index({ action: 1, timestamp: -1 });
+AuditLogSchema.index({ resource: 1 });
+
 // Trading Fee Schema - Track all fees collected
 const TradingFeeSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -276,6 +362,7 @@ export const Trade = mongoose.model('Trade', TradeSchema);
 export const StopLossOrder = mongoose.model('StopLossOrder', StopLossOrderSchema);
 export const PriceAlert = mongoose.model('PriceAlert', PriceAlertSchema);
 export const ActivityLog = mongoose.model('ActivityLog', ActivityLogSchema);
+export const AuditLog = mongoose.model('AuditLog', AuditLogSchema);
 export const TradingFee = mongoose.model('TradingFee', TradingFeeSchema);
 export const Subscription = mongoose.model('Subscription', SubscriptionSchema);
 export const Referral = mongoose.model('Referral', ReferralSchema);
