@@ -19,9 +19,17 @@ RUN npm ci && npm cache clean --force
 # Copy source code
 COPY server ./server
 COPY src ./src
+COPY web ./web
 
-# Build TypeScript
+# Build TypeScript server
 RUN npm run build:server
+
+# Build web (if web directory exists and has package.json)
+RUN if [ -f "web/package.json" ]; then \
+      cd web && \
+      npm ci && \
+      npm run build; \
+    fi
 
 # Stage 2: Production
 FROM node:20-alpine AS production
@@ -50,8 +58,12 @@ RUN apk del python3 make g++
 # Copy built application from builder
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 
-# Copy web build (if exists)
-COPY --from=builder --chown=nodejs:nodejs /app/web/dist ./web/dist 2>/dev/null || true
+# Copy web build (if exists) - vite builds to 'build' directory
+RUN mkdir -p /app/web && \
+    if [ -d "/app/web/build" ]; then \
+      cp -r /app/web/build /app/web/build; \
+    fi
+COPY --from=builder --chown=nodejs:nodejs /app/web/build ./web/build
 
 # Create logs directory
 RUN mkdir -p /app/logs && \
