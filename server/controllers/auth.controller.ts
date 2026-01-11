@@ -43,7 +43,7 @@ export async function registerUser(req: Request, res: Response) {
   });
 
   // Generate token
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: String(JWT_EXPIRY) });
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRY } as jwt.SignOptions);
 
   // Audit log
   await auditService.log(user.id, 'user_registered', 'user', {
@@ -97,7 +97,7 @@ export async function loginUser(req: Request, res: Response) {
   await user.save();
 
   // Generate token
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: String(JWT_EXPIRY) });
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRY } as jwt.SignOptions);
 
   // Audit log
   await auditService.log(user.id, 'user_logged_in', 'auth', {}, {
