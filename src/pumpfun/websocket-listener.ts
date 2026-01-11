@@ -171,7 +171,17 @@ export class PumpFunWebSocketListener {
           // Reduce processing to avoid rate limits
           const maxToProcess = Math.min(tokenSignatures.length, 10); // Reduced from 30
           
+          // Track global 429 errors to stop processing if too many
+          let global429Count = 0;
+          const MAX_GLOBAL_429_ERRORS = 5; // Stop after 5 total 429 errors
+          
           for (let i = 0; i < maxToProcess; i++) {
+            // Stop if we've hit too many 429 errors globally
+            if (global429Count >= MAX_GLOBAL_429_ERRORS) {
+              console.warn(`🚫 Stopping historical transaction fetch after ${global429Count} rate limit errors. Consider setting HELIUS_API_KEY.`);
+              return;
+            }
+            
             try {
               const sig = tokenSignatures[i];
               const txTimestamp = sig.blockTime || Date.now() / 1000;
@@ -184,7 +194,7 @@ export class PumpFunWebSocketListener {
               // Add retry logic with exponential backoff for 429 errors
               let tx = null;
               let retries = 0;
-              const maxRetries = 3;
+              const maxRetries = 2; // Reduced from 3 to fail faster
               
               while (retries < maxRetries && !tx) {
                 try {
@@ -192,15 +202,35 @@ export class PumpFunWebSocketListener {
                     commitment: 'confirmed',
                     maxSupportedTransactionVersion: 0,
                   });
+                  // Success - reset retry counter for next transaction
+                  retries = 0;
                 } catch (error: any) {
                   if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests')) {
+                    global429Count++;
                     retries++;
-                    if (retries >= maxRetries) {
-                      console.log(`⚠️ Rate limited after ${maxRetries} retries, skipping remaining transactions...`);
-                      return; // Exit early to avoid more rate limits
+                    
+                    // Stop immediately if we've hit global limit
+                    if (global429Count >= MAX_GLOBAL_429_ERRORS) {
+                      console.warn(`🚫 Rate limit exceeded (${global429Count} errors). Stopping historical fetch. Set HELIUS_API_KEY to avoid rate limits.`);
+                      return;
                     }
-                    const delay = Math.min(1000 * Math.pow(2, retries), 8000); // Max 8 seconds
-                    console.log(`Server responded with 429 Too Many Requests. Retrying after ${delay}ms delay...`);
+                    
+                    if (retries >= maxRetries) {
+                      // Only log once per transaction, not every retry
+                      if (global429Count === 1 || global429Count % 3 === 0) {
+                        console.warn(`⚠️ Rate limited (${global429Count}/${MAX_GLOBAL_429_ERRORS}). Skipping transaction ${i + 1}/${maxToProcess}...`);
+                      }
+                      break; // Stop retrying this transaction
+                    }
+                    
+                    // Exponential backoff with longer delays
+                    const delay = Math.min(2000 * Math.pow(2, retries), 16000); // Max 16 seconds, start at 2s
+                    
+                    // Only log retries occasionally to reduce spam
+                    if (global429Count <= 2 || global429Count % 5 === 0) {
+                      console.log(`⏳ Rate limited. Waiting ${delay / 1000}s before retry (${global429Count}/${MAX_GLOBAL_429_ERRORS} total errors)...`);
+                    }
+                    
                     await new Promise(resolve => setTimeout(resolve, delay));
                   } else {
                     // Other error, skip this transaction
