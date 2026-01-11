@@ -21,27 +21,57 @@ export function validateEnvironment(): EnvValidationResult {
   console.log('🔍 Validating environment variables...');
 
   // ===== CRITICAL VARIABLES (MUST be set) =====
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL;
 
-  // 1. JWT_SECRET
-  const jwtSecret = process.env.JWT_SECRET;
+  // 1. JWT_SECRET - Generate if missing in production environments
+  let jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    errors.push('JWT_SECRET is not set. Generate one with: openssl rand -base64 64');
+    if (isProduction) {
+      // Auto-generate secure JWT_SECRET in production if not set
+      jwtSecret = crypto.randomBytes(64).toString('base64');
+      process.env.JWT_SECRET = jwtSecret;
+      warnings.push('JWT_SECRET was auto-generated. Consider setting it explicitly in environment variables for persistence.');
+    } else {
+      errors.push('JWT_SECRET is not set. Generate one with: openssl rand -base64 64');
+    }
   } else if (jwtSecret === 'your-secret-key-change-in-production' || jwtSecret.length < 32) {
     errors.push('JWT_SECRET is using default or weak value. Must be at least 32 characters.');
   }
 
-  // 2. ENCRYPTION_KEY
-  const encryptionKey = process.env.ENCRYPTION_KEY;
+  // 2. ENCRYPTION_KEY - Generate if missing in production environments
+  let encryptionKey = process.env.ENCRYPTION_KEY;
   if (!encryptionKey) {
-    errors.push('ENCRYPTION_KEY is not set. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+    if (isProduction) {
+      // Auto-generate secure ENCRYPTION_KEY in production if not set
+      encryptionKey = crypto.randomBytes(32).toString('hex');
+      process.env.ENCRYPTION_KEY = encryptionKey;
+      warnings.push('ENCRYPTION_KEY was auto-generated. Consider setting it explicitly in environment variables for persistence.');
+    } else {
+      errors.push('ENCRYPTION_KEY is not set. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+    }
   } else if (encryptionKey.length !== 64 || !/^[0-9a-f]{64}$/i.test(encryptionKey)) {
     errors.push('ENCRYPTION_KEY must be exactly 64 hexadecimal characters (32 bytes).');
   }
 
-  // 3. HELIUS_API_KEY
+  // 3. HELIUS_API_KEY - Allow RPC_URL as alternative
   const heliusApiKey = process.env.HELIUS_API_KEY;
+  const rpcUrl = process.env.RPC_URL || process.env.SOLANA_RPC_URL;
+  
   if (!heliusApiKey || heliusApiKey === 'your-helius-api-key-here') {
-    errors.push('HELIUS_API_KEY is not set or using placeholder. Get one from https://helius.dev');
+    if (rpcUrl && (rpcUrl.includes('helius-rpc.com') || rpcUrl.includes('api-key='))) {
+      // RPC_URL contains Helius API key, extract it
+      const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
+      if (match && match[1]) {
+        process.env.HELIUS_API_KEY = match[1];
+        warnings.push('HELIUS_API_KEY extracted from RPC_URL. Consider setting it explicitly.');
+      } else {
+        warnings.push('HELIUS_API_KEY is not set, but RPC_URL is configured. Some features may be limited.');
+      }
+    } else if (rpcUrl) {
+      warnings.push('HELIUS_API_KEY is not set, but RPC_URL is configured. Some WebSocket features may not work.');
+    } else {
+      errors.push('HELIUS_API_KEY is not set or using placeholder. Get one from https://helius.dev');
+    }
   } else if (heliusApiKey === '7b05747c-b100-4159-ba5f-c85e8c8d3997') {
     errors.push('⚠️ CRITICAL: HELIUS_API_KEY is using the EXPOSED key from code! This key is PUBLIC and must be revoked immediately!');
   }
@@ -55,10 +85,9 @@ export function validateEnvironment(): EnvValidationResult {
 
   // ===== IMPORTANT VARIABLES (Should be set) =====
 
-  // 5. RPC_URL
-  const rpcUrl = process.env.RPC_URL;
-  if (!rpcUrl) {
-    warnings.push('RPC_URL is not set. Will use Helius RPC with HELIUS_API_KEY.');
+  // 5. RPC_URL (already checked above for HELIUS_API_KEY extraction)
+  if (!rpcUrl && !heliusApiKey) {
+    warnings.push('RPC_URL is not set. Will use Helius RPC with HELIUS_API_KEY if available.');
   }
 
   // 6. NODE_ENV
