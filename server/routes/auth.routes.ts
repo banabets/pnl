@@ -72,7 +72,6 @@ router.get(
   '/user/:userId',
   readLimiter,
   optionalAuth,
-  validateParams(require('../validators/zod.validators').z.object({ userId: require('zod').z.string() })),
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const { getUserById } = await import('../controllers/auth.controller');
     await getUserById(req, res);
