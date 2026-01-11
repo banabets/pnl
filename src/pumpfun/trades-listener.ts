@@ -2,9 +2,7 @@ import {
   Connection,
   PublicKey,
   ParsedTransactionWithMeta,
-  VersionedTransactionResponse,
 } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 const PUMP_FUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
 
@@ -49,7 +47,7 @@ export class TradesListener {
       // Note: This will trigger on any change to the mint account
       this.subscriptionId = this.connection.onAccountChange(
         mintPubkey,
-        async (accountInfo, context) => {
+        async (_accountInfo, _context) => {
           // When token account changes, fetch recent transactions
           // This helps catch new trades in real-time
           setTimeout(() => {
@@ -62,7 +60,7 @@ export class TradesListener {
       // Also subscribe to logs from pump.fun program to catch swaps
       this.connection.onLogs(
         PUMP_FUN_PROGRAM_ID,
-        async (logs, context) => {
+        async (logs, _context) => {
           if (logs.err) return;
           
           // Check if this transaction involves our token
@@ -145,8 +143,6 @@ export class TradesListener {
   ): Promise<void> {
     try {
       if (!tx?.meta) return;
-
-      const mintPubkey = new PublicKey(tokenMint);
       
       // Get signer account from transaction
       let signerAccount = '';
@@ -185,7 +181,7 @@ export class TradesListener {
       for (const preBalance of preTokenBalances) {
         if (preBalance.mint === tokenMint) {
           const postBalance = postTokenBalances.find(
-            (pb) => pb.accountIndex === preBalance.accountIndex
+            (pb: any) => pb.accountIndex === preBalance.accountIndex
           );
           
           if (postBalance) {
@@ -208,10 +204,10 @@ export class TradesListener {
           
           // Check if this account has token changes
           const accountTokenChange = preTokenBalances
-            .filter(tb => tb.accountIndex === i && tb.mint === tokenMint)
-            .reduce((sum, tb) => {
+            .filter((tb: any) => tb.accountIndex === i && tb.mint === tokenMint)
+            .reduce((sum: number, tb: any) => {
               const postTb = postTokenBalances.find(
-                ptb => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint
+                (ptb: any) => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint
               );
               if (postTb) {
                 const preAmt = parseFloat(tb.uiTokenAmount?.uiAmountString || '0');

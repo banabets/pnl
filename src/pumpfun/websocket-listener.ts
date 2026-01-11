@@ -63,7 +63,7 @@ export class PumpFunWebSocketListener {
       // This is the most reliable method for catching new token creations
       this.connection.onLogs(
         PUMP_FUN_PROGRAM_ID,
-        async (logs, context) => {
+        async (logs, _context) => {
           try {
             if (logs.err) return; // Skip failed transactions
             
@@ -420,7 +420,7 @@ export class PumpFunWebSocketListener {
   /**
    * Process account change and extract token mints
    */
-  private async processAccountChange(accountData: Buffer, slot: number): Promise<void> {
+  private async processAccountChange(accountData: Buffer, _slot: number): Promise<void> {
     try {
       // Try to extract token mint from account data
       // Pump.fun account structure may vary, so we try multiple approaches
@@ -567,7 +567,7 @@ export class PumpFunWebSocketListener {
   /**
    * Check if a token is likely a pump.fun token by checking for bonding curve
    */
-  private async isLikelyPumpFunToken(mint: PublicKey): Promise<boolean> {
+  private async _isLikelyPumpFunToken(mint: PublicKey): Promise<boolean> {
     try {
       // Derive potential bonding curve PDA
       const [bondingCurve] = PublicKey.findProgramAddressSync(
