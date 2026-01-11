@@ -21,13 +21,20 @@ export function validateEnvironment(): EnvValidationResult {
   console.log('🔍 Validating environment variables...');
 
   // ===== CRITICAL VARIABLES (MUST be set) =====
-  const isProduction = process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL;
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isDeployment = process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL || process.env.RENDER;
 
-  // 1. JWT_SECRET
-  const jwtSecret = process.env.JWT_SECRET;
+  // 1. JWT_SECRET - Auto-generate in deployment environments if not set
+  let jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    if (isProduction) {
-      // In production, provide helpful error message for Railway/Vercel
+    if (isDeployment) {
+      // Auto-generate for deployment platforms (Railway/Vercel/Render)
+      jwtSecret = crypto.randomBytes(64).toString('base64');
+      process.env.JWT_SECRET = jwtSecret;
+      warnings.push('⚠️ JWT_SECRET was auto-generated. Copy this value to your environment variables for persistence:');
+      warnings.push(`   JWT_SECRET=${jwtSecret}`);
+      warnings.push('   ⚠️ WARNING: If not saved, tokens will be invalidated on restart!');
+    } else if (isProduction) {
       errors.push('JWT_SECRET is not set. Set it in your deployment platform (Railway/Vercel) environment variables.');
       errors.push('  Generate: openssl rand -base64 64');
       errors.push('  Or use: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'base64\'))"');
@@ -38,11 +45,17 @@ export function validateEnvironment(): EnvValidationResult {
     errors.push('JWT_SECRET is using default or weak value. Must be at least 32 characters.');
   }
 
-  // 2. ENCRYPTION_KEY
-  const encryptionKey = process.env.ENCRYPTION_KEY;
+  // 2. ENCRYPTION_KEY - Auto-generate in deployment environments if not set
+  let encryptionKey = process.env.ENCRYPTION_KEY;
   if (!encryptionKey) {
-    if (isProduction) {
-      // In production, provide helpful error message for Railway/Vercel
+    if (isDeployment) {
+      // Auto-generate for deployment platforms
+      encryptionKey = crypto.randomBytes(32).toString('hex');
+      process.env.ENCRYPTION_KEY = encryptionKey;
+      warnings.push('⚠️ ENCRYPTION_KEY was auto-generated. Copy this value to your environment variables for persistence:');
+      warnings.push(`   ENCRYPTION_KEY=${encryptionKey}`);
+      warnings.push('   ⚠️ WARNING: If not saved, encrypted wallets will be inaccessible on restart!');
+    } else if (isProduction) {
       errors.push('ENCRYPTION_KEY is not set. Set it in your deployment platform (Railway/Vercel) environment variables.');
       errors.push('  Generate: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
     } else {
@@ -72,6 +85,10 @@ export function validateEnvironment(): EnvValidationResult {
     if (rpcUrl && !rpcUrl.includes('helius-rpc.com')) {
       // RPC_URL is set but not Helius, warn but don't error
       warnings.push('HELIUS_API_KEY is not set, but RPC_URL is configured. Some WebSocket features may not work.');
+    } else if (isDeployment) {
+      // In deployment, make it a warning instead of error (server can start without it)
+      warnings.push('HELIUS_API_KEY is not set. Get one from https://helius.dev for better performance.');
+      warnings.push('  Some features (WebSocket, real-time token feed) may be limited without it.');
     } else if (isProduction) {
       errors.push('HELIUS_API_KEY is not set. Get one from https://helius.dev and set it in your deployment platform.');
     } else {
