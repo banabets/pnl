@@ -72,3 +72,4 @@ keypairsRPC_URL=*/
 coverage/
 .nyc_output/
 
+HELIUS_API_KEY_SETUP.md
