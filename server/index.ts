@@ -1079,9 +1079,44 @@ app.get('/api/master-wallet/export-key', authenticateToken, async (req: Authenti
 
     // If MongoDB is connected, use per-user wallet service
     if (isMongoConnected() && userId) {
-      const walletWithKey = await walletService.getMasterWalletWithKey(userId);
+      let walletWithKey = await walletService.getMasterWalletWithKey(userId);
+      
+      // If master wallet doesn't exist, try to create it automatically
       if (!walletWithKey) {
-        return res.status(400).json({ error: 'Master wallet not found' });
+        console.log(`[export-key] Master wallet not found for user ${userId}, attempting to create...`);
+        try {
+          const result = await walletService.createMasterWallet(userId);
+          console.log(`[export-key] Master wallet creation result:`, result);
+          if (result) {
+            // Retry getting the wallet after creation
+            walletWithKey = await walletService.getMasterWalletWithKey(userId);
+            if (walletWithKey) {
+              console.log(`[export-key] Successfully created and retrieved master wallet for user ${userId}`);
+            } else {
+              console.error(`[export-key] Master wallet created but could not be retrieved for user ${userId}`);
+            }
+          }
+        } catch (createError) {
+          console.error('[export-key] Error creating master wallet:', createError);
+          const errorMessage = createError instanceof Error ? createError.message : String(createError);
+          console.error('[export-key] Error details:', {
+            userId,
+            error: errorMessage,
+            stack: createError instanceof Error ? createError.stack : undefined
+          });
+          return res.status(400).json({ 
+            error: 'Master wallet not found. Please create a master wallet first using the "Create Master Wallet" button.',
+            details: errorMessage
+          });
+        }
+      }
+
+      if (!walletWithKey) {
+        console.error(`[export-key] Master wallet still not found after creation attempt for user ${userId}`);
+        return res.status(400).json({ 
+          error: 'Master wallet not found. Please create a master wallet first using the "Create Master Wallet" button.',
+          userId: userId.substring(0, 8) + '...' // Log partial userId for debugging
+        });
       }
 
       const secretKey = walletWithKey.keypair.secretKey;
@@ -1100,7 +1135,9 @@ app.get('/api/master-wallet/export-key', authenticateToken, async (req: Authenti
 
     // Fallback to legacy global wallet if MongoDB not connected
     if (!masterWalletManager || !masterWalletManager.masterWalletExists()) {
-      return res.status(400).json({ error: 'Master wallet not found' });
+      return res.status(400).json({ 
+        error: 'Master wallet not found. Please create a master wallet first using the "Create Master Wallet" button.'
+      });
     }
 
     const masterWallet = masterWalletManager.loadMasterWallet();

@@ -3,6 +3,9 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
+# Install build dependencies for native modules
+RUN apk add --no-cache python3 make g++
+
 # Set working directory
 WORKDIR /app
 
@@ -10,8 +13,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install all dependencies (including devDependencies for TypeScript)
+RUN npm ci && npm cache clean --force
 
 # Copy source code
 COPY server ./server
@@ -23,8 +26,8 @@ RUN npm run build:server
 # Stage 2: Production
 FROM node:20-alpine AS production
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
+# Install dumb-init for proper signal handling and build tools for native modules
+RUN apk add --no-cache dumb-init python3 make g++
 
 # Create app user
 RUN addgroup -g 1001 -S nodejs && \
@@ -37,9 +40,12 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm ci --only=production && \
+RUN npm ci --omit=dev && \
     npm cache clean --force && \
     rm -rf /tmp/*
+
+# Remove build tools after installation (native modules are already compiled)
+RUN apk del python3 make g++
 
 # Copy built application from builder
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
