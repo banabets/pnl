@@ -71,9 +71,9 @@ class WalletManager {
             keypairs.push(keypair);
             // Save to file with encryption-ready format
             this.saveKeypairToFile(keypair, i + 1);
-            console.log(chalk_1.default.gray(`  Ape Wallet ${i + 1}: ${keypair.publicKey.toString()}`));
+            console.log(chalk_1.default.gray(`  Wallet ${i + 1}: ${keypair.publicKey.toString()}`));
         }
-        console.log(chalk_1.default.green(`🏔️ Generated ${count} ape keypairs successfully! Ready to climb!`));
+        console.log(chalk_1.default.green(`✅ Generated ${count} keypairs successfully!`));
         return keypairs;
     }
     /**
