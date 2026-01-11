@@ -242,7 +242,7 @@ export class DCABot {
       try {
         const keypair = await this.getKeypairForUser(
           order.userId.toString(),
-          order.walletIndex
+          order.walletIndex ?? undefined
         );
 
         if (!keypair) {

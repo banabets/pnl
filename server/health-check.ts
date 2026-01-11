@@ -40,6 +40,9 @@ async function checkMongoDB(): Promise<CheckResult> {
     }
 
     // Ping the database
+    if (!mongoose.connection.db) {
+      throw new Error('MongoDB not connected');
+    }
     await mongoose.connection.db.admin().ping();
 
     return {
@@ -156,7 +159,7 @@ function checkProcess(): CheckResult {
  * Perform all health checks
  */
 export async function performHealthCheck(): Promise<HealthStatus> {
-  const startTime = Date.now();
+  const _startTime = Date.now();
 
   // Run all checks in parallel
   const [mongodb, solana_rpc, memory, processCheck] = await Promise.all([
@@ -200,7 +203,7 @@ export async function performHealthCheck(): Promise<HealthStatus> {
 /**
  * Health check endpoint handler
  */
-export async function healthCheckHandler(req: Request, res: Response) {
+export async function healthCheckHandler(_req: Request, res: Response) {
   try {
     const health = await performHealthCheck();
 
@@ -220,7 +223,7 @@ export async function healthCheckHandler(req: Request, res: Response) {
  * Liveness probe (Kubernetes-style)
  * Returns 200 if the process is alive
  */
-export function livenessProbe(req: Request, res: Response) {
+export function livenessProbe(_req: Request, res: Response) {
   res.status(200).json({
     status: 'alive',
     timestamp: new Date().toISOString(),
@@ -231,17 +234,18 @@ export function livenessProbe(req: Request, res: Response) {
  * Readiness probe (Kubernetes-style)
  * Returns 200 if the service is ready to accept traffic
  */
-export async function readinessProbe(req: Request, res: Response) {
+export async function readinessProbe(_req: Request, res: Response): Promise<void> {
   try {
     // Check critical dependencies
     const mongoCheck = await checkMongoDB();
 
     if (mongoCheck.status === 'fail') {
-      return res.status(503).json({
+      res.status(503).json({
         status: 'not_ready',
         reason: 'MongoDB not connected',
         timestamp: new Date().toISOString(),
       });
+      return;
     }
 
     res.status(200).json({
@@ -261,16 +265,17 @@ export async function readinessProbe(req: Request, res: Response) {
  * Startup probe (Kubernetes-style)
  * Returns 200 when the application has started successfully
  */
-export async function startupProbe(req: Request, res: Response) {
+export async function startupProbe(_req: Request, res: Response): Promise<void> {
   try {
     const health = await performHealthCheck();
 
     if (health.status === 'unhealthy') {
-      return res.status(503).json({
+      res.status(503).json({
         status: 'not_started',
         checks: health.checks,
         timestamp: new Date().toISOString(),
       });
+      return;
     }
 
     res.status(200).json({

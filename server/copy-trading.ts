@@ -1,6 +1,5 @@
 // Copy Trading - Follow and copy trades from successful wallets
 import { Connection, PublicKey } from '@solana/web3.js';
-import { getJupiterService } from './jupiter-service';
 import mongoose from 'mongoose';
 
 // Wallet to follow
@@ -74,11 +73,11 @@ const WalletStatsSchema = new mongoose.Schema({
 export const WalletStats = mongoose.model('WalletStats', WalletStatsSchema);
 
 export class CopyTradingService {
-  private connection: Connection;
-  private activeListeners = new Map<string, boolean>();
+  private _connection: Connection;
+  private _activeListeners = new Map<string, boolean>();
 
   constructor(rpcUrl: string) {
-    this.connection = new Connection(rpcUrl, 'confirmed');
+    this._connection = new Connection(rpcUrl, 'confirmed');
   }
 
   /**
@@ -271,7 +270,7 @@ export class CopyTradingService {
   /**
    * Analyze a wallet's performance
    */
-  async analyzeWallet(walletAddress: string): Promise<{
+  async analyzeWallet(_walletAddress: string): Promise<{
     totalTrades: number;
     winRate: number;
     avgProfit: number;

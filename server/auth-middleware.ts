@@ -44,7 +44,7 @@ export const authenticateToken = async (
 
 export const optionalAuth = async (
   req: AuthenticatedRequest,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   const authHeader = req.headers['authorization'];

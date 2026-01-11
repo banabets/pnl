@@ -1810,6 +1810,7 @@ app.post('/api/funds/distribute-from-master',
       }
     }
     
+    const totalDistributed = amountPerWallet * successCount;
     logWallet('distribute-funds', 'Distribution complete', {
       successCount,
       failCount,
@@ -3158,7 +3159,7 @@ app.get('/api/pumpfun/token/:mint/chart', async (req, res) => {
         if (birdeyeResponse.ok) {
           const birdeyeData = await birdeyeResponse.json();
           if (birdeyeData.data && birdeyeData.data.items) {
-            log.info('Found OHLCV data from Birdeye', { dataPoints: data.items?.length || 0 });
+            log.info('Found OHLCV data from Birdeye', { dataPoints: birdeyeData.data.items?.length || 0 });
             const ohlcv = birdeyeData.data.items.map((item: any) => ({
               time: new Date(item.unixTime * 1000).toISOString(),
               open: parseFloat(item.o || 0),
