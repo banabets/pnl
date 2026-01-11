@@ -48,8 +48,12 @@ api.interceptors.response.use(
     // Let the individual components handle this gracefully
     // The token should only be cleared on explicit logout or when the auth check confirms it's invalid
     if (error.response?.status === 401) {
-      // Just log it and let the component handle it
-      console.warn('🔒 Authentication required for:', error.config?.url);
+      // Only log if we have a token (indicates token is invalid/expired, not just missing)
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        console.warn('🔒 Authentication required for:', error.config?.url);
+      }
+      // If no token, this is expected behavior - components should check auth before making requests
     }
 
     return Promise.reject(error);

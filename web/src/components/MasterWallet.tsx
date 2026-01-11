@@ -41,6 +41,13 @@ export default function MasterWallet({ socket }: MasterWalletProps) {
   }, [socket]);
 
   const loadMasterWallet = async () => {
+    // Check if user is authenticated before making requests
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      setMasterWallet(null);
+      return; // Silently skip if not authenticated
+    }
+
     try {
       const res = await api.get('/master-wallet');
       setMasterWallet(res.data);
@@ -48,8 +55,14 @@ export default function MasterWallet({ socket }: MasterWalletProps) {
       if (res.data?.exists && res.data?.balance !== undefined) {
         console.log(`💰 Master wallet balance updated: ${res.data.balance.toFixed(4)} SOL`);
       }
-    } catch (error) {
-      console.error('Failed to load master wallet:', error);
+    } catch (error: any) {
+      // Silently handle 401 errors (expected when not authenticated)
+      if (error.response?.status !== 401) {
+        console.error('Failed to load master wallet:', error);
+      }
+      if (error.response?.status === 401) {
+        setMasterWallet(null);
+      }
     }
   };
 

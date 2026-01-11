@@ -66,6 +66,14 @@ export default function PumpFun({ socket }: PumpFunProps) {
   }, [socket]);
 
   const loadWallets = async () => {
+    // Check if user is authenticated before making requests
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      setWallets([]);
+      setTotalBalance(0);
+      return; // Silently skip if not authenticated
+    }
+
     try {
       const res = await api.get('/wallets');
       const walletsData = res.data.wallets || [];
@@ -89,8 +97,15 @@ export default function PumpFun({ socket }: PumpFunProps) {
           numberOfWallets: selectedWallets.size || prev.numberOfWallets,
         }));
       }
-    } catch (error) {
-      console.error('Failed to load wallets:', error);
+    } catch (error: any) {
+      // Silently handle 401 errors (expected when not authenticated)
+      if (error.response?.status !== 401) {
+        console.error('Failed to load wallets:', error);
+      }
+      if (error.response?.status === 401) {
+        setWallets([]);
+        setTotalBalance(0);
+      }
     }
   };
 

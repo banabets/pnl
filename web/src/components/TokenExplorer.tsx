@@ -449,19 +449,20 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
     setLoading(true);
     try {
       // Use new token feed API based on active filter
-      let endpoint = '/api/tokens/feed';
+      // Note: baseURL already includes /api, so we don't need to prefix with /api
+      let endpoint = '/tokens/feed';
       const params = new URLSearchParams();
       params.set('limit', '50');
 
       switch (activeFilter) {
         case 'new':
-          endpoint = '/api/tokens/new';
+          endpoint = '/tokens/new';
           break;
         case 'graduating':
-          endpoint = '/api/tokens/graduating';
+          endpoint = '/tokens/graduating';
           break;
         case 'trending':
-          endpoint = '/api/tokens/trending';
+          endpoint = '/tokens/trending';
           break;
         default:
           params.set('filter', 'all');

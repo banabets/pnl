@@ -78,6 +78,12 @@ export default function Dashboard({ socket }: DashboardProps) {
   }, [socket]);
 
   const loadStats = async () => {
+    // Check if user is authenticated before making requests
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      return; // Silently skip if not authenticated
+    }
+
     try {
       const [walletsRes, masterRes, configRes] = await Promise.all([
         api.get('/wallets'),
@@ -91,18 +97,30 @@ export default function Dashboard({ socket }: DashboardProps) {
         masterWalletExists: masterRes.data.exists || false,
         masterBalance: masterRes.data.balance || 0,
       });
-    } catch (error) {
-      console.error('Failed to load stats:', error);
+    } catch (error: any) {
+      // Silently handle 401 errors (expected when not authenticated)
+      if (error.response?.status !== 401) {
+        console.error('Failed to load stats:', error);
+      }
     }
   };
 
   const loadTransactions = async () => {
+    // Check if user is authenticated before making requests
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      return; // Silently skip if not authenticated
+    }
+
     try {
       const res = await api.get('/transactions');
       const transactions = res.data.transactions || [];
       setRecentActivity(transactions.slice(0, 50));
-    } catch (error) {
-      console.error('Failed to load transactions:', error);
+    } catch (error: any) {
+      // Silently handle 401 errors (expected when not authenticated)
+      if (error.response?.status !== 401) {
+        console.error('Failed to load transactions:', error);
+      }
     }
   };
 

@@ -45,12 +45,27 @@ export default function Wallets({ socket }: WalletsProps) {
   }, [socket]);
 
   const loadWallets = async () => {
+    // Check if user is authenticated before making requests
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      setWallets([]);
+      setTotalBalance(0);
+      return; // Silently skip if not authenticated
+    }
+
     try {
       const res = await api.get('/wallets');
       setWallets(res.data.wallets || []);
       setTotalBalance(res.data.totalBalance || 0);
-    } catch (error) {
-      console.error('Failed to load wallets:', error);
+    } catch (error: any) {
+      // Silently handle 401 errors (expected when not authenticated)
+      if (error.response?.status !== 401) {
+        console.error('Failed to load wallets:', error);
+      }
+      if (error.response?.status === 401) {
+        setWallets([]);
+        setTotalBalance(0);
+      }
     }
   };
 
