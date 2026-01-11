@@ -98,6 +98,13 @@ class HeliusWebSocketService extends EventEmitter {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private tokenCache: Map<string, { data: any; timestamp: number }> = new Map();
   private hasAuthError = false; // Track if we have authentication errors
+  private rpcCircuitBreakerOpen = false; // Circuit breaker for RPC rate limits
+  private rpc429Count = 0; // Count consecutive 429 errors
+  private rpc429ResetTime = 0; // Time when we can reset the counter
+  private lastRpcRequestTime = 0; // Track last RPC request time for rate limiting
+  private readonly RPC_MIN_DELAY = 200; // Minimum delay between RPC requests (ms)
+  private readonly MAX_429_ERRORS = 5; // Max consecutive 429 errors before opening circuit breaker
+  private readonly CIRCUIT_BREAKER_RESET_TIME = 60000; // 1 minute before resetting circuit breaker
 
   constructor() {
     super();
@@ -453,13 +460,39 @@ class HeliusWebSocketService extends EventEmitter {
 
   /**
    * Fallback: Get basic transaction details from RPC
+   * Includes rate limiting and circuit breaker to prevent 429 errors
    */
   private async getBasicTransactionDetails(signature: string): Promise<any> {
+    // Check circuit breaker
+    if (this.rpcCircuitBreakerOpen) {
+      const now = Date.now();
+      if (now < this.rpc429ResetTime) {
+        // Circuit breaker still open, skip request
+        return null;
+      } else {
+        // Reset circuit breaker
+        this.rpcCircuitBreakerOpen = false;
+        this.rpc429Count = 0;
+      }
+    }
+
+    // Rate limiting: Ensure minimum delay between requests
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRpcRequestTime;
+    if (timeSinceLastRequest < this.RPC_MIN_DELAY) {
+      await new Promise(resolve => setTimeout(resolve, this.RPC_MIN_DELAY - timeSinceLastRequest));
+    }
+
     try {
+      this.lastRpcRequestTime = Date.now();
+      
       const tx = await this.connection.getParsedTransaction(signature, {
         maxSupportedTransactionVersion: 0,
         commitment: 'confirmed'
       });
+
+      // Reset 429 counter on success
+      this.rpc429Count = 0;
 
       if (!tx) return null;
 
@@ -498,8 +531,36 @@ class HeliusWebSocketService extends EventEmitter {
 
       return result;
 
-    } catch (error) {
-      console.error('Error getting basic tx details:', error);
+    } catch (error: any) {
+      // Check if it's a 429 error
+      const is429Error = error?.message?.includes('429') || 
+                        error?.message?.includes('Too Many Requests') ||
+                        error?.code === 429;
+
+      if (is429Error) {
+        this.rpc429Count++;
+        
+        // Open circuit breaker if too many consecutive 429 errors
+        if (this.rpc429Count >= this.MAX_429_ERRORS) {
+          this.rpcCircuitBreakerOpen = true;
+          this.rpc429ResetTime = Date.now() + this.CIRCUIT_BREAKER_RESET_TIME;
+          console.warn(`🚫 RPC Circuit breaker opened after ${this.rpc429Count} consecutive 429 errors. Will retry after ${this.CIRCUIT_BREAKER_RESET_TIME / 1000}s`);
+        } else {
+          // Log but don't spam
+          if (this.rpc429Count === 1 || this.rpc429Count % 3 === 0) {
+            console.warn(`⚠️ RPC rate limited (429). Count: ${this.rpc429Count}/${this.MAX_429_ERRORS}. Consider setting HELIUS_API_KEY.`);
+          }
+        }
+      } else {
+        // Reset counter on non-429 errors
+        this.rpc429Count = 0;
+      }
+
+      // Don't log every error to avoid spam
+      if (!is429Error || this.rpc429Count <= 3) {
+        console.error('Error getting basic tx details:', error.message || error);
+      }
+      
       return null;
     }
   }
