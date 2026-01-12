@@ -1,11 +1,9 @@
 // Launchpad Service - Launch tokens on Pump.fun
 // Integrates with Pump.fun API to create and deploy new tokens
 
-import { Connection, Keypair, PublicKey, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { log } from './logger';
 import { rateLimiter } from './rate-limiter';
-import FormData from 'form-data';
-import fetch from 'node-fetch';
 
 interface TokenMetadata {
   name: string;
@@ -14,14 +12,11 @@ interface TokenMetadata {
   twitter?: string;
   telegram?: string;
   website?: string;
-  imageFile?: Buffer;
-  imageFileName?: string;
 }
 
 interface LaunchConfig {
   metadata: TokenMetadata;
   initialBuy?: number; // Initial buy amount in SOL
-  devBuyPercent?: number; // Percentage of supply for dev (0-100)
 }
 
 interface LaunchResult {
@@ -125,21 +120,6 @@ class LaunchpadService {
       // For now, we'll use a placeholder URL
       const placeholderUri = `https://via.placeholder.com/400?text=${encodeURIComponent(metadata.symbol)}`;
 
-      // TODO: Implement actual IPFS upload
-      // Example:
-      // const formData = new FormData();
-      // formData.append('file', metadata.imageFile, metadata.imageFileName);
-      // formData.append('name', metadata.name);
-      // formData.append('symbol', metadata.symbol);
-      // formData.append('description', metadata.description);
-      //
-      // const response = await fetch('https://pump.fun/api/ipfs', {
-      //   method: 'POST',
-      //   body: formData
-      // });
-      // const data = await response.json();
-      // return data.metadataUri;
-
       log.info('Metadata uploaded (placeholder)', { uri: placeholderUri });
       return placeholderUri;
 
@@ -160,20 +140,8 @@ class LaunchpadService {
     try {
       log.info('Creating token on Pump.fun', { name: metadata.name });
 
-      // Pump.fun create token endpoint (example - actual endpoint may vary)
+      // Pump.fun create token endpoint
       // This is a placeholder - you'll need to use the actual Pump.fun SDK or API
-
-      // Example structure:
-      // const pumpFunProgram = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'); // Pump.fun program
-      // const mint = Keypair.generate();
-      //
-      // Build transaction to create token...
-      // const tx = new Transaction().add(
-      //   // Pump.fun create instruction
-      // );
-      //
-      // const signature = await sendAndConfirmTransaction(this.connection, tx, [creator, mint]);
-
       // For now, simulate token creation
       const simulatedMint = Keypair.generate().publicKey.toBase58();
       const simulatedSignature = 'SIMULATED_' + Date.now();
