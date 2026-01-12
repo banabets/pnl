@@ -448,96 +448,118 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   const loadTokens = async () => {
     setLoading(true);
     try {
-      // Use new token feed API based on active filter
-      // Note: baseURL already includes /api, so we don't need to prefix with /api
-      let endpoint = '/tokens/feed';
-      const params = new URLSearchParams();
-      params.set('limit', '50');
-
-      switch (activeFilter) {
-        case 'new':
-          endpoint = '/tokens/new';
-          break;
-        case 'graduating':
-          endpoint = '/tokens/graduating';
-          break;
-        case 'trending':
-          endpoint = '/tokens/trending';
-          break;
-        default:
-          params.set('filter', 'all');
-          params.set('minLiquidity', '1000');
-      }
-
-      const response = await api.get(`${endpoint}?${params.toString()}`);
-
-      // Handle response format: { success, count, tokens } or direct array
-      const tokensData = response.data?.tokens || response.data;
-
-      if (tokensData && Array.isArray(tokensData)) {
-        // Map TokenData from API to Token interface
-        const mappedTokens: Token[] = tokensData.map((t: any) => ({
-          mint: t.mint,
-          name: t.name || 'Unknown',
-          symbol: t.symbol || 'UNK',
-          description: '',
-          image_uri: t.imageUrl || '',
-          market_cap: t.marketCap || 0,
-          usd_market_cap: t.marketCap || 0,
-          creator: '',
-          created_timestamp: Math.floor(t.createdAt / 1000),
-          complete: t.dexId !== 'pumpfun', // Non-pumpfun = graduated
-          liquidity: t.liquidity || 0,
-          holders: t.holders || 0,
-          volume_24h: t.volume24h || 0,
-          dev_holdings: 0,
-          dev_holdings_percent: 0,
-          sniper_holdings: 0,
-          sniper_holdings_percent: 0,
-          insider_holdings: 0,
-          insider_holdings_percent: 0,
-          dex_is_paid: false,
-          pumpfun: {
-            bonding_curve: '',
-            associated_bonding_curve: '',
-            associated_market: '',
-          },
-          // Extra fields from new API
-          priceChange5m: t.priceChange5m,
-          priceChange1h: t.priceChange1h,
-          priceChange24h: t.priceChange24h,
-          volume5m: t.volume5m,
-          volume1h: t.volume1h,
-          txns5m: t.txns5m,
-          txns1h: t.txns1h,
-          txns24h: t.txns24h,
-          age: t.age,
-          isNew: t.isNew,
-          isGraduating: t.isGraduating,
-          isTrending: t.isTrending,
-          riskScore: t.riskScore,
-          dexId: t.dexId,
-          price: t.price,
-        }));
-
-        console.log(`✅ Loaded ${mappedTokens.length} tokens with filter: ${activeFilter}`);
-        setTokens(mappedTokens);
-      } else {
-        console.log('No tokens returned from API. Response:', response.data);
-        setTokens([]);
-      }
-    } catch (error) {
-      console.error('Failed to load tokens:', error);
-      // Try fallback to old pumpfun endpoint
+      // Try primary endpoint
       try {
+        // Use new token feed API based on active filter
+        // Note: baseURL already includes /api, so we don't need to prefix with /api
+        let endpoint = '/tokens/feed';
+        const params = new URLSearchParams();
+        params.set('limit', '50');
+
+        switch (activeFilter) {
+          case 'new':
+            endpoint = '/tokens/new';
+            break;
+          case 'graduating':
+            endpoint = '/tokens/graduating';
+            break;
+          case 'trending':
+            endpoint = '/tokens/trending';
+            break;
+          default:
+            params.set('filter', 'all');
+            params.set('minLiquidity', '1000');
+        }
+
+        const response = await api.get(`${endpoint}?${params.toString()}`);
+
+        // Handle response format: { success, count, tokens } or direct array
+        const tokensData = response.data?.tokens || response.data;
+
+        if (tokensData && Array.isArray(tokensData) && tokensData.length > 0) {
+          // Map TokenData from API to Token interface
+          const mappedTokens: Token[] = tokensData.map((t: any) => ({
+            mint: t.mint,
+            name: t.name || 'Unknown',
+            symbol: t.symbol || 'UNK',
+            description: '',
+            image_uri: t.imageUrl || t.image_uri || '',
+            market_cap: t.marketCap || t.market_cap || 0,
+            usd_market_cap: t.marketCap || t.usd_market_cap || t.market_cap || 0,
+            creator: '',
+            created_timestamp: t.created_timestamp || Math.floor((t.createdAt || Date.now()) / 1000),
+            complete: t.complete !== undefined ? t.complete : (t.dexId !== 'pumpfun'), // Non-pumpfun = graduated
+            liquidity: t.liquidity || 0,
+            holders: t.holders || 0,
+            volume_24h: t.volume24h || t.volume_24h || 0,
+            dev_holdings: 0,
+            dev_holdings_percent: 0,
+            sniper_holdings: 0,
+            sniper_holdings_percent: 0,
+            insider_holdings: 0,
+            insider_holdings_percent: 0,
+            dex_is_paid: false,
+            pumpfun: {
+              bonding_curve: '',
+              associated_bonding_curve: '',
+              associated_market: '',
+            },
+            // Extra fields from new API
+            priceChange5m: t.priceChange5m,
+            priceChange1h: t.priceChange1h,
+            priceChange24h: t.priceChange24h,
+            volume5m: t.volume5m,
+            volume1h: t.volume1h,
+            txns5m: t.txns5m,
+            txns1h: t.txns1h,
+            txns24h: t.txns24h,
+            age: t.age,
+            isNew: t.isNew,
+            isGraduating: t.isGraduating,
+            isTrending: t.isTrending,
+            riskScore: t.riskScore,
+            dexId: t.dexId,
+            price: t.price,
+          }));
+
+          console.log(`✅ Loaded ${mappedTokens.length} tokens with filter: ${activeFilter}`);
+          setTokens(mappedTokens);
+          return; // Success, exit early
+        } else {
+          console.warn('No tokens returned from primary endpoint, trying fallback...', {
+            endpoint,
+            responseData: response.data
+          });
+        }
+      } catch (error: any) {
+        console.error('Failed to load tokens from primary endpoint:', error);
+        // Continue to fallback below
+      }
+
+      // Fallback: Try /api/pumpfun/tokens endpoint (has multiple fallbacks)
+      try {
+        console.log('Trying fallback endpoint: /pumpfun/tokens');
         const fallbackResponse = await api.get('/pumpfun/tokens?offset=0&limit=50&sort=created_timestamp&order=DESC');
         if (fallbackResponse.data) {
-          const data = Array.isArray(fallbackResponse.data) ? fallbackResponse.data : (fallbackResponse.data.coins || []);
-          setTokens(data.slice(0, 50));
+          const data = Array.isArray(fallbackResponse.data)
+            ? fallbackResponse.data
+            : (fallbackResponse.data.coins || fallbackResponse.data.data || []);
+
+          if (data.length > 0) {
+            console.log(`✅ Loaded ${data.length} tokens from fallback endpoint`);
+            setTokens(data.slice(0, 50));
+            return; // Success
+          } else {
+            console.warn('Fallback endpoint returned empty array');
+          }
         }
-      } catch {
-        setTokens([]);
+      } catch (fallbackError: any) {
+        console.error('Fallback endpoint also failed:', fallbackError);
       }
+
+      // If we get here, both endpoints failed
+      console.error('All token endpoints failed, showing empty state');
+      setTokens([]);
     } finally {
       setLoading(false);
     }

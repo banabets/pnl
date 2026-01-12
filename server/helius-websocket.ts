@@ -13,7 +13,7 @@ const RAYDIUM_CPMM_PROGRAM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 
 // Helius WebSocket URL
-const getHeliusWsUrl = () => {
+const getHeliusWsUrl = (): string | null => {
   // Try to get API key from various sources
   let apiKey = process.env.HELIUS_API_KEY;
   
@@ -31,8 +31,15 @@ const getHeliusWsUrl = () => {
   }
 
   if (!apiKey) {
-    log.warn('No Helius API key found, using public RPC (may have rate limits)');
-    return 'wss://api.mainnet-beta.solana.com';
+    log.warn('No Helius API key found. WebSocket service will not start.');
+    log.warn('Set HELIUS_API_KEY environment variable to enable WebSocket features.');
+    return null; // Return null instead of public RPC to prevent connection attempts
+  }
+
+  // Validate API key format (Helius keys are typically UUIDs, 36 chars)
+  if (apiKey.length < 20 || apiKey === 'your-helius-api-key-here' || apiKey === '7b05747c-b100-4159-ba5f-c85e8c8d3997') {
+    log.error('Invalid or placeholder Helius API key detected');
+    return null;
   }
 
   log.info('Using Helius WebSocket with API key', { keyPrefix: apiKey.substring(0, 8) });
@@ -146,6 +153,13 @@ class HeliusWebSocketService extends EventEmitter {
     
     const wsUrl = getHeliusWsUrl();
     
+    // If no valid API key, don't attempt connection
+    if (!wsUrl) {
+      log.warn('WebSocket connection skipped: No valid Helius API key found');
+      this.hasAuthError = true; // Mark as auth error to prevent retry attempts
+      return;
+    }
+    
     // Validate API key before connecting
     if (wsUrl.includes('helius-rpc.com')) {
       const apiKeyMatch = wsUrl.match(/api-key=([^&]+)/);
@@ -163,8 +177,6 @@ class HeliusWebSocketService extends EventEmitter {
         this.hasAuthError = true;
         return;
       }
-    } else {
-      log.info('Connecting to public Solana WebSocket (no API key)');
     }
 
     try {
@@ -614,29 +626,31 @@ class HeliusWebSocketService extends EventEmitter {
         if (this.rpc429Count >= this.MAX_429_ERRORS) {
           this.rpcCircuitBreakerOpen = true;
           this.rpc429ResetTime = Date.now() + this.CIRCUIT_BREAKER_RESET_TIME;
-          log.warn('RPC Circuit breaker opened', {
+          log.warn('RPC Circuit breaker opened due to rate limiting', {
             consecutiveErrors: this.rpc429Count,
-            retryAfterSeconds: this.CIRCUIT_BREAKER_RESET_TIME / 1000
+            retryAfterSeconds: this.CIRCUIT_BREAKER_RESET_TIME / 1000,
+            suggestion: 'Set HELIUS_API_KEY environment variable to avoid rate limits'
           });
         } else {
-          // Log but don't spam
-          if (this.rpc429Count === 1 || this.rpc429Count % 3 === 0) {
+          // Log but don't spam - only log first error and every 5th error
+          if (this.rpc429Count === 1 || this.rpc429Count % 5 === 0) {
             log.warn('RPC rate limited (429)', {
               count: this.rpc429Count,
               maxErrors: this.MAX_429_ERRORS,
-              suggestion: 'Consider setting HELIUS_API_KEY'
+              suggestion: 'Set HELIUS_API_KEY environment variable for better performance'
             });
           }
         }
+        
+        // Don't log the error message for 429 errors to reduce spam
+        return null;
       } else {
         // Reset counter on non-429 errors
         this.rpc429Count = 0;
       }
 
-      // Don't log every error to avoid spam
-      if (!is429Error || this.rpc429Count <= 3) {
-        log.error('Error getting basic transaction details', { error: error.message || String(error) });
-      }
+      // Don't log every error to avoid spam - only log non-429 errors
+      log.error('Error getting basic transaction details', { error: error.message || String(error) });
       
       return null;
     }

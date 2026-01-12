@@ -246,6 +246,12 @@ export function getValidatedRpcUrl(): string {
   }
 
   // Fallback to public RPC (not recommended for production)
-  console.warn('⚠️ Using public Solana RPC. This is SLOW and rate-limited. Set HELIUS_API_KEY or RPC_URL for better performance.');
+  // Only warn once at startup, not on every call
+  if (!(global as any).rpcWarningShown) {
+    console.warn('⚠️ Using public Solana RPC. This is SLOW and rate-limited.');
+    console.warn('   Set HELIUS_API_KEY or RPC_URL environment variable for better performance.');
+    console.warn('   Get a free API key from https://helius.dev');
+    (global as any).rpcWarningShown = true;
+  }
   return 'https://api.mainnet-beta.solana.com';
 }

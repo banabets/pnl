@@ -21,7 +21,7 @@ interface Server {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>('explorer');
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [solPrice, setSolPrice] = useState<{ price: number; change24h: number } | null>(null);
@@ -711,8 +711,8 @@ function App() {
         <div className="max-w-7xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8">
           <div className="flex space-x-1 overflow-x-auto scrollbar-hide">
             {[
-              { id: 'dashboard', label: 'Dashboard' },
               { id: 'explorer', label: 'Token Explorer' },
+              { id: 'dashboard', label: 'Dashboard' },
               { id: 'portfolio', label: 'Portfolio' },
               { id: 'wallets', label: 'Wallets' },
               { id: 'pumpfun', label: 'Trade Bot' },
