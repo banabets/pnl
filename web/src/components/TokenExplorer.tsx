@@ -644,21 +644,20 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         {/* Filter Tabs */}
         <div className="flex flex-wrap gap-2">
           {[
-            { key: 'all', label: 'All Tokens', icon: '📊' },
-            { key: 'new', label: 'New (< 30m)', icon: '🆕' },
-            { key: 'graduating', label: 'Graduating', icon: '🎓' },
-            { key: 'trending', label: 'Trending', icon: '🔥' },
+            { key: 'all', label: 'All Tokens' },
+            { key: 'new', label: 'New (< 30m)' },
+            { key: 'graduating', label: 'Graduating' },
+            { key: 'trending', label: 'Trending' },
           ].map((filter) => (
             <button
               key={filter.key}
               onClick={() => setActiveFilter(filter.key as typeof activeFilter)}
               className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeFilter === filter.key
-                  ? 'bg-gradient-to-r from-primary-500 to-accent-pink text-white shadow-lg shadow-primary-500/25'
+                  ? 'bg-white text-black shadow-lg'
                   : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white border border-white/10'
               }`}
             >
-              <span className="mr-2">{filter.icon}</span>
               {filter.label}
             </button>
           ))}
