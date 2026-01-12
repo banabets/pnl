@@ -446,10 +446,75 @@ async function fetchPumpFunTokens(): Promise<any[]> {
 app.get('/api/tokens/feed', readLimiter, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
-    const tokens = await fetchPumpFunTokens();
+    const filter = (req.query.filter as string) || 'all';
+    const minLiquidity = parseFloat(req.query.minLiquidity as string) || 0;
 
-    log.info('Token feed requested', { count: tokens.length, limit });
-    res.json(tokens.slice(0, limit));
+    // Try to use tokenFeed service first (if available and started)
+    if (tokenFeed.isServiceStarted()) {
+      try {
+        const tokens = await tokenFeed.fetchTokens({
+          limit,
+          filter: filter as 'all' | 'new' | 'graduating' | 'trending' | 'safe',
+          minLiquidity,
+        });
+        
+        if (tokens && tokens.length > 0) {
+          log.info('Token feed from tokenFeed service', { count: tokens.length, limit, filter });
+          return res.json(tokens);
+        } else {
+          log.warn('tokenFeed returned empty array, falling back to pump.fun API');
+        }
+      } catch (feedError) {
+        log.warn('tokenFeed.fetchTokens failed, falling back to pump.fun API', { 
+          error: (feedError as Error).message 
+        });
+      }
+    }
+
+    // Fallback: Use the same logic as /api/pumpfun/tokens (which has multiple fallbacks)
+    // Redirect to /api/pumpfun/tokens internally by calling it
+    const offset = 0;
+    const sort = 'created_timestamp';
+    const order = 'DESC';
+    
+    log.info('Fetching tokens from pump.fun for /api/tokens/feed');
+    
+    // Method 1: Try pump.fun API first (fastest and most reliable)
+    try {
+      log.info('Trying pump.fun API (fastest method)');
+      const pumpUrl = `https://frontend-api.pump.fun/coins?offset=${offset}&limit=${limit}&sort=${sort}&order=${order}`;
+      const pumpResponse = await fetch(pumpUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (pumpResponse.ok) {
+        const pumpData = await pumpResponse.json();
+        if (Array.isArray(pumpData) && pumpData.length > 0) {
+          log.info('Found tokens from pump.fun API', { count: pumpData.length });
+          return res.json(pumpData.slice(0, limit));
+        }
+      }
+    } catch (pumpError) {
+      log.warn('pump.fun API failed, trying fallbacks', { error: (pumpError as Error).message });
+    }
+
+    // Fallback: Try fetchPumpFunTokens (uses cache)
+    try {
+      const tokens = await fetchPumpFunTokens();
+      if (tokens && tokens.length > 0) {
+        log.info('Token feed from fetchPumpFunTokens cache', { count: tokens.length, limit });
+        return res.json(tokens.slice(0, limit));
+      }
+    } catch (cacheError) {
+      log.warn('fetchPumpFunTokens failed', { error: (cacheError as Error).message });
+    }
+
+    // Final fallback: Return empty array
+    log.warn('All token feed methods failed, returning empty array');
+    res.json([]);
   } catch (error) {
     log.error('Error in /api/tokens/feed', { error: (error as Error).message, stack: (error as Error).stack });
     res.status(500).json({ error: 'Failed to fetch token feed' });
@@ -3477,9 +3542,10 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
 
     // Method 3: Try Helius API for transactions (if API key available)
     try {
-      const heliusApiKey = process.env.HELIUS_API_KEY || 'b8baac5d-2270-45ba-8324-9d7024c3f828';
-      if (heliusApiKey) {
-        log.info('Trying Helius API for transactions');
+      const heliusApiKey = process.env.HELIUS_API_KEY;
+      // Don't use hardcoded API key - only use if properly configured
+      if (heliusApiKey && heliusApiKey !== 'b8baac5d-2270-45ba-8324-9d7024c3f828' && heliusApiKey.length > 20) {
+        log.info('Trying Helius API for transactions', { keyPrefix: heliusApiKey.substring(0, 8) });
         const heliusUrl = `https://api.helius.xyz/v0/addresses/${mint}/transactions?api-key=${heliusApiKey}&limit=${limit}`;
         const heliusResponse = await fetch(heliusUrl, {
           headers: { 'Accept': 'application/json' },
@@ -3637,202 +3703,231 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
     }
 
     // Method 6: Try to get trades from bonding curve (on-chain)
-    const { Connection, PublicKey } = require('@solana/web3.js');
+    // Only try if we have a valid RPC (not public rate-limited)
     const rpcUrl = process.env.RPC_URL || getValidatedRpcUrl();
-    const connection = new Connection(rpcUrl, 'confirmed');
-    const mintPubkey = new PublicKey(mint);
-    const PUMP_FUN_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
-
-    let signatures: any[] = [];
+    const isPublicRpc = rpcUrl.includes('api.mainnet-beta.solana.com') && !rpcUrl.includes('helius-rpc.com');
     
-    try {
-      // Find bonding curve account
-      const [bondingCurve] = PublicKey.findProgramAddressSync(
-        [Buffer.from('bonding-curve'), mintPubkey.toBuffer()],
-        PUMP_FUN_PROGRAM
-      );
-      
-      // Get signatures for bonding curve (where trades happen)
-      const bondingCurveSigs = await connection.getSignaturesForAddress(bondingCurve, { limit: limit * 3 });
-      log.info('Found transactions on bonding curve', { count: bondingCurveSigs.length });
-      signatures = bondingCurveSigs;
-    } catch (bondingError) {
-      log.warn('Could not get bonding curve, trying mint address', { error: (bondingError as Error).message });
-      // Fallback to mint address
+    if (isPublicRpc) {
+      log.warn('Skipping on-chain method due to public RPC rate limits. Set HELIUS_API_KEY for better results.');
+    } else {
       try {
-        const mintSigs = await connection.getSignaturesForAddress(mintPubkey, { limit: limit * 2 });
-        log.info('Found transactions on mint address', { count: mintSigs.length });
-        signatures = mintSigs;
-      } catch (mintError) {
-        log.error('Could not get mint signatures', { error: (mintError as Error).message });
-      }
-    }
+        const { Connection, PublicKey } = require('@solana/web3.js');
+        const connection = new Connection(rpcUrl, 'confirmed');
+        const mintPubkey = new PublicKey(mint);
+        const PUMP_FUN_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
 
-    log.info('Using transactions to parse trades', { count: signatures.length });
-
-    if (signatures.length === 0) {
-      log.warn('No transactions found after trying all methods');
-      return res.json([]);
-    }
-
-    const trades: any[] = [];
-
-    for (const sig of signatures) {
-      if (trades.length >= limit) break;
-
-      try {
-        const tx = await connection.getTransaction(sig.signature, {
-          commitment: 'confirmed',
-          maxSupportedTransactionVersion: 0,
-        });
-
-        if (!tx?.meta || tx.meta.err) continue;
-
-        const preBalances = tx.meta.preBalances || [];
-        const postBalances = tx.meta.postBalances || [];
-        const preTokenBalances = tx.meta.preTokenBalances || [];
-        const postTokenBalances = tx.meta.postTokenBalances || [];
-
-        // SIMPLE APPROACH: Use SOL changes to determine BUY vs SELL
-        // In pump.fun, the SIGNER (first account) is the trader
-        // - BUY: Signer spends SOL (negative change) to get tokens
-        // - SELL: Signer receives SOL (positive change) for selling tokens
-
-        // 1. Get token amount traded (ignore bonding curve with huge balances)
-        let tokenAmount = 0;
-        for (const post of postTokenBalances) {
-          if (post.mint !== mint) continue;
-          const pre = preTokenBalances.find((p: any) =>
-            p.mint === mint && p.accountIndex === post.accountIndex
+        let signatures: any[] = [];
+        
+        try {
+          // Find bonding curve account
+          const [bondingCurve] = PublicKey.findProgramAddressSync(
+            [Buffer.from('bonding-curve'), mintPubkey.toBuffer()],
+            PUMP_FUN_PROGRAM
           );
-          const preAmt = pre ? parseFloat(pre.uiTokenAmount?.uiAmountString || '0') : 0;
-          const postAmt = parseFloat(post.uiTokenAmount?.uiAmountString || '0');
-
-          // Skip bonding curve (has billions of tokens)
-          if (preAmt > 500000000 || postAmt > 500000000) continue;
-
-          const change = Math.abs(postAmt - preAmt);
-          if (change > tokenAmount) {
-            tokenAmount = change;
+          
+          // Get signatures for bonding curve (where trades happen)
+          log.info('Fetching signatures from bonding curve', { bondingCurve: bondingCurve.toBase58() });
+          const bondingCurveSigs = await connection.getSignaturesForAddress(bondingCurve, { limit: limit * 3 });
+          log.info('Found transactions on bonding curve', { count: bondingCurveSigs.length });
+          signatures = bondingCurveSigs;
+        } catch (bondingError: any) {
+          log.warn('Could not get bonding curve, trying mint address', { 
+            error: bondingError.message,
+            code: bondingError.code 
+          });
+          // Fallback to mint address
+          try {
+            const mintSigs = await connection.getSignaturesForAddress(mintPubkey, { limit: limit * 2 });
+            log.info('Found transactions on mint address', { count: mintSigs.length });
+            signatures = mintSigs;
+          } catch (mintError: any) {
+            log.error('Could not get mint signatures', { 
+              error: mintError.message,
+              code: mintError.code 
+            });
           }
         }
 
-        // Check for new token accounts (first time buyers)
-        if (tokenAmount === 0) {
-          for (const post of postTokenBalances) {
-            if (post.mint !== mint) continue;
-            const postAmt = parseFloat(post.uiTokenAmount?.uiAmountString || '0');
-            if (postAmt > 500000000) continue; // Skip bonding curve
-            const pre = preTokenBalances.find((p: any) =>
-              p.mint === mint && p.accountIndex === post.accountIndex
-            );
-            if (!pre && postAmt > 0) {
-              tokenAmount = postAmt;
-              break;
+        log.info('Using transactions to parse trades', { count: signatures.length });
+
+        if (signatures.length === 0) {
+          log.warn('No transactions found for on-chain method');
+          // Continue to return empty array below
+        } else {
+          const trades: any[] = [];
+
+          for (const sig of signatures) {
+            if (trades.length >= limit) break;
+
+            try {
+              const tx = await connection.getTransaction(sig.signature, {
+                commitment: 'confirmed',
+                maxSupportedTransactionVersion: 0,
+              });
+
+              if (!tx?.meta || tx.meta.err) continue;
+
+              const preBalances = tx.meta.preBalances || [];
+              const postBalances = tx.meta.postBalances || [];
+              const preTokenBalances = tx.meta.preTokenBalances || [];
+              const postTokenBalances = tx.meta.postTokenBalances || [];
+
+              // SIMPLE APPROACH: Use SOL changes to determine BUY vs SELL
+              // In pump.fun, the SIGNER (first account) is the trader
+              // - BUY: Signer spends SOL (negative change) to get tokens
+              // - SELL: Signer receives SOL (positive change) for selling tokens
+
+              // 1. Get token amount traded (ignore bonding curve with huge balances)
+              let tokenAmount = 0;
+              for (const post of postTokenBalances) {
+                if (post.mint !== mint) continue;
+                const pre = preTokenBalances.find((p: any) =>
+                  p.mint === mint && p.accountIndex === post.accountIndex
+                );
+                const preAmt = pre ? parseFloat(pre.uiTokenAmount?.uiAmountString || '0') : 0;
+                const postAmt = parseFloat(post.uiTokenAmount?.uiAmountString || '0');
+
+                // Skip bonding curve (has billions of tokens)
+                if (preAmt > 500000000 || postAmt > 500000000) continue;
+
+                const change = Math.abs(postAmt - preAmt);
+                if (change > tokenAmount) {
+                  tokenAmount = change;
+                }
+              }
+
+              // Check for new token accounts (first time buyers)
+              if (tokenAmount === 0) {
+                for (const post of postTokenBalances) {
+                  if (post.mint !== mint) continue;
+                  const postAmt = parseFloat(post.uiTokenAmount?.uiAmountString || '0');
+                  if (postAmt > 500000000) continue; // Skip bonding curve
+                  const pre = preTokenBalances.find((p: any) =>
+                    p.mint === mint && p.accountIndex === post.accountIndex
+                  );
+                  if (!pre && postAmt > 0) {
+                    tokenAmount = postAmt;
+                    break;
+                  }
+                }
+              }
+
+              if (tokenAmount < 1) continue; // Skip if no significant token change
+
+              // 2. Analyze SOL changes to determine direction
+              // Account 0 is typically the signer/fee payer/trader
+              const signerSolChange = (postBalances[0] - preBalances[0]) / 1e9;
+
+              // Find ALL significant SOL changes
+              let totalSolSpent = 0;   // Negative changes (someone buying)
+              let totalSolReceived = 0; // Positive changes (someone selling)
+
+              for (let i = 0; i < Math.min(preBalances.length, postBalances.length, 10); i++) {
+                const change = (postBalances[i] - preBalances[i]) / 1e9;
+                // Ignore tiny changes (fees, rent) - only count > 0.0005 SOL
+                if (change < -0.0005) {
+                  totalSolSpent += Math.abs(change);
+                } else if (change > 0.0005) {
+                  totalSolReceived += change;
+                }
+              }
+
+              // 3. Determine BUY or SELL
+              let side: 'buy' | 'sell';
+              let solAmount: number;
+
+              // Use signer's change as primary indicator
+              if (signerSolChange < -0.0005) {
+                // Signer LOST SOL = they are BUYING tokens
+                side = 'buy';
+                solAmount = Math.abs(signerSolChange);
+              } else if (signerSolChange > 0.0005) {
+                // Signer GAINED SOL = they are SELLING tokens
+                side = 'sell';
+                solAmount = signerSolChange;
+              } else {
+                // Signer change unclear, use total flow
+                if (totalSolSpent > totalSolReceived + 0.001) {
+                  side = 'buy';
+                  solAmount = totalSolSpent;
+                } else if (totalSolReceived > totalSolSpent + 0.001) {
+                  side = 'sell';
+                  solAmount = totalSolReceived;
+                } else {
+                  continue; // Can't determine direction
+                }
+              }
+
+              // Use better SOL amount if available
+              if (solAmount < 0.0001) {
+                solAmount = Math.max(totalSolSpent, totalSolReceived);
+              }
+
+              // Skip if values don't make sense
+              if (solAmount < 0.0001 || tokenAmount < 0.0001) continue;
+
+              const price = tokenAmount > 0 ? solAmount / tokenAmount : 0;
+
+              trades.push({
+                signature: sig.signature,
+                timestamp: sig.blockTime || Math.floor(Date.now() / 1000),
+                price,
+                amount: tokenAmount,
+                tokenAmount,
+                side,
+                buyer: side === 'buy' ? 'trader' : '',
+                seller: side === 'sell' ? 'trader' : '',
+                solAmount,
+              });
+
+              // Small delay to avoid rate limiting (only if using public RPC)
+              if (isPublicRpc) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+              } else {
+                await new Promise(resolve => setTimeout(resolve, 50));
+              }
+
+            } catch (txError: any) {
+              // Log first few errors for debugging
+              if (trades.length === 0 && signatures.indexOf(sig) < 3) {
+                log.warn('Error parsing transaction', { 
+                  signature: sig.signature,
+                  error: txError.message,
+                  code: txError.code 
+                });
+              }
+              continue;
             }
           }
-        }
 
-        if (tokenAmount < 1) continue; // Skip if no significant token change
-
-        // 2. Analyze SOL changes to determine direction
-        // Account 0 is typically the signer/fee payer/trader
-        const signerSolChange = (postBalances[0] - preBalances[0]) / 1e9;
-
-        // Find ALL significant SOL changes
-        let totalSolSpent = 0;   // Negative changes (someone buying)
-        let totalSolReceived = 0; // Positive changes (someone selling)
-
-        for (let i = 0; i < Math.min(preBalances.length, postBalances.length, 10); i++) {
-          const change = (postBalances[i] - preBalances[i]) / 1e9;
-          // Ignore tiny changes (fees, rent) - only count > 0.0005 SOL
-          if (change < -0.0005) {
-            totalSolSpent += Math.abs(change);
-          } else if (change > 0.0005) {
-            totalSolReceived += change;
+          log.info('Parsed trades from on-chain method', { count: trades.length });
+          
+          if (trades.length > 0) {
+            return res.json(trades);
           }
         }
-
-        // 3. Determine BUY or SELL
-        let side: 'buy' | 'sell';
-        let solAmount: number;
-
-        // Use signer's change as primary indicator
-        if (signerSolChange < -0.0005) {
-          // Signer LOST SOL = they are BUYING tokens
-          side = 'buy';
-          solAmount = Math.abs(signerSolChange);
-        } else if (signerSolChange > 0.0005) {
-          // Signer GAINED SOL = they are SELLING tokens
-          side = 'sell';
-          solAmount = signerSolChange;
-        } else {
-          // Signer change unclear, use total flow
-          if (totalSolSpent > totalSolReceived + 0.001) {
-            side = 'buy';
-            solAmount = totalSolSpent;
-          } else if (totalSolReceived > totalSolSpent + 0.001) {
-            side = 'sell';
-            solAmount = totalSolReceived;
-          } else {
-            continue; // Can't determine direction
-          }
-        }
-
-        // Use better SOL amount if available
-        if (solAmount < 0.0001) {
-          solAmount = Math.max(totalSolSpent, totalSolReceived);
-        }
-
-        log.info('Trade detected', {
-          side: side.toUpperCase(),
-          solAmount,
-          tokenAmount,
-          signerSolChange,
-          totalSolSpent,
-          totalSolReceived
+      } catch (onChainError: any) {
+        log.error('On-chain method failed', { 
+          error: onChainError.message,
+          code: onChainError.code 
         });
-
-        // Skip if values don't make sense
-        if (solAmount < 0.0001 || tokenAmount < 0.0001) continue;
-
-        const price = tokenAmount > 0 ? solAmount / tokenAmount : 0;
-
-        log.info('Trade confirmed', {
-          side: side.toUpperCase(),
-          solAmount,
-          tokenAmount
-        });
-
-        trades.push({
-          signature: sig.signature,
-          timestamp: sig.blockTime || Math.floor(Date.now() / 1000),
-          price,
-          amount: tokenAmount,
-          tokenAmount,
-          side,
-          buyer: side === 'buy' ? 'trader' : '',
-          seller: side === 'sell' ? 'trader' : '',
-          solAmount,
-        });
-
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-      } catch (txError) {
-        continue;
       }
     }
 
-    log.info('Returning trades', { count: trades.length });
+    // If we get here, all methods failed
+    log.warn('No trades found after trying all methods', { 
+      mint,
+      methodsTried: [
+        'pump.fun API',
+        'pump.fun API (alt)',
+        'Helius API',
+        'Real-time listener',
+        'PumpFunTransactionParser',
+        isPublicRpc ? 'On-chain (skipped - public RPC)' : 'On-chain'
+      ]
+    });
     
-    // If no trades found, return empty array with a message
-    if (trades.length === 0) {
-      log.warn('No trades found after trying all methods', { mint });
-      return res.json([]);
-    }
-    
-    return res.json(trades);
+    return res.json([]);
 
   } catch (error) {
     log.error('Get trades error', { error: (error as Error).message, stack: (error as Error).stack });
