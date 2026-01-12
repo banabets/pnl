@@ -27,7 +27,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
 
     if (socket) {
       socket.on('launchpad:created', (data) => {
-        alert(`Token lanzado exitosamente! Mint: ${data.mint}`);
+        alert(`Token launched successfully! Mint: ${data.mint}`);
         setLaunchResult(data);
       });
     }
@@ -54,9 +54,9 @@ export default function Launchpad({ socket }: LaunchpadProps) {
 
     // Client-side validation
     const validationErrors: string[] = [];
-    if (!formData.name.trim()) validationErrors.push('El nombre es requerido');
-    if (!formData.symbol.trim()) validationErrors.push('El símbolo es requerido');
-    if (!formData.description.trim()) validationErrors.push('La descripción es requerida');
+    if (!formData.name.trim()) validationErrors.push('Name is required');
+    if (!formData.symbol.trim()) validationErrors.push('Symbol is required');
+    if (!formData.description.trim()) validationErrors.push('Description is required');
 
     if (validationErrors.length > 0) {
       setErrors(validationErrors);
@@ -64,7 +64,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
     }
 
     if (!masterWallet?.exists) {
-      alert('Necesitas crear una Master Wallet primero');
+      alert('You need to create a Master Wallet first');
       return;
     }
 
@@ -74,7 +74,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
 
       if (res.data.success) {
         setLaunchResult(res.data);
-        alert(`¡Token lanzado exitosamente!\n\nMint: ${res.data.mint}\nNombre: ${formData.name}\nSímbolo: ${formData.symbol}`);
+        alert(`Token launched successfully!\n\nMint: ${res.data.mint}\nName: ${formData.name}\nSymbol: ${formData.symbol}`);
 
         // Reset form
         setFormData({
@@ -87,13 +87,13 @@ export default function Launchpad({ socket }: LaunchpadProps) {
           initialBuy: 0,
         });
       } else {
-        setErrors([res.data.error || 'Error desconocido']);
+        setErrors([res.data.error || 'Unknown error']);
       }
     } catch (error: any) {
       const errorMsg = error.response?.data?.error || error.message;
       const errorList = error.response?.data?.errors || [errorMsg];
       setErrors(errorList);
-      alert('Error al lanzar token: ' + errorMsg);
+      alert('Error launching token: ' + errorMsg);
     } finally {
       setIsLaunching(false);
     }
@@ -103,7 +103,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
     <div className="space-y-6">
       <div className="bg-black rounded-lg p-6 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
         <h2 className="text-3xl font-bold text-white mb-2">Token Launchpad</h2>
-        <p className="text-white/60 text-sm mb-6">Lanza tu propio token en Pump.fun con un solo click</p>
+        <p className="text-white/60 text-sm mb-6">Launch your own token on Pump.fun with one click</p>
 
         {/* Master Wallet Status */}
         <div className="mb-6 bg-black/50 rounded-lg p-4 border border-white/15">
@@ -113,11 +113,11 @@ export default function Launchpad({ socket }: LaunchpadProps) {
               <div className="text-white font-medium">
                 {masterWallet?.exists ? (
                   <>
-                    <span className="text-green-400">✓ Conectada</span>
+                    <span className="text-green-400">✓ Connected</span>
                     <span className="text-white/60 ml-3 text-sm">{masterWallet.balance?.toFixed(4)} SOL</span>
                   </>
                 ) : (
-                  <span className="text-red-400">✗ No configurada</span>
+                  <span className="text-red-400">✗ Not configured</span>
                 )}
               </div>
             </div>
@@ -127,18 +127,18 @@ export default function Launchpad({ socket }: LaunchpadProps) {
         {/* Launch Result */}
         {launchResult && (
           <div className="mb-6 bg-green-500/10 border border-green-500/30 rounded-lg p-4">
-            <div className="text-green-400 font-semibold mb-2">🎉 Token Lanzado Exitosamente</div>
+            <div className="text-green-400 font-semibold mb-2">🎉 Token Launched Successfully</div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-white/60">Mint:</span>
                 <span className="text-green-300 font-mono">{launchResult.mint}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-white/60">Nombre:</span>
+                <span className="text-white/60">Name:</span>
                 <span className="text-white">{launchResult.metadata?.name}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-white/60">Símbolo:</span>
+                <span className="text-white/60">Symbol:</span>
                 <span className="text-white">{launchResult.metadata?.symbol}</span>
               </div>
               {launchResult.signature && (
@@ -158,7 +158,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
         {/* Errors */}
         {errors.length > 0 && (
           <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-            <div className="text-red-400 font-semibold mb-2">⚠️ Errores</div>
+            <div className="text-red-400 font-semibold mb-2">⚠️ Errors</div>
             <ul className="text-sm text-red-300 space-y-1 list-disc list-inside">
               {errors.map((error, i) => (
                 <li key={i}>{error}</li>
@@ -172,18 +172,18 @@ export default function Launchpad({ socket }: LaunchpadProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-white/80 text-sm font-medium mb-2">
-                Nombre del Token <span className="text-red-400">*</span>
+                Token Name <span className="text-red-400">*</span>
               </label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 disabled={isLaunching}
-                placeholder="Ej: My Awesome Token"
+                placeholder="Ex: My Awesome Token"
                 maxLength={32}
                 className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
               />
-              <div className="text-xs text-white/40 mt-1">{formData.name.length}/32 caracteres</div>
+              <div className="text-xs text-white/40 mt-1">{formData.name.length}/32 characters</div>
             </div>
 
             <div>
@@ -195,33 +195,33 @@ export default function Launchpad({ socket }: LaunchpadProps) {
                 value={formData.symbol}
                 onChange={(e) => setFormData({ ...formData, symbol: e.target.value.toUpperCase() })}
                 disabled={isLaunching}
-                placeholder="Ej: MAT"
+                placeholder="Ex: MAT"
                 maxLength={10}
                 className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50 uppercase"
               />
-              <div className="text-xs text-white/40 mt-1">{formData.symbol.length}/10 caracteres</div>
+              <div className="text-xs text-white/40 mt-1">{formData.symbol.length}/10 characters</div>
             </div>
           </div>
 
           <div>
             <label className="block text-white/80 text-sm font-medium mb-2">
-              Descripción <span className="text-red-400">*</span>
+              Description <span className="text-red-400">*</span>
             </label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               disabled={isLaunching}
-              placeholder="Describe tu token, su propósito, utilidad, etc."
+              placeholder="Describe your token, its purpose, utility, etc."
               maxLength={1000}
               rows={4}
               className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50 resize-none"
             />
-            <div className="text-xs text-white/40 mt-1">{formData.description.length}/1000 caracteres</div>
+            <div className="text-xs text-white/40 mt-1">{formData.description.length}/1000 characters</div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">Twitter (opcional)</label>
+              <label className="block text-white/80 text-sm font-medium mb-2">Twitter (optional)</label>
               <input
                 type="url"
                 value={formData.twitter}
@@ -233,7 +233,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
             </div>
 
             <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">Telegram (opcional)</label>
+              <label className="block text-white/80 text-sm font-medium mb-2">Telegram (optional)</label>
               <input
                 type="url"
                 value={formData.telegram}
@@ -245,7 +245,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
             </div>
 
             <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">Website (opcional)</label>
+              <label className="block text-white/80 text-sm font-medium mb-2">Website (optional)</label>
               <input
                 type="url"
                 value={formData.website}
@@ -259,7 +259,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
 
           <div>
             <label className="block text-white/80 text-sm font-medium mb-2">
-              Compra Inicial (SOL) - Opcional
+              Initial Buy (SOL) - Optional
             </label>
             <input
               type="number"
@@ -272,7 +272,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
               className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
             />
             <div className="text-xs text-white/40 mt-1">
-              Cantidad de SOL para comprar tokens inmediatamente después de lanzar
+              Amount of SOL to buy tokens immediately after launching
             </div>
           </div>
 
@@ -282,19 +282,19 @@ export default function Launchpad({ socket }: LaunchpadProps) {
             disabled={isLaunching || !masterWallet?.exists || !formData.name || !formData.symbol || !formData.description}
             className="w-full px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-lg rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
           >
-            {isLaunching ? '🚀 Lanzando Token...' : '🚀 Lanzar Token en Pump.fun'}
+            {isLaunching ? '🚀 Launching Token...' : '🚀 Launch Token on Pump.fun'}
           </button>
         </div>
 
         {/* Info Box */}
         <div className="mt-6 bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-          <div className="text-blue-400 font-semibold mb-2">ℹ️ Información</div>
+          <div className="text-blue-400 font-semibold mb-2">ℹ️ Information</div>
           <ul className="text-sm text-blue-300 space-y-1 list-disc list-inside">
-            <li>El token se crea automáticamente en Pump.fun</li>
-            <li>Se usa tu Master Wallet como creador del token</li>
-            <li>Puedes hacer una compra inicial para generar liquidez</li>
-            <li>Los tokens de Pump.fun usan el modelo de bonding curve</li>
-            <li>El costo aproximado es ~0.02 SOL para crear el token</li>
+            <li>The token is automatically created on Pump.fun</li>
+            <li>Your Master Wallet is used as the token creator</li>
+            <li>You can make an initial buy to generate liquidity</li>
+            <li>Pump.fun tokens use the bonding curve model</li>
+            <li>The approximate cost is ~0.02 SOL to create the token</li>
           </ul>
         </div>
       </div>
