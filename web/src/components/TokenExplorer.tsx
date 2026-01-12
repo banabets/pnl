@@ -288,6 +288,17 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   const [sortBy, setSortBy] = useState<'marketCap' | 'volume' | 'age' | 'priceChange'>('marketCap');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
+  // Risk analysis
+  const [riskAnalyses, setRiskAnalyses] = useState<Map<string, any>>(new Map());
+
+  // Load risk analyses when tokens change
+  useEffect(() => {
+    if (tokens.length > 0) {
+      const mints = tokens.map(t => t.mint);
+      loadRiskAnalyses(mints);
+    }
+  }, [tokens.length]); // Only reload when token count changes
+
   useEffect(() => {
     loadTokens();
 
@@ -610,6 +621,43 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         });
       }
       setPriceData(prices);
+    }
+  };
+
+  const loadRiskAnalyses = async (tokenMints: string[]) => {
+    if (tokenMints.length === 0) return;
+
+    try {
+      // Load risk analyses in batch (max 20 at a time)
+      const batches = [];
+      for (let i = 0; i < tokenMints.length; i += 20) {
+        batches.push(tokenMints.slice(i, i + 20));
+      }
+
+      for (const batch of batches) {
+        try {
+          const response = await api.post('/tokens/risk/batch', { mints: batch });
+
+          if (response.data) {
+            setRiskAnalyses(prev => {
+              const newMap = new Map(prev);
+              Object.entries(response.data).forEach(([mint, analysis]) => {
+                newMap.set(mint, analysis);
+              });
+              return newMap;
+            });
+          }
+        } catch (error) {
+          console.error('Failed to load risk analysis batch:', error);
+        }
+
+        // Wait a bit between batches to avoid overwhelming the API
+        if (batches.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load risk analyses:', error);
     }
   };
 
@@ -973,24 +1021,44 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
               >
                 {/* Badges */}
                 <div className="flex flex-wrap gap-1 mb-2">
+                  {(() => {
+                    const risk = riskAnalyses.get(token.mint);
+                    if (risk) {
+                      if (risk.riskLevel === 'safe') {
+                        return (
+                          <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] font-semibold rounded-full border border-green-500/30" title={`Risk Score: ${risk.overallScore}/100`}>
+                            🟢 SAFE
+                          </span>
+                        );
+                      } else if (risk.riskLevel === 'medium') {
+                        return (
+                          <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-[10px] font-semibold rounded-full border border-yellow-500/30" title={`Risk Score: ${risk.overallScore}/100`}>
+                            🟡 MEDIUM RISK
+                          </span>
+                        );
+                      } else if (risk.riskLevel === 'high') {
+                        return (
+                          <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-semibold rounded-full border border-red-500/30" title={`Risk Score: ${risk.overallScore}/100`}>
+                            🔴 HIGH RISK
+                          </span>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
                   {token.isNew && (
-                    <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] font-semibold rounded-full border border-green-500/30">
+                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-semibold rounded-full border border-blue-500/30">
                       NEW
                     </span>
                   )}
                   {token.isGraduating && (
-                    <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-[10px] font-semibold rounded-full border border-yellow-500/30">
+                    <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-semibold rounded-full border border-purple-500/30">
                       GRADUATING
                     </span>
                   )}
                   {token.isTrending && (
                     <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-semibold rounded-full border border-orange-500/30">
                       TRENDING
-                    </span>
-                  )}
-                  {token.riskScore !== undefined && token.riskScore < 30 && (
-                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-semibold rounded-full border border-blue-500/30">
-                      SAFE
                     </span>
                   )}
                   {token.dexId && (

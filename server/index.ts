@@ -186,6 +186,7 @@ import { priceAlertManager } from './price-alerts';
 
 // Jupiter Aggregator & Token Audit
 import { JupiterService, initJupiterService, getJupiterService } from './jupiter-service';
+import { riskAnalysisService } from './risk-analysis-service';
 import { TokenAuditService, initTokenAuditService, getTokenAuditService } from './token-audit';
 import { TradingFee, Subscription, Referral } from './database';
 
@@ -615,6 +616,72 @@ app.get('/api/tokens/trending', readLimiter, async (req, res) => {
   } catch (error) {
     log.error('Error in /api/tokens/trending', { error: (error as Error).message });
     res.status(500).json({ error: 'Failed to fetch trending tokens' });
+  }
+});
+
+// /api/tokens/:mint/risk - Get risk analysis for a token
+app.get('/api/tokens/:mint/risk', readLimiter, async (req, res) => {
+  try {
+    const { mint } = req.params;
+
+    if (!mint || mint.length < 32) {
+      return res.status(400).json({ error: 'Invalid mint address' });
+    }
+
+    log.info('Risk analysis requested', { mint });
+
+    const analysis = await riskAnalysisService.analyzeToken(mint);
+
+    log.info('Risk analysis completed', {
+      mint,
+      score: analysis.overallScore,
+      riskLevel: analysis.riskLevel,
+      warningsCount: analysis.warnings.length,
+    });
+
+    res.json(analysis);
+  } catch (error) {
+    log.error('Error in /api/tokens/:mint/risk', {
+      mint: req.params.mint,
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+    });
+    res.status(500).json({ error: 'Failed to analyze token risk' });
+  }
+});
+
+// /api/tokens/risk/batch - Batch risk analysis for multiple tokens
+app.post('/api/tokens/risk/batch', readLimiter, async (req, res) => {
+  try {
+    const { mints } = req.body;
+
+    if (!Array.isArray(mints) || mints.length === 0) {
+      return res.status(400).json({ error: 'Invalid mints array' });
+    }
+
+    if (mints.length > 20) {
+      return res.status(400).json({ error: 'Maximum 20 tokens per batch request' });
+    }
+
+    log.info('Batch risk analysis requested', { count: mints.length });
+
+    const analyses = await riskAnalysisService.analyzeTokensBatch(mints);
+
+    log.info('Batch risk analysis completed', { count: analyses.size });
+
+    // Convert Map to object for JSON response
+    const result: Record<string, any> = {};
+    analyses.forEach((analysis, mint) => {
+      result[mint] = analysis;
+    });
+
+    res.json(result);
+  } catch (error) {
+    log.error('Error in /api/tokens/risk/batch', {
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+    });
+    res.status(500).json({ error: 'Failed to analyze tokens risk' });
   }
 });
 
