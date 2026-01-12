@@ -381,24 +381,38 @@ async function fetchPumpFunTokens(): Promise<any[]> {
         // Filter and enrich tokens - transform to frontend format
         const enrichedTokens = data
           .filter((token: any) => {
-            const name = (token.name || '').toLowerCase().trim();
-            const symbol = (token.symbol || '').toLowerCase().trim();
-            const isGeneric = name === 'pump.fun' || name === 'pump fun' || symbol === 'pumpfun';
-            return !isGeneric;
+            // Only filter out completely invalid tokens
+            // Keep tokens even if they have generic names - just ensure they have a mint
+            return token.mint && token.mint.length > 0;
           })
           .map((token: any) => {
             const createdTimestamp = token.created_timestamp || 0;
             const now = Date.now() / 1000;
             const ageSeconds = now - createdTimestamp;
 
+            // Generate better fallback names and images
+            const hasName = token.name && token.name.trim().length > 0;
+            const hasSymbol = token.symbol && token.symbol.trim().length > 0;
+            const hasImage = token.image_uri && token.image_uri.trim().length > 0;
+
+            // Create a readable name from whatever data is available
+            let displayName = hasName ? token.name :
+                            hasSymbol ? token.symbol :
+                            `New Token`;
+
+            // Create symbol from name if missing
+            let displaySymbol = hasSymbol ? token.symbol :
+                              hasName ? token.name.substring(0, 6).toUpperCase() :
+                              `TOKEN`;
+
             return {
               // Keep original pump.fun format for compatibility
               ...token,
               // Add frontend-expected camelCase fields
               mint: token.mint,
-              name: (token.name && token.name.length > 2) ? token.name : (token.symbol || `Token ${token.mint?.substring(0, 8) || 'Unknown'}`),
-              symbol: token.symbol || 'UNK',
-              imageUrl: token.image_uri || '',
+              name: displayName,
+              symbol: displaySymbol,
+              imageUrl: hasImage ? token.image_uri : 'https://via.placeholder.com/40?text=' + displaySymbol.substring(0, 2),
               marketCap: token.usd_market_cap || token.market_cap || 0,
               createdAt: createdTimestamp * 1000, // Convert to milliseconds
               liquidity: token.liquidity || 0,
@@ -446,7 +460,7 @@ async function fetchPumpFunTokens(): Promise<any[]> {
 // /api/tokens/feed - General token feed
 app.get('/api/tokens/feed', readLimiter, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
     const filter = (req.query.filter as string) || 'all';
     const minLiquidity = parseFloat(req.query.minLiquidity as string) || 0;
 
@@ -525,7 +539,7 @@ app.get('/api/tokens/feed', readLimiter, async (req, res) => {
 // /api/tokens/new - New tokens (< 30 minutes old)
 app.get('/api/tokens/new', readLimiter, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
 
     // Try to use tokenFeed service first
     if (tokenFeed.isServiceStarted()) {
@@ -560,7 +574,7 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
 // /api/tokens/graduating - Tokens near bonding curve completion
 app.get('/api/tokens/graduating', readLimiter, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
 
     // Try to use tokenFeed service first
     if (tokenFeed.isServiceStarted()) {
@@ -593,7 +607,7 @@ app.get('/api/tokens/graduating', readLimiter, async (req, res) => {
 // /api/tokens/trending - High volume tokens
 app.get('/api/tokens/trending', readLimiter, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
 
     // Try to use tokenFeed service first
     if (tokenFeed.isServiceStarted()) {
@@ -2531,7 +2545,7 @@ app.get('/api/volume/status', async (req, res) => {
 app.get('/api/pumpfun/tokens', async (req, res) => {
   try {
     const offset = parseInt(req.query.offset as string) || 0;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
     const sort = req.query.sort as string || 'created_timestamp';
     const order = req.query.order as string || 'DESC';
     
@@ -3343,7 +3357,7 @@ app.get('/api/pumpfun/test-websockets', async (req, res) => {
 app.get('/api/pumpfun/tokens-api', async (req, res) => {
   try {
     const offset = parseInt(req.query.offset as string) || 0;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
     const sort = req.query.sort as string || 'created_timestamp';
     const order = req.query.order as string || 'DESC';
 
@@ -4006,7 +4020,7 @@ app.get('/api/pumpfun/token/:mint/trades', async (req, res) => {
 app.get('/api/pumpfun/token/:mint/trades-old', async (req, res) => {
   try {
     const { mint } = req.params;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
     log.info('OLD: Fetching recent trades', { mint });
 
     // Method 1: Try pump.fun API for trades (most accurate for pump.fun tokens)
@@ -5586,7 +5600,7 @@ app.get('/api/fees/summary', authenticateToken, async (req: AuthenticatedRequest
 app.get('/api/fees/history', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.userId;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
 
     const fees = await TradingFee.find({ userId })
       .sort({ timestamp: -1 })
@@ -5679,7 +5693,7 @@ app.post('/api/sniper/disable', authenticateToken, async (req: AuthenticatedRequ
 // Get snipe history
 app.get('/api/sniper/history', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
     const history = await sniperBot.getHistory(req.userId!, limit);
     res.json(history);
   } catch (error: any) {
@@ -5848,7 +5862,7 @@ app.put('/api/copy/follow/:walletAddress', authenticateToken, async (req: Authen
 // Get copy trade history
 app.get('/api/copy/history', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 100;
     const history = await copyTradingService.getCopyHistory(req.userId!, limit);
     res.json(history);
   } catch (error: any) {

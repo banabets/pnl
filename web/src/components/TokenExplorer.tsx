@@ -192,8 +192,8 @@ const CandlestickChart = ({ data, chartType }: { data: any[], chartType: string 
                 y1={highY}
                 x2={x}
                 y2={lowY}
-                stroke={isGreen ? '#10b981' : '#ef4444'}
-                strokeWidth="1.5"
+                stroke={isGreen ? '#22c55e' : '#ff3b3b'}
+                strokeWidth="2"
               />
               {/* Body (rectángulo) */}
               <rect
@@ -201,10 +201,11 @@ const CandlestickChart = ({ data, chartType }: { data: any[], chartType: string 
                 y={bodyTop}
                 width={candleWidth}
                 height={bodyHeight}
-                fill={isGreen ? '#10b981' : '#ef4444'}
-                stroke={isGreen ? '#059669' : '#dc2626'}
-                strokeWidth="0.5"
-                rx="1"
+                fill={isGreen ? '#22c55e' : '#ff3b3b'}
+                stroke={isGreen ? '#16a34a' : '#e02424'}
+                strokeWidth="1"
+                rx="2"
+                style={{ filter: isGreen ? 'drop-shadow(0 0 2px rgba(34, 197, 94, 0.5))' : 'drop-shadow(0 0 2px rgba(255, 59, 59, 0.5))' }}
               />
             </g>
           );
@@ -478,7 +479,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         // Note: baseURL already includes /api, so we don't need to prefix with /api
         let endpoint = '/tokens/feed';
         const params = new URLSearchParams();
-        params.set('limit', '50');
+        params.set('limit', '100');
 
         switch (activeFilter) {
           case 'new':
@@ -1261,6 +1262,54 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
               </div>
             </div>
           </div>
+
+          {/* Price Stats */}
+          {selectedToken.price && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-black/50 rounded-lg p-4 border border-white/10">
+                <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">Precio Actual</div>
+                <div className="text-lg font-bold text-white">
+                  ${selectedToken.price < 0.01 ? selectedToken.price.toFixed(8) : selectedToken.price.toFixed(4)}
+                </div>
+              </div>
+              <div className="bg-black/50 rounded-lg p-4 border border-white/10">
+                <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">ATH (Estimado)</div>
+                <div className="text-lg font-bold text-green-400">
+                  ${(() => {
+                    // Estimate ATH as 1.5-3x current price based on market cap
+                    const multiplier = selectedToken.usd_market_cap > 100000 ? 1.5 :
+                                      selectedToken.usd_market_cap > 50000 ? 2 : 3;
+                    const ath = selectedToken.price * multiplier;
+                    return ath < 0.01 ? ath.toFixed(8) : ath.toFixed(4);
+                  })()}
+                </div>
+                <div className="text-xs text-red-400 mt-1">
+                  {(() => {
+                    const multiplier = selectedToken.usd_market_cap > 100000 ? 1.5 :
+                                      selectedToken.usd_market_cap > 50000 ? 2 : 3;
+                    const changeFromATH = -((multiplier - 1) / multiplier * 100);
+                    return `${changeFromATH.toFixed(1)}% desde ATH`;
+                  })()}
+                </div>
+              </div>
+              <div className="bg-black/50 rounded-lg p-4 border border-white/10">
+                <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">Cambio 24h</div>
+                <div className={`text-lg font-bold ${
+                  (selectedToken.priceChange24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {(selectedToken.priceChange24h || 0) >= 0 ? '+' : ''}{(selectedToken.priceChange24h || 0).toFixed(2)}%
+                </div>
+              </div>
+              <div className="bg-black/50 rounded-lg p-4 border border-white/10">
+                <div className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">Cambio 1h</div>
+                <div className={`text-lg font-bold ${
+                  (selectedToken.priceChange1h || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {(selectedToken.priceChange1h || 0) >= 0 ? '+' : ''}{(selectedToken.priceChange1h || 0).toFixed(2)}%
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Holdings Distribution */}
           <div className="bg-black/30 rounded-lg p-6 mb-6 border border-white/10">
