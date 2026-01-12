@@ -9,10 +9,11 @@ import TokenExplorer from './components/TokenExplorer';
 import UserProfile from './components/UserProfile';
 import PortfolioTracker from './components/PortfolioTracker';
 import VolumeBot from './components/VolumeBot';
+import Launchpad from './components/Launchpad';
 import TopTokensMarquee from './components/TopTokensMarquee';
 import api from './utils/api';
 
-type Tab = 'dashboard' | 'wallets' | 'pumpfun' | 'master' | 'config' | 'explorer' | 'profile' | 'portfolio' | 'volume';
+type Tab = 'dashboard' | 'wallets' | 'pumpfun' | 'master' | 'config' | 'explorer' | 'profile' | 'portfolio' | 'volume' | 'launchpad';
 
 interface Server {
   id: string;
@@ -722,6 +723,7 @@ function App() {
               { id: 'wallets', label: 'Wallets' },
               { id: 'pumpfun', label: 'Trade Bot' },
               { id: 'volume', label: 'Volume Bot' },
+              { id: 'launchpad', label: 'Launchpad' },
               { id: 'master', label: 'Master Wallet' },
               { id: 'config', label: 'Config' },
               { id: 'profile', label: 'Profile' },
@@ -750,6 +752,7 @@ function App() {
         {activeTab === 'wallets' && <Wallets socket={socket} />}
         {activeTab === 'pumpfun' && <PumpFun socket={socket} />}
         {activeTab === 'volume' && <VolumeBot socket={socket} />}
+        {activeTab === 'launchpad' && <Launchpad socket={socket} />}
         {activeTab === 'master' && <MasterWallet socket={socket} />}
         {activeTab === 'profile' && <UserProfile />}
         {activeTab === 'config' && <Config socket={socket} />}

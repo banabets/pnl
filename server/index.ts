@@ -200,6 +200,9 @@ import { tokenFeed } from './token-feed';
 
 // Volume Bot Service
 import { volumeBotService } from './volume-bot';
+
+// Launchpad Service
+import { launchpadService } from './launchpad-service';
 import { tokenEnricherWorker } from './token-enricher-worker';
 
 // MongoDB Connection
@@ -2691,6 +2694,69 @@ app.get('/api/volume/status', async (req, res) => {
   try {
     const status = volumeBotService.getStatus();
     res.json(status);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Launchpad
+// 🔒 Authenticated endpoint
+app.post('/api/launchpad/create',
+  tradingLimiter,
+  authenticateToken,
+  async (req: AuthenticatedRequest, res) => {
+  try {
+    const { name, symbol, description, twitter, telegram, website, initialBuy } = req.body;
+
+    // Validate metadata
+    const metadata = { name, symbol, description, twitter, telegram, website };
+    const validation = launchpadService.validateMetadata(metadata);
+
+    if (!validation.valid) {
+      return res.status(400).json({ error: 'Invalid metadata', errors: validation.errors });
+    }
+
+    // Get master wallet as creator
+    const masterWalletData = await walletService.getMasterWallet();
+    if (!masterWalletData) {
+      return res.status(400).json({ error: 'Master wallet not found. Create one first.' });
+    }
+
+    // Convert to Keypair
+    const { Keypair } = await import('@solana/web3.js');
+    const creatorWallet = Keypair.fromSecretKey(new Uint8Array(JSON.parse(masterWalletData.privateKey)));
+
+    // Launch token
+    const result = await launchpadService.launchToken(
+      {
+        metadata,
+        initialBuy: initialBuy ? parseFloat(initialBuy) : 0
+      },
+      creatorWallet
+    );
+
+    if (result.success) {
+      broadcast('launchpad:created', {
+        mint: result.mint,
+        name: metadata.name,
+        symbol: metadata.symbol
+      });
+      res.json(result);
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error: any) {
+    log.error('Launchpad create error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get token info
+app.get('/api/launchpad/token/:mint', async (req, res) => {
+  try {
+    const { mint } = req.params;
+    const tokenInfo = await launchpadService.getTokenInfo(mint);
+    res.json(tokenInfo);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
