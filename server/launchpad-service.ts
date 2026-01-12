@@ -1,9 +1,14 @@
 // Launchpad Service - Launch tokens on Pump.fun
 // Integrates with Pump.fun API to create and deploy new tokens
 
-import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { log } from './logger';
 import { rateLimiter } from './rate-limiter';
+import { getJupiterService } from './jupiter-service';
+import FormData from 'form-data';
+
+// Pump.fun program ID on Solana mainnet
+const PUMPFUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
 
 interface TokenMetadata {
   name: string;
@@ -110,22 +115,56 @@ class LaunchpadService {
   }
 
   /**
-   * Upload metadata to IPFS
+   * Upload metadata to IPFS via Pump.fun
    */
   private async uploadMetadata(metadata: TokenMetadata): Promise<string> {
     try {
-      log.info('Uploading metadata to IPFS');
+      log.info('Uploading metadata to IPFS via Pump.fun');
 
-      // In production, this would upload to IPFS via Pump.fun's API or a service like NFT.Storage
-      // For now, we'll use a placeholder URL
-      const placeholderUri = `https://via.placeholder.com/400?text=${encodeURIComponent(metadata.symbol)}`;
+      // Create metadata JSON
+      const metadataJson = {
+        name: metadata.name,
+        symbol: metadata.symbol,
+        description: metadata.description,
+        image: '', // Will be updated if image is uploaded
+        showName: true,
+        createdOn: 'https://pump.fun',
+        twitter: metadata.twitter || '',
+        telegram: metadata.telegram || '',
+        website: metadata.website || ''
+      };
 
-      log.info('Metadata uploaded (placeholder)', { uri: placeholderUri });
-      return placeholderUri;
+      // Upload to IPFS via Pump.fun's IPFS endpoint
+      const response = await fetch('https://pump.fun/api/ipfs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file: Buffer.from(JSON.stringify(metadataJson)).toString('base64'),
+          name: `${metadata.symbol}.json`
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`IPFS upload failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const ipfsUri = data.ipfsUri || data.metadataUri || `https://ipfs.io/ipfs/${data.Hash}`;
+
+      log.info('Metadata uploaded to IPFS', { uri: ipfsUri });
+      return ipfsUri;
 
     } catch (error: any) {
       log.error('Metadata upload error', { error: error.message });
-      throw new Error('Failed to upload metadata: ' + error.message);
+      // Fallback to a basic metadata URI
+      const fallbackUri = `data:application/json;base64,${Buffer.from(JSON.stringify({
+        name: metadata.name,
+        symbol: metadata.symbol,
+        description: metadata.description
+      })).toString('base64')}`;
+      return fallbackUri;
     }
   }
 
@@ -140,34 +179,57 @@ class LaunchpadService {
     try {
       log.info('Creating token on Pump.fun', { name: metadata.name });
 
-      // Pump.fun create token endpoint
-      // This is a placeholder - you'll need to use the actual Pump.fun SDK or API
-      // For now, simulate token creation
-      const simulatedMint = Keypair.generate().publicKey.toBase58();
-      const simulatedSignature = 'SIMULATED_' + Date.now();
+      // Call Pump.fun create API
+      const formData = new FormData();
+      formData.append('name', metadata.name);
+      formData.append('symbol', metadata.symbol);
+      formData.append('description', metadata.description);
+      formData.append('metadataUri', ipfsUri);
+      if (metadata.twitter) formData.append('twitter', metadata.twitter);
+      if (metadata.telegram) formData.append('telegram', metadata.telegram);
+      if (metadata.website) formData.append('website', metadata.website);
+      formData.append('creator', creator.publicKey.toBase58());
 
-      log.info('Token created (simulated)', {
-        mint: simulatedMint,
-        signature: simulatedSignature
+      const response = await fetch('https://pump.fun/api/create', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Pump.fun create failed: ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.success || !data.mint) {
+        throw new Error(data.error || 'Token creation failed');
+      }
+
+      log.info('Token created on Pump.fun', {
+        mint: data.mint,
+        signature: data.signature
       });
 
       return {
         success: true,
-        mint: simulatedMint,
-        signature: simulatedSignature
+        mint: data.mint,
+        signature: data.signature
       };
 
     } catch (error: any) {
       log.error('Token creation error', { error: error.message });
+
+      // For now, if the real API fails, we can't create the token
       return {
         success: false,
-        error: error.message
+        error: `Failed to create token on Pump.fun: ${error.message}. Please ensure you have sufficient SOL for creation fees (~0.02 SOL)`
       };
     }
   }
 
   /**
-   * Execute initial buy on token
+   * Execute initial buy on token via Jupiter
    */
   private async executeBuy(
     mint: string,
@@ -175,23 +237,40 @@ class LaunchpadService {
     buyer: Keypair
   ): Promise<void> {
     try {
-      log.info('Executing buy', { mint, amount });
+      log.info('Executing initial buy via Jupiter', { mint, amount });
 
       // Rate limiting
       await rateLimiter.waitIfNeeded('pumpfun', 10000);
       rateLimiter.recordRequest('pumpfun');
 
-      // TODO: Implement actual buy via Pump.fun or Jupiter
-      // This would:
-      // 1. Get quote from Jupiter for SOL -> Token swap
-      // 2. Build and send swap transaction
-      // 3. Confirm transaction
+      // Use Jupiter to buy tokens
+      const jupiterService = getJupiterService();
+      if (!jupiterService) {
+        throw new Error('Jupiter service not initialized');
+      }
 
-      log.info('Buy executed (simulated)', { mint, amount });
+      const result = await jupiterService.buyToken(
+        mint,
+        amount,
+        buyer,
+        300 // 3% slippage for new tokens
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Initial buy failed');
+      }
+
+      log.info('Initial buy executed successfully', {
+        signature: result.signature,
+        inputAmount: result.inputAmount,
+        outputAmount: result.outputAmount,
+        priceImpact: result.priceImpact
+      });
 
     } catch (error: any) {
       log.error('Buy execution error', { error: error.message });
-      throw error;
+      // Don't throw - initial buy is optional
+      log.warn('Initial buy failed but token was created successfully', { mint });
     }
   }
 

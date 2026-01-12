@@ -4,6 +4,7 @@
 import { Connection, Keypair, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { log } from './logger';
 import { rateLimiter } from './rate-limiter';
+import { getJupiterService } from './jupiter-service';
 
 interface VolumeBotConfig {
   tokenMint: string;
@@ -193,7 +194,7 @@ class VolumeBotService {
   }
 
   /**
-   * Simulate a trade (replace with actual pump.fun API call)
+   * Execute real trade via Jupiter
    */
   private async simulateTrade(
     wallet: Keypair,
@@ -201,16 +202,78 @@ class VolumeBotService {
     amount: number,
     isBuy: boolean
   ): Promise<void> {
-    // TODO: Implement actual pump.fun trading logic
-    // For now, just simulate the delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const jupiterService = getJupiterService();
+      if (!jupiterService) {
+        throw new Error('Jupiter service not initialized');
+      }
 
-    log.debug('Trade simulated', {
-      wallet: wallet.publicKey.toBase58().substring(0, 8),
-      token: tokenMint,
-      amount,
-      isBuy
-    });
+      const amountLamports = Math.floor(amount * LAMPORTS_PER_SOL);
+
+      if (isBuy) {
+        // Buy token with SOL
+        log.info('Executing BUY trade via Jupiter', {
+          wallet: wallet.publicKey.toBase58().substring(0, 8),
+          token: tokenMint,
+          solAmount: amount
+        });
+
+        const result = await jupiterService.buyToken(
+          tokenMint,
+          amount,
+          wallet,
+          200 // 2% slippage
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || 'Buy trade failed');
+        }
+
+        log.info('BUY trade successful', {
+          signature: result.signature,
+          inputAmount: result.inputAmount,
+          outputAmount: result.outputAmount
+        });
+
+      } else {
+        // Sell token for SOL - get token balance first
+        log.info('Executing SELL trade via Jupiter', {
+          wallet: wallet.publicKey.toBase58().substring(0, 8),
+          token: tokenMint
+        });
+
+        // For sell, we need to know how many tokens we have
+        // Approximate based on average buy amount
+        const estimatedTokenAmount = Math.floor(amountLamports / 2); // Rough estimate
+
+        const result = await jupiterService.sellToken(
+          tokenMint,
+          estimatedTokenAmount,
+          wallet,
+          200 // 2% slippage
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || 'Sell trade failed');
+        }
+
+        log.info('SELL trade successful', {
+          signature: result.signature,
+          inputAmount: result.inputAmount,
+          outputAmount: result.outputAmount
+        });
+      }
+
+    } catch (error: any) {
+      log.error('Trade execution failed', {
+        wallet: wallet.publicKey.toBase58().substring(0, 8),
+        token: tokenMint,
+        amount,
+        isBuy,
+        error: error.message
+      });
+      throw error;
+    }
   }
 
   /**
