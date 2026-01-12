@@ -280,6 +280,14 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   const [chartType, setChartType] = useState<'1H' | '4H' | '1D' | '1W'>('1D');
   const [activeFilter, setActiveFilter] = useState<'all' | 'new' | 'graduating' | 'trending'>('all');
 
+  // Advanced filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [marketCapFilter, setMarketCapFilter] = useState<'all' | 'micro' | 'small' | 'medium' | 'large'>('all');
+  const [volumeFilter, setVolumeFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all');
+  const [ageFilter, setAgeFilter] = useState<'all' | 'fresh' | 'recent' | 'established'>('all');
+  const [sortBy, setSortBy] = useState<'marketCap' | 'volume' | 'age' | 'priceChange'>('marketCap');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
   useEffect(() => {
     loadTokens();
 
@@ -615,6 +623,92 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
     return (lamports / 1000000000).toFixed(4);
   };
 
+  // Filter and sort tokens
+  const getFilteredAndSortedTokens = () => {
+    let filtered = [...tokens];
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(token =>
+        token.name.toLowerCase().includes(query) ||
+        token.symbol.toLowerCase().includes(query) ||
+        token.mint.toLowerCase().includes(query)
+      );
+    }
+
+    // Market cap filter
+    if (marketCapFilter !== 'all') {
+      filtered = filtered.filter(token => {
+        const mc = token.usd_market_cap || 0;
+        switch (marketCapFilter) {
+          case 'micro': return mc < 10000;
+          case 'small': return mc >= 10000 && mc < 50000;
+          case 'medium': return mc >= 50000 && mc < 100000;
+          case 'large': return mc >= 100000;
+          default: return true;
+        }
+      });
+    }
+
+    // Volume filter
+    if (volumeFilter !== 'all') {
+      filtered = filtered.filter(token => {
+        const vol = token.volume_24h || 0;
+        switch (volumeFilter) {
+          case 'low': return vol < 1000;
+          case 'medium': return vol >= 1000 && vol < 5000;
+          case 'high': return vol >= 5000;
+          default: return true;
+        }
+      });
+    }
+
+    // Age filter
+    if (ageFilter !== 'all') {
+      filtered = filtered.filter(token => {
+        const age = token.age || (Date.now() / 1000 - (token.created_timestamp || 0));
+        const ageMinutes = age / 60;
+        switch (ageFilter) {
+          case 'fresh': return ageMinutes < 60; // < 1 hour
+          case 'recent': return ageMinutes >= 60 && ageMinutes < 360; // 1-6 hours
+          case 'established': return ageMinutes >= 360; // > 6 hours
+          default: return true;
+        }
+      });
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      let aVal = 0, bVal = 0;
+
+      switch (sortBy) {
+        case 'marketCap':
+          aVal = a.usd_market_cap || 0;
+          bVal = b.usd_market_cap || 0;
+          break;
+        case 'volume':
+          aVal = a.volume_24h || 0;
+          bVal = b.volume_24h || 0;
+          break;
+        case 'age':
+          aVal = a.age || (Date.now() / 1000 - (a.created_timestamp || 0));
+          bVal = b.age || (Date.now() / 1000 - (b.created_timestamp || 0));
+          break;
+        case 'priceChange':
+          aVal = a.priceChange24h || 0;
+          bVal = b.priceChange24h || 0;
+          break;
+      }
+
+      return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+    });
+
+    return filtered;
+  };
+
+  const filteredTokens = getFilteredAndSortedTokens();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -664,9 +758,106 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         </div>
       </div>
 
+      {/* Advanced Search & Filters */}
+      <div className="bg-black rounded-lg p-6 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
+        {/* Search Bar */}
+        <div className="mb-4">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name, symbol, or mint address..."
+              className="w-full px-4 py-3 pl-10 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none placeholder:text-white/40"
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Advanced Filters Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Market Cap Filter */}
+          <div>
+            <label className="block text-white/60 text-xs font-medium mb-2">Market Cap</label>
+            <select
+              value={marketCapFilter}
+              onChange={(e) => setMarketCapFilter(e.target.value as any)}
+              className="w-full px-3 py-2 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none text-sm"
+            >
+              <option value="all">All</option>
+              <option value="micro">Micro (&lt; $10K)</option>
+              <option value="small">Small ($10K - $50K)</option>
+              <option value="medium">Medium ($50K - $100K)</option>
+              <option value="large">Large (&gt; $100K)</option>
+            </select>
+          </div>
+
+          {/* Volume Filter */}
+          <div>
+            <label className="block text-white/60 text-xs font-medium mb-2">Volume 24h</label>
+            <select
+              value={volumeFilter}
+              onChange={(e) => setVolumeFilter(e.target.value as any)}
+              className="w-full px-3 py-2 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none text-sm"
+            >
+              <option value="all">All</option>
+              <option value="low">Low (&lt; $1K)</option>
+              <option value="medium">Medium ($1K - $5K)</option>
+              <option value="high">High (&gt; $5K)</option>
+            </select>
+          </div>
+
+          {/* Age Filter */}
+          <div>
+            <label className="block text-white/60 text-xs font-medium mb-2">Age</label>
+            <select
+              value={ageFilter}
+              onChange={(e) => setAgeFilter(e.target.value as any)}
+              className="w-full px-3 py-2 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none text-sm"
+            >
+              <option value="all">All</option>
+              <option value="fresh">Fresh (&lt; 1h)</option>
+              <option value="recent">Recent (1-6h)</option>
+              <option value="established">Established (&gt; 6h)</option>
+            </select>
+          </div>
+
+          {/* Sort By */}
+          <div>
+            <label className="block text-white/60 text-xs font-medium mb-2">Sort By</label>
+            <div className="flex gap-2">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="flex-1 px-3 py-2 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none text-sm"
+              >
+                <option value="marketCap">Market Cap</option>
+                <option value="volume">Volume</option>
+                <option value="age">Age</option>
+                <option value="priceChange">Price Change</option>
+              </select>
+              <button
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                className="px-3 py-2 bg-black border border-white/15 text-white rounded-lg hover:border-white/30 transition-all"
+                title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+              >
+                {sortOrder === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Results Count */}
+        <div className="mt-4 text-white/60 text-sm">
+          Showing {filteredTokens.length} of {tokens.length} tokens
+        </div>
+      </div>
+
       {/* Token List */}
       <div className="bg-black rounded-lg p-6 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
-        <h3 className="text-lg font-semibold text-white mb-4">Tokens Recientes</h3>
+        <h3 className="text-lg font-semibold text-white mb-4">Tokens</h3>
         
         {loading && tokens.length === 0 ? (
           <div className="text-center py-8">
@@ -768,7 +959,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-              {tokens.map((token) => {
+              {filteredTokens.map((token) => {
                 const tokenAge = token.age ?? (token.created_timestamp ? Math.floor((Date.now() / 1000 - token.created_timestamp) / 60) : null);
                 return (
                 <div
