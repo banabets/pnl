@@ -19,9 +19,32 @@ export default function TopTokensMarquee() {
   useEffect(() => {
     const fetchTopGainers = async () => {
       try {
-        const response = await api.get('/tokens/top-gainers?limit=20&hours=5');
-        if (response.data.success && response.data.tokens) {
+        // First try top gainers
+        let response = await api.get('/tokens/top-gainers?limit=20&hours=5');
+        if (response.data.success && response.data.tokens && response.data.tokens.length > 0) {
           setTokens(response.data.tokens);
+          setLoading(false);
+          return;
+        }
+
+        // Fallback: get any recent tokens from /tokens/new
+        try {
+          response = await api.get('/tokens/new?limit=20');
+          if (response.data.tokens && Array.isArray(response.data.tokens)) {
+            const formattedTokens = response.data.tokens.map((t: any) => ({
+              mint: t.mint,
+              name: t.name || t.symbol || 'Unknown',
+              symbol: t.symbol || 'TKN',
+              image_uri: t.imageUrl || t.image_uri || '',
+              price_change_1h: t.priceChange1h || 0,
+              price_change_24h: t.priceChange24h || 0,
+              price_usd: t.price || 0,
+              market_cap: t.usd_market_cap || 0,
+            }));
+            setTokens(formattedTokens);
+          }
+        } catch (fallbackError) {
+          console.error('Failed to fetch fallback tokens:', fallbackError);
         }
       } catch (error) {
         console.error('Failed to fetch top gainers:', error);
@@ -31,25 +54,33 @@ export default function TopTokensMarquee() {
     };
 
     fetchTopGainers();
-    
+
     // Refresh every 30 seconds
     const interval = setInterval(fetchTopGainers, 30000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
+  // Always show the marquee, even while loading
   if (loading && tokens.length === 0) {
     return (
-      <div className="bg-black border-b border-white/10 py-2 overflow-hidden">
-        <div className="flex items-center justify-center">
+      <div className="bg-gradient-to-r from-black via-black/95 to-black border-b border-white/10 py-2 overflow-hidden relative z-[55]">
+        <div className="flex items-center justify-center gap-2">
           <div className="w-4 h-4 border-2 border-white/30 border-t-white/80 rounded-full animate-spin"></div>
+          <span className="text-white/60 text-sm">Loading trending tokens...</span>
         </div>
       </div>
     );
   }
 
   if (tokens.length === 0) {
-    return null;
+    return (
+      <div className="bg-gradient-to-r from-black via-black/95 to-black border-b border-white/10 py-2 overflow-hidden relative z-[55]">
+        <div className="flex items-center justify-center">
+          <span className="text-white/60 text-sm">No trending tokens available</span>
+        </div>
+      </div>
+    );
   }
 
   // Duplicate tokens for seamless loop
