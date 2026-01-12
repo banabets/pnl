@@ -291,6 +291,11 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   // Risk analysis
   const [riskAnalyses, setRiskAnalyses] = useState<Map<string, any>>(new Map());
 
+  // Token detail page data
+  const [tokenTransactions, setTokenTransactions] = useState<any[]>([]);
+  const [whaleAlerts, setWhaleAlerts] = useState<any[]>([]);
+  const [buyVsSellRatio, setBuyVsSellRatio] = useState<{ buys: number; sells: number } | null>(null);
+
   // Load risk analyses when tokens change
   useEffect(() => {
     if (tokens.length > 0) {
@@ -1377,8 +1382,192 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
             )}
           </div>
 
+          {/* Risk Analysis Detail */}
+          {(() => {
+            const risk = riskAnalyses.get(selectedToken.mint);
+            if (risk) {
+              return (
+                <div className="bg-black/30 rounded-lg p-6 mb-6 border border-white/10">
+                  <h4 className="text-lg font-semibold text-white mb-4">Risk Analysis</h4>
+
+                  {/* Risk Score */}
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-white/60 text-sm">Overall Risk Score</span>
+                      <span className={`text-2xl font-bold ${
+                        risk.riskLevel === 'safe' ? 'text-green-400' :
+                        risk.riskLevel === 'medium' ? 'text-yellow-400' :
+                        'text-red-400'
+                      }`}>
+                        {risk.overallScore}/100
+                      </span>
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${
+                          risk.riskLevel === 'safe' ? 'bg-green-500' :
+                          risk.riskLevel === 'medium' ? 'bg-yellow-500' :
+                          'bg-red-500'
+                        }`}
+                        style={{ width: `${risk.overallScore}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Security Checks */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <div className="flex items-center justify-between p-3 bg-black/50 rounded-lg">
+                      <span className="text-white/70 text-sm">Liquidity Locked</span>
+                      <span className={risk.checks.liquidityLocked === true ? 'text-green-400' : risk.checks.liquidityLocked === false ? 'text-red-400' : 'text-white/40'}>
+                        {risk.checks.liquidityLocked === true ? '✓ Yes' : risk.checks.liquidityLocked === false ? '✗ No' : '? Unknown'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-black/50 rounded-lg">
+                      <span className="text-white/70 text-sm">Mint Authority</span>
+                      <span className={risk.checks.mintAuthority === false ? 'text-green-400' : risk.checks.mintAuthority === true ? 'text-red-400' : 'text-white/40'}>
+                        {risk.checks.mintAuthority === false ? '✓ Disabled' : risk.checks.mintAuthority === true ? '✗ Enabled' : '? Unknown'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-black/50 rounded-lg">
+                      <span className="text-white/70 text-sm">Freeze Authority</span>
+                      <span className={risk.checks.freezeAuthority === false ? 'text-green-400' : risk.checks.freezeAuthority === true ? 'text-red-400' : 'text-white/40'}>
+                        {risk.checks.freezeAuthority === false ? '✓ Disabled' : risk.checks.freezeAuthority === true ? '✗ Enabled' : '? Unknown'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-black/50 rounded-lg">
+                      <span className="text-white/70 text-sm">Top Holders</span>
+                      <span className={risk.checks.topHoldersPercent < 50 ? 'text-green-400' : risk.checks.topHoldersPercent < 70 ? 'text-yellow-400' : 'text-red-400'}>
+                        {risk.checks.topHoldersPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Warnings */}
+                  {risk.warnings && risk.warnings.length > 0 && (
+                    <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                      <h5 className="text-red-400 font-semibold text-sm mb-2">⚠️ Warnings</h5>
+                      <ul className="space-y-1">
+                        {risk.warnings.map((warning: string, idx: number) => (
+                          <li key={idx} className="text-red-300 text-sm">{warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          {/* Buy/Sell Ratio & Whale Alerts */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* Buy/Sell Ratio */}
+            <div className="bg-black/30 rounded-lg p-6 border border-white/10">
+              <h4 className="text-lg font-semibold text-white mb-4">Buy/Sell Ratio (24h)</h4>
+              {selectedToken.txns24h ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <span className="text-white/70">Buys</span>
+                    </div>
+                    <span className="text-xl font-bold text-green-400">
+                      {typeof selectedToken.txns24h === 'object' && selectedToken.txns24h.buys ? selectedToken.txns24h.buys : 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span className="text-white/70">Sells</span>
+                    </div>
+                    <span className="text-xl font-bold text-red-400">
+                      {typeof selectedToken.txns24h === 'object' && selectedToken.txns24h.sells ? selectedToken.txns24h.sells : 0}
+                    </span>
+                  </div>
+                  <div className="pt-4 border-t border-white/10">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/70">Ratio</span>
+                      <span className={`text-xl font-bold ${
+                        (typeof selectedToken.txns24h === 'object' && selectedToken.txns24h.buys || 0) > (typeof selectedToken.txns24h === 'object' && selectedToken.txns24h.sells || 0)
+                          ? 'text-green-400'
+                          : 'text-red-400'
+                      }`}>
+                        {(() => {
+                          const buys = typeof selectedToken.txns24h === 'object' && selectedToken.txns24h.buys || 0;
+                          const sells = typeof selectedToken.txns24h === 'object' && selectedToken.txns24h.sells || 0;
+                          const ratio = sells > 0 ? (buys / sells).toFixed(2) : buys.toFixed(2);
+                          return `${ratio}:1`;
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-white/40">No transaction data available</div>
+              )}
+            </div>
+
+            {/* Social Links */}
+            <div className="bg-black/30 rounded-lg p-6 border border-white/10">
+              <h4 className="text-lg font-semibold text-white mb-4">Links</h4>
+              <div className="space-y-3">
+                <a
+                  href={`https://pump.fun/${selectedToken.mint}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3 bg-black/50 rounded-lg hover:bg-black/70 transition-all"
+                >
+                  <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                    <span className="text-purple-400 text-lg">P</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-white font-medium text-sm">Pump.fun</div>
+                    <div className="text-white/40 text-xs">Trade on pump.fun</div>
+                  </div>
+                  <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+                <a
+                  href={`https://solscan.io/token/${selectedToken.mint}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3 bg-black/50 rounded-lg hover:bg-black/70 transition-all"
+                >
+                  <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                    <span className="text-blue-400 text-lg">S</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-white font-medium text-sm">Solscan</div>
+                    <div className="text-white/40 text-xs">View on explorer</div>
+                  </div>
+                  <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+                <a
+                  href={`https://dexscreener.com/solana/${selectedToken.mint}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3 bg-black/50 rounded-lg hover:bg-black/70 transition-all"
+                >
+                  <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                    <span className="text-green-400 text-lg">D</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-white font-medium text-sm">DexScreener</div>
+                    <div className="text-white/40 text-xs">View charts & trades</div>
+                  </div>
+                  <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+
           {/* Quick Actions */}
-          <div className="mt-6 flex gap-4">
+          <div className="mt-6 flex flex-wrap gap-4">
             <button
               onClick={() => {
                 // Set token mint in PumpFun component
