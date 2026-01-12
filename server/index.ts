@@ -197,6 +197,9 @@ import { CopyTradingService, initCopyTrading, getCopyTrading, FollowedWallet, Co
 
 // Token Feed Service
 import { tokenFeed } from './token-feed';
+
+// Volume Bot Service
+import { volumeBotService } from './volume-bot';
 import { tokenEnricherWorker } from './token-enricher-worker';
 
 // MongoDB Connection
@@ -630,6 +633,134 @@ app.get('/api/tokens/trending', readLimiter, async (req, res) => {
   } catch (error) {
     log.error('Error in /api/tokens/trending', { error: (error as Error).message });
     res.status(500).json({ error: 'Failed to fetch trending tokens' });
+  }
+});
+
+// /api/tokens/top-gainers - Get top gaining tokens from last 5 hours
+app.get('/api/tokens/top-gainers', readLimiter, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 20;
+    const hours = parseInt(req.query.hours as string) || 5;
+
+    log.info('Fetching top gainers', { limit, hours });
+
+    // Calculate timestamp for the last N hours
+    const now = Date.now();
+    const hoursAgo = now - (hours * 60 * 60 * 1000);
+
+    // Method 1: Try tokenFeed service first (uses cache, more efficient)
+    if (tokenFeed.isServiceStarted()) {
+      try {
+        const allTokens = await tokenFeed.fetchTokens({
+          filter: 'all',
+          maxAge: hours * 60, // Convert hours to minutes
+          limit: 200,
+        });
+
+        // Filter tokens with positive 1h price change and sort
+        const topGainers = allTokens
+          .filter((token) => {
+            const tokenAge = now - (token.createdAt || 0);
+            return tokenAge <= hours * 60 * 60 * 1000 && token.priceChange1h > 0;
+          })
+          .sort((a, b) => b.priceChange1h - a.priceChange1h)
+          .slice(0, limit)
+          .map((token) => ({
+            mint: token.mint,
+            name: token.name || `Token ${token.mint.substring(0, 8)}`,
+            symbol: token.symbol || 'TKN',
+            image_uri: token.imageUrl || '',
+            price_change_1h: token.priceChange1h || 0,
+            price_change_24h: token.priceChange24h || 0,
+            price_usd: token.price || 0,
+            market_cap: token.marketCap || 0,
+          }));
+
+        if (topGainers.length > 0) {
+          log.info('Top gainers from tokenFeed', { count: topGainers.length });
+          return res.json({ success: true, tokens: topGainers });
+        }
+      } catch (feedError) {
+        log.warn('tokenFeed.getTokens failed, falling back to pump.fun API', { error: (feedError as Error).message });
+      }
+    }
+
+    // Method 2: Try to get tokens from pump.fun API
+    try {
+      const pumpUrl = `https://frontend-api.pump.fun/coins?offset=0&limit=200&sort=created_timestamp&order=DESC`;
+      const pumpResponse = await fetch(pumpUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (pumpResponse.ok) {
+        const pumpData = await pumpResponse.json();
+        if (Array.isArray(pumpData) && pumpData.length > 0) {
+          // Filter tokens from last N hours
+          const recentTokens = pumpData.filter((token: any) => {
+            const tokenTime = (token.created_timestamp || 0) * 1000; // Convert to milliseconds
+            return tokenTime > 0 && tokenTime >= hoursAgo;
+          });
+
+          // Fetch price data from DexScreener for each token (limit to 30 to avoid rate limits)
+          const tokensWithPriceChange = await Promise.all(
+            recentTokens.slice(0, 30).map(async (token: any) => {
+              try {
+                const dexUrl = `https://api.dexscreener.com/latest/dex/tokens/${token.mint}`;
+                const dexResponse = await fetch(dexUrl, {
+                  headers: { 'Accept': 'application/json' },
+                });
+
+                if (dexResponse.ok) {
+                  const dexData = await dexResponse.json();
+                  if (dexData.pairs && dexData.pairs.length > 0) {
+                    const pair = dexData.pairs[0];
+                    const priceChange1h = parseFloat(pair.priceChange?.h1 || 0);
+                    const priceChange24h = parseFloat(pair.priceChange?.h24 || 0);
+                    
+                    return {
+                      mint: token.mint,
+                      name: token.name || pair.baseToken?.name || `Token ${token.mint.substring(0, 8)}`,
+                      symbol: token.symbol || pair.baseToken?.symbol || 'TKN',
+                      image_uri: token.image_uri || pair.baseToken?.logoURI || '',
+                      price_change_1h: priceChange1h,
+                      price_change_24h: priceChange24h,
+                      price_usd: parseFloat(pair.priceUsd || 0),
+                      market_cap: parseFloat(pair.marketCap || pair.fdv || 0),
+                    };
+                  }
+                }
+              } catch (error) {
+                // If DexScreener fails, skip this token
+                return null;
+              }
+              
+              return null;
+            })
+          );
+
+          // Filter out nulls and sort by 1h price change
+          const validTokens = tokensWithPriceChange
+            .filter((token): token is NonNullable<typeof token> => token !== null)
+            .filter((token) => token.price_change_1h > 0) // Only positive gains
+            .sort((a, b) => b.price_change_1h - a.price_change_1h)
+            .slice(0, limit);
+
+          log.info('Top gainers fetched from pump.fun', { count: validTokens.length });
+          return res.json({ success: true, tokens: validTokens });
+        }
+      }
+    } catch (error) {
+      log.error('Error fetching top gainers from pump.fun', { error: (error as Error).message });
+    }
+
+    // Fallback: return empty array
+    res.json({ success: true, tokens: [] });
+  } catch (error) {
+    log.error('Error in /api/tokens/top-gainers', { error: (error as Error).message });
+    res.status(500).json({ error: 'Failed to fetch top gainers' });
   }
 });
 
@@ -2503,15 +2634,42 @@ app.post('/api/volume/start',
   authenticateToken,
   async (req: AuthenticatedRequest, res) => {
   try {
-    const config = req.body;
-    await volumeBot.initialize();
-    // Start volume session in background
-    volumeBot?.startVolumeSession().catch((err: any) => {
-      broadcast('volume:error', { error: String(err) });
+    const { tokenMint, targetVolume, walletCount, minTradeSize, maxTradeSize, delayBetweenTrades, duration } = req.body;
+
+    // Validate required fields
+    if (!tokenMint || !targetVolume || !walletCount) {
+      return res.status(400).json({ error: 'Missing required fields: tokenMint, targetVolume, walletCount' });
+    }
+
+    // Get wallets from wallet manager (use first N wallets)
+    const walletsData = await walletService.getAllWallets();
+    if (!walletsData || walletsData.length === 0) {
+      return res.status(400).json({ error: 'No wallets available. Create wallets first.' });
+    }
+
+    // Convert wallet data to Keypairs
+    const { Keypair } = await import('@solana/web3.js');
+    const wallets = walletsData.slice(0, walletCount).map((w: any) => {
+      return Keypair.fromSecretKey(new Uint8Array(JSON.parse(w.privateKey)));
     });
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
+
+    const config = {
+      tokenMint,
+      targetVolume: parseFloat(targetVolume) || 10,
+      walletCount: parseInt(walletCount) || 3,
+      minTradeSize: parseFloat(minTradeSize) || 0.1,
+      maxTradeSize: parseFloat(maxTradeSize) || 0.5,
+      delayBetweenTrades: parseInt(delayBetweenTrades) || 5000,
+      duration: parseInt(duration) || 0,
+    };
+
+    await volumeBotService.start(config, wallets);
+    broadcast('volume:started', { config });
+
+    res.json({ success: true, config });
+  } catch (error: any) {
+    log.error('Volume bot start error', { error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -2521,23 +2679,20 @@ app.post('/api/volume/stop',
   authenticateToken,
   async (req: AuthenticatedRequest, res) => {
   try {
-    volumeBot.stopSession();
+    volumeBotService.stop();
     broadcast('volume:stopped', {});
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/api/volume/status', async (req, res) => {
   try {
-    const session = volumeBot.getCurrentSession();
-    res.json({ 
-      isActive: volumeBot.isActive(),
-      session,
-    });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
+    const status = volumeBotService.getStatus();
+    res.json(status);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
