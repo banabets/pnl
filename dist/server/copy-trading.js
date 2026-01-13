@@ -73,8 +73,8 @@ const WalletStatsSchema = new mongoose_1.default.Schema({
 exports.WalletStats = mongoose_1.default.model('WalletStats', WalletStatsSchema);
 class CopyTradingService {
     constructor(rpcUrl) {
-        this.activeListeners = new Map();
-        this.connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
+        this._activeListeners = new Map();
+        this._connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
     }
     /**
      * Follow a wallet
@@ -200,7 +200,7 @@ class CopyTradingService {
     /**
      * Analyze a wallet's performance
      */
-    async analyzeWallet(walletAddress) {
+    async analyzeWallet(_walletAddress) {
         // This would typically query on-chain data
         // For now, return placeholder data
         return {

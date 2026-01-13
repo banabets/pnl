@@ -52,15 +52,14 @@ declare class HeliusWebSocketService extends EventEmitter {
     private subscriptionIds;
     private heartbeatInterval;
     private tokenCache;
-    private rpcCallQueue;
-    private rpcCallInProgress;
-    private lastRpcCallTime;
-    private minRpcCallInterval;
-    private consecutive429Errors;
-    private max429Errors;
+    private hasAuthError;
     private rpcCircuitBreakerOpen;
-    private rpcCircuitBreakerResetTime;
-    private readonly CIRCUIT_BREAKER_RESET_DELAY;
+    private rpc429Count;
+    private rpc429ResetTime;
+    private lastRpcRequestTime;
+    private readonly RPC_MIN_DELAY;
+    private readonly MAX_429_ERRORS;
+    private readonly CIRCUIT_BREAKER_RESET_TIME;
     constructor();
     /**
      * Start the WebSocket connection and subscriptions
@@ -87,11 +86,11 @@ declare class HeliusWebSocketService extends EventEmitter {
      */
     private processLogNotification;
     /**
-     * Process PumpFun transactions (with rate limiting)
+     * Process PumpFun transactions
      */
     private processPumpFunTransaction;
     /**
-     * Process Raydium transactions (detect graduations) - with rate limiting
+     * Process Raydium transactions (detect graduations)
      */
     private processRaydiumTransaction;
     /**
@@ -103,15 +102,8 @@ declare class HeliusWebSocketService extends EventEmitter {
      */
     private parseHeliusTransaction;
     /**
-     * Throttled RPC call with rate limiting and circuit breaker
-     */
-    private throttledRpcCall;
-    /**
-     * Process RPC call queue with rate limiting
-     */
-    private processRpcQueue;
-    /**
-     * Fallback: Get basic transaction details from RPC (with rate limiting)
+     * Fallback: Get basic transaction details from RPC
+     * Includes rate limiting and circuit breaker to prevent 429 errors
      */
     private getBasicTransactionDetails;
     /**

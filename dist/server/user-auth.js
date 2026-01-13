@@ -11,10 +11,15 @@ const crypto_1 = __importDefault(require("crypto"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const database_1 = require("./database");
 const wallet_service_1 = require("./wallet-service");
+const logger_1 = require("./logger");
 const USERS_FILE = path_1.default.join(__dirname, '../data/users.json');
 const SESSIONS_FILE = path_1.default.join(__dirname, '../data/sessions.json');
 const ACTIVITY_LOG_FILE = path_1.default.join(__dirname, '../data/user-activity.json');
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+// JWT Configuration - MUST be set in environment
+if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET must be set in environment variables');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
 // Ensure data directory exists
 const dataDir = path_1.default.join(__dirname, '../data');
@@ -29,7 +34,7 @@ class UserAuthManager {
         this.jsonLoaded = false;
         // Don't check MongoDB here - it might not be connected yet
         // Load JSON as fallback, but MongoDB will be used dynamically when available
-        console.log('📊 UserAuthManager initialized (will use MongoDB when connected)');
+        logger_1.log.info('UserAuthManager initialized (will use MongoDB when connected)');
     }
     // Dynamically check if MongoDB is connected
     usesMongoDB() {
@@ -38,7 +43,7 @@ class UserAuthManager {
     // Ensure JSON data is loaded (for fallback)
     ensureJsonLoaded() {
         if (!this.jsonLoaded && !this.usesMongoDB()) {
-            console.log('📂 Loading JSON fallback data...');
+            logger_1.log.info('Loading JSON fallback data');
             this.loadUsers();
             this.loadSessions();
             this.loadActivityLogs();
@@ -56,11 +61,11 @@ class UserAuthManager {
                 usersArray.forEach((user) => {
                     this.users.set(user.id, user);
                 });
-                console.log(`📂 Loaded ${this.users.size} users from disk`);
+                logger_1.log.info('Loaded users from disk', { count: this.users.size });
             }
         }
         catch (error) {
-            console.error('Error loading users:', error);
+            logger_1.log.error('Error loading users', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     async saveUsers() {
@@ -71,7 +76,7 @@ class UserAuthManager {
             fs_1.default.writeFileSync(USERS_FILE, JSON.stringify(usersArray, null, 2));
         }
         catch (error) {
-            console.error('Error saving users:', error);
+            logger_1.log.error('Error saving users', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     loadSessions() {
@@ -91,7 +96,7 @@ class UserAuthManager {
             }
         }
         catch (error) {
-            console.error('Error loading sessions:', error);
+            logger_1.log.error('Error loading sessions', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     saveSessions() {
@@ -100,7 +105,7 @@ class UserAuthManager {
             fs_1.default.writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsArray, null, 2));
         }
         catch (error) {
-            console.error('Error saving sessions:', error);
+            logger_1.log.error('Error saving sessions', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     loadActivityLogs() {
@@ -116,7 +121,7 @@ class UserAuthManager {
             }
         }
         catch (error) {
-            console.error('Error loading activity logs:', error);
+            logger_1.log.error('Error loading activity logs', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     saveActivityLogs() {
@@ -124,7 +129,7 @@ class UserAuthManager {
             fs_1.default.writeFileSync(ACTIVITY_LOG_FILE, JSON.stringify(this.activityLogs, null, 2));
         }
         catch (error) {
-            console.error('Error saving activity logs:', error);
+            logger_1.log.error('Error saving activity logs', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     hashPassword(password, salt) {
@@ -155,7 +160,7 @@ class UserAuthManager {
                 }
             }
             catch (error) {
-                console.error('Error logging activity to MongoDB:', error);
+                logger_1.log.error('Error logging activity to MongoDB', { error: error instanceof Error ? error.message : String(error) });
             }
         }
         else {
@@ -243,13 +248,13 @@ class UserAuthManager {
                 // Create master wallet for the new user
                 try {
                     const walletResult = await wallet_service_1.walletService.createMasterWallet(newUser._id.toString());
-                    console.log(`🔑 Master wallet created for user ${username}: ${walletResult.publicKey}`);
+                    logger_1.log.info('Master wallet created for user', { username, publicKey: walletResult.publicKey });
                 }
                 catch (walletError) {
-                    console.error('⚠️ Failed to create master wallet:', walletError);
+                    logger_1.log.error('Failed to create master wallet', { error: walletError instanceof Error ? walletError.message : String(walletError) });
                     // Don't fail registration if wallet creation fails
                 }
-                console.log(`✅ New user registered: ${username} (${userId})`);
+                logger_1.log.info('New user registered', { username, userId });
                 const userObj = newUser.toObject();
                 return {
                     success: true,
@@ -306,7 +311,7 @@ class UserAuthManager {
                 const token = this.generateToken(userId);
                 this.createSession(userId, token, ipAddress);
                 this.logActivity(userId, 'user_registered', { username, email }, ipAddress);
-                console.log(`✅ New user registered: ${username} (${userId})`);
+                logger_1.log.info('New user registered', { username, userId });
                 return {
                     success: true,
                     user: { ...newUser, passwordHash: '' },
@@ -315,7 +320,7 @@ class UserAuthManager {
             }
         }
         catch (error) {
-            console.error('Error in register:', error);
+            logger_1.log.error('Error in register', { error: error instanceof Error ? error.message : String(error) });
             return { success: false, error: error.message || 'Registration failed' };
         }
     }
@@ -355,7 +360,7 @@ class UserAuthManager {
                 const token = this.generateToken(userDoc.id);
                 await this.createSession(userDoc.id, token, ipAddress, userAgent);
                 await this.logActivity(userDoc.id, 'user_logged_in', { username: userDoc.username }, ipAddress);
-                console.log(`✅ User logged in: ${userDoc.username} (${userDoc.id})`);
+                logger_1.log.info('User logged in', { username: userDoc.username, userId: userDoc.id });
                 const userObj = userDoc.toObject();
                 return {
                     success: true,
@@ -394,7 +399,7 @@ class UserAuthManager {
                 const token = this.generateToken(user.id);
                 await this.createSession(user.id, token, ipAddress, userAgent);
                 await this.logActivity(user.id, 'user_logged_in', { username: user.username }, ipAddress);
-                console.log(`✅ User logged in: ${user.username} (${user.id})`);
+                logger_1.log.info('User logged in', { username: user.username, userId: user.id });
                 return {
                     success: true,
                     user: { ...user, passwordHash: '' },
@@ -403,7 +408,7 @@ class UserAuthManager {
             }
         }
         catch (error) {
-            console.error('Error in login:', error);
+            logger_1.log.error('Error in login', { error: error instanceof Error ? error.message : String(error) });
             return { success: false, error: error.message || 'Login failed' };
         }
     }
@@ -426,7 +431,7 @@ class UserAuthManager {
                     // Verify user exists and allow access
                     const user = await database_1.User.findOne({ id: decoded.userId }).exec();
                     if (user) {
-                        console.log(`📊 Token valid for user ${decoded.userId}, creating session in MongoDB`);
+                        logger_1.log.info('Token valid for user, creating session in MongoDB', { userId: decoded.userId });
                         // Create a new session in MongoDB
                         await this.createSession(decoded.userId, token);
                         return { success: true, userId: decoded.userId };
@@ -439,7 +444,7 @@ class UserAuthManager {
                 return { success: true, userId: decoded.userId };
             }
             catch (error) {
-                console.error('Error verifying token in MongoDB:', error);
+                logger_1.log.error('Error verifying token in MongoDB', { error: error instanceof Error ? error.message : String(error) });
                 // Fall back to in-memory check
             }
         }
@@ -483,7 +488,7 @@ class UserAuthManager {
                 }
             }
             catch (error) {
-                console.error('Error creating session in MongoDB:', error);
+                logger_1.log.error('Error creating session in MongoDB', { error: error instanceof Error ? error.message : String(error) });
             }
         }
         else {
@@ -511,7 +516,7 @@ class UserAuthManager {
                 return null;
             }
             catch (error) {
-                console.error('Error getting user from MongoDB:', error);
+                logger_1.log.error('Error getting user from MongoDB', { error: error instanceof Error ? error.message : String(error) });
                 // Fall through to in-memory check
             }
         }
@@ -567,21 +572,21 @@ class UserAuthManager {
         }
         if (!user.settings)
             user.settings = {};
-        if (settings.theme !== undefined)
+        if (settings?.theme !== undefined)
             user.settings.theme = settings.theme;
-        if (settings.notifications) {
+        if (settings?.notifications) {
             if (!user.settings.notifications)
                 user.settings.notifications = {};
             Object.assign(user.settings.notifications, settings.notifications);
         }
-        if (settings.trading) {
+        if (settings?.trading) {
             if (!user.settings.trading)
                 user.settings.trading = {};
             Object.assign(user.settings.trading, settings.trading);
         }
         user.updatedAt = new Date().toISOString();
         this.saveUsers();
-        this.logActivity(userId, 'settings_updated', { fields: Object.keys(settings) });
+        this.logActivity(userId, 'settings_updated', { fields: settings ? Object.keys(settings) : [] });
         return { success: true, user: { ...user, passwordHash: '' } };
     }
     changePassword(userId, currentPassword, newPassword) {

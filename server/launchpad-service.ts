@@ -192,7 +192,7 @@ class LaunchpadService {
 
       const response = await fetch('https://pump.fun/api/create', {
         method: 'POST',
-        body: formData
+        body: formData as any
       });
 
       if (!response.ok) {

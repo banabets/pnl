@@ -8,12 +8,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigPersistence = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const logger_1 = require("./logger");
 const CONFIG_FILE = path_1.default.join(__dirname, '../config.json');
 class ConfigPersistence {
     constructor() {
         this.defaultConfig = {
             simulationMode: false, // Always real mode - simulation removed
-            rpcUrl: process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997',
+            rpcUrl: process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`,
             maxSolPerSwap: 0.05,
             slippageBps: 50,
         };
@@ -23,14 +24,14 @@ class ConfigPersistence {
             if (fs_1.default.existsSync(CONFIG_FILE)) {
                 const data = fs_1.default.readFileSync(CONFIG_FILE, 'utf-8');
                 const config = JSON.parse(data);
-                console.log('📂 Config loaded from disk:', config);
+                logger_1.log.info('📂 Config loaded from disk:', config);
                 return { ...this.defaultConfig, ...config };
             }
         }
         catch (error) {
-            console.error('Error loading config from disk:', error);
+            logger_1.log.error('Error loading config from disk:', error);
         }
-        console.log('📂 Using default config (no file found)');
+        logger_1.log.info('📂 Using default config (no file found)');
         return { ...this.defaultConfig };
     }
     saveConfig(config) {
@@ -38,10 +39,10 @@ class ConfigPersistence {
             const currentConfig = this.loadConfig();
             const newConfig = { ...currentConfig, ...config };
             fs_1.default.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
-            console.log('💾 Config saved to disk:', newConfig);
+            logger_1.log.info('💾 Config saved to disk:', newConfig);
         }
         catch (error) {
-            console.error('Error saving config to disk:', error);
+            logger_1.log.error('Error saving config to disk:', error);
         }
     }
     updateSimulationMode(enabled) {

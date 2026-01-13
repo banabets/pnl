@@ -10,7 +10,7 @@ class TradesListener {
         this.isListening = false;
         this.recentTrades = new Map();
         this.maxRecentTrades = 1000;
-        const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+        const rpcUrl = process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`;
         this.connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
     }
     /**
@@ -25,7 +25,7 @@ class TradesListener {
             console.log(`🔌 Starting trades listener for token: ${tokenMint.substring(0, 8)}...`);
             // Subscribe to account changes for the token mint
             // Note: This will trigger on any change to the mint account
-            this.subscriptionId = this.connection.onAccountChange(mintPubkey, async (accountInfo, context) => {
+            this.subscriptionId = this.connection.onAccountChange(mintPubkey, async (_accountInfo, _context) => {
                 // When token account changes, fetch recent transactions
                 // This helps catch new trades in real-time
                 setTimeout(() => {
@@ -33,7 +33,7 @@ class TradesListener {
                 }, 1000);
             }, 'confirmed');
             // Also subscribe to logs from pump.fun program to catch swaps
-            this.connection.onLogs(PUMP_FUN_PROGRAM_ID, async (logs, context) => {
+            this.connection.onLogs(PUMP_FUN_PROGRAM_ID, async (logs, _context) => {
                 if (logs.err)
                     return;
                 // Check if this transaction involves our token
@@ -103,7 +103,6 @@ class TradesListener {
         try {
             if (!tx?.meta)
                 return;
-            const mintPubkey = new web3_js_1.PublicKey(tokenMint);
             // Get signer account from transaction
             let signerAccount = '';
             try {
@@ -158,9 +157,9 @@ class TradesListener {
                     const solChange = (postBalances[i] - preBalances[i]) / 1e9;
                     // Check if this account has token changes
                     const accountTokenChange = preTokenBalances
-                        .filter(tb => tb.accountIndex === i && tb.mint === tokenMint)
+                        .filter((tb) => tb.accountIndex === i && tb.mint === tokenMint)
                         .reduce((sum, tb) => {
-                        const postTb = postTokenBalances.find(ptb => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint);
+                        const postTb = postTokenBalances.find((ptb) => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint);
                         if (postTb) {
                             const preAmt = parseFloat(tb.uiTokenAmount?.uiAmountString || '0');
                             const postAmt = parseFloat(postTb.uiTokenAmount?.uiAmountString || '0');

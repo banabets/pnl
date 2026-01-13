@@ -4,8 +4,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.recoverFromWallets = recoverFromWallets;
 const web3_js_1 = require("@solana/web3.js");
+const logger_1 = require("./logger");
 async function recoverFromWallets(walletAddresses, privateKeys, // Array of base58 private keys
-masterWalletAddress, rpcUrl = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997') {
+masterWalletAddress, rpcUrl = process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`) {
     const connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
     const masterPublicKey = new web3_js_1.PublicKey(masterWalletAddress);
     if (walletAddresses.length !== privateKeys.length) {
@@ -54,9 +55,9 @@ masterWalletAddress, rpcUrl = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-
                 toPubkey: masterPublicKey,
                 lamports: lamportsToRecover
             }));
-            console.log(`💸 Recovering ${amountToRecover.toFixed(4)} SOL from ${walletAddress.substring(0, 8)}...`);
+            logger_1.log.info(`💸 Recovering ${amountToRecover.toFixed(4)} SOL from ${walletAddress.substring(0, 8)}...`);
             const signature = await (0, web3_js_1.sendAndConfirmTransaction)(connection, transaction, [keypair], { commitment: 'confirmed' });
-            console.log(`✅ Recovered from ${walletAddress.substring(0, 8)}...: ${signature}`);
+            logger_1.log.info(`✅ Recovered from ${walletAddress.substring(0, 8)}...: ${signature}`);
             totalRecovered += amountToRecover;
             results.push({
                 walletAddress,
@@ -66,7 +67,7 @@ masterWalletAddress, rpcUrl = 'https://mainnet.helius-rpc.com/?api-key=7b05747c-
             });
         }
         catch (error) {
-            console.error(`❌ Failed to recover from ${walletAddresses[i]}:`, error.message);
+            logger_1.log.error(`❌ Failed to recover from ${walletAddresses[i]}:`, error.message);
             results.push({
                 walletAddress: walletAddresses[i],
                 amount: 0,

@@ -8,13 +8,14 @@ const token_indexer_1 = require("./token-indexer");
 const rate_limiter_1 = require("./rate-limiter");
 const web3_js_1 = require("@solana/web3.js");
 const spl_token_1 = require("@solana/spl-token");
-// Tokens conocidos a excluir (Wrapped SOL, tokens genéricos, etc.)
-const EXCLUDED_MINTS = new Set([
-    'So11111111111111111111111111111111111111112', // Wrapped SOL
-    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
-]);
+const logger_1 = require("./logger");
 class TokenFeedService {
+    /**
+     * Check if service is started (public method)
+     */
+    isServiceStarted() {
+        return this.isStarted;
+    }
     constructor() {
         // Cache inteligente con diferentes TTLs según tipo de dato
         this.metadataCache = new Map(); // name, symbol, image
@@ -183,7 +184,7 @@ class TokenFeedService {
         if (this.isStarted)
             return;
         this.isStarted = true;
-        console.log('🚀 Starting Token Feed with on-chain monitoring...');
+        logger_1.log.info('Starting Token Feed with on-chain monitoring');
         // Initialize token indexer
         await token_indexer_1.tokenIndexer.initialize();
         // Load recent tokens from MongoDB if available
@@ -258,17 +259,17 @@ class TokenFeedService {
                         });
                     }
                 }
-                console.log(`📦 Loaded ${recentTokens.length} tokens from MongoDB`);
+                logger_1.log.info('Loaded tokens from MongoDB', { count: recentTokens.length });
             }
             catch (error) {
-                console.error('Failed to load tokens from MongoDB:', error);
+                logger_1.log.error('Failed to load tokens from MongoDB', { error: error instanceof Error ? error.message : String(error) });
             }
         }
         // Start Helius WebSocket
         await helius_websocket_1.heliusWebSocket.start();
         // Listen for new tokens
         helius_websocket_1.heliusWebSocket.on('new_token', async (event) => {
-            console.log(`🆕 On-chain: New token ${event.symbol || event.mint.slice(0, 8)}`);
+            logger_1.log.info('On-chain: New token detected', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
             // Create TokenData from on-chain event
             const tokenData = {
                 mint: event.mint,
@@ -317,12 +318,11 @@ class TokenFeedService {
                 age: tokenData.age,
             });
             // Fetch additional metadata from DexScreener after a delay
-            // Use longer delay to avoid rate limits when many tokens are created at once
-            setTimeout(() => this.enrichTokenData(event.mint), 30000); // 30 seconds instead of 5
+            setTimeout(() => this.enrichTokenData(event.mint), 5000);
         });
         // Listen for graduations
         helius_websocket_1.heliusWebSocket.on('graduation', async (event) => {
-            console.log(`🎓 On-chain: Token graduated ${event.symbol || event.mint.slice(0, 8)}`);
+            logger_1.log.info('On-chain: Token graduated', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
             this.graduatedTokens.add(event.mint);
             // Update token data
             const existing = this.onChainTokens.get(event.mint);
@@ -335,38 +335,11 @@ class TokenFeedService {
                 // Update in MongoDB
                 await token_indexer_1.tokenIndexer.indexToken({
                     mint: existing.mint,
-                    createdAt: existing.createdAt,
                     isGraduating: existing.isGraduating,
                     dexId: existing.dexId,
                     pairAddress: existing.pairAddress,
                     liquidity: existing.liquidity,
-                });
-            }
-        });
-        // Listen for token updates (enriched data)
-        helius_websocket_1.heliusWebSocket.on('token_updated', async (event) => {
-            console.log(`🔄 Token updated: ${event.symbol || event.mint.slice(0, 8)}`);
-            const existing = this.onChainTokens.get(event.mint);
-            if (existing) {
-                // Update with enriched data
-                existing.name = event.name || existing.name;
-                existing.symbol = event.symbol || existing.symbol;
-                existing.price = event.price || existing.price;
-                existing.marketCap = event.marketCap || existing.marketCap;
-                existing.liquidity = event.liquidity || existing.liquidity;
-                existing.volume24h = event.volume || existing.volume24h;
-                // Broadcast updated data immediately
-                this.broadcast([existing]);
-                // Update in MongoDB
-                await token_indexer_1.tokenIndexer.indexToken({
-                    mint: existing.mint,
-                    name: existing.name,
-                    symbol: existing.symbol,
-                    createdAt: existing.createdAt,
-                    price: existing.price,
-                    marketCap: existing.marketCap,
-                    liquidity: existing.liquidity,
-                    volume24h: existing.volume24h,
+                    createdAt: existing.createdAt || Date.now()
                 });
             }
         });
@@ -399,7 +372,6 @@ class TokenFeedService {
                 // Update in MongoDB (async, don't wait)
                 token_indexer_1.tokenIndexer.indexToken({
                     mint: existing.mint,
-                    createdAt: existing.createdAt,
                     price: existing.price,
                     volume5m: existing.volume5m,
                     volume1h: existing.volume1h,
@@ -407,22 +379,17 @@ class TokenFeedService {
                     txns1h: existing.txns1h,
                     isTrending: existing.isTrending,
                     isGraduating: existing.isGraduating,
+                    createdAt: existing.createdAt || Date.now(),
                 }).catch(() => { }); // Ignore errors
             }
         });
-        console.log('✅ Token Feed started with on-chain monitoring');
+        logger_1.log.info('Token Feed started with on-chain monitoring');
     }
     /**
      * Get on-chain tokens map (for worker access)
      */
     getOnChainTokens() {
         return this.onChainTokens;
-    }
-    /**
-     * Check if service is started
-     */
-    isServiceStarted() {
-        return this.isStarted;
     }
     /**
      * Enrich token data with DexScreener metadata (with intelligent caching)
@@ -436,7 +403,7 @@ class TokenFeedService {
             // 1. Check cache for metadata first (longest TTL)
             const cachedMetadata = this.getCachedMetadata(mint);
             if (cachedMetadata) {
-                console.log(`📦 Using cached metadata for ${mint.slice(0, 8)}...`);
+                logger_1.log.info('Using cached metadata', { mint: mint.slice(0, 8) });
                 existing.name = cachedMetadata.name || existing.name;
                 existing.symbol = cachedMetadata.symbol || existing.symbol;
                 existing.imageUrl = cachedMetadata.imageUrl || existing.imageUrl;
@@ -468,57 +435,43 @@ class TokenFeedService {
                 existing.priceChange1h = cachedPriceChanges.priceChange1h || existing.priceChange1h;
                 existing.priceChange24h = cachedPriceChanges.priceChange24h || existing.priceChange24h;
             }
-            // 6. If we have cached metadata (name, symbol, image), that's often enough
-            // Only fetch from API if we're missing critical metadata AND rate limit allows
-            const hasBasicMetadata = cachedMetadata && (cachedMetadata.name || cachedMetadata.symbol);
-            if (hasBasicMetadata && cachedPrice !== null && cachedVolume && cachedMarketData) {
-                console.log(`✅ Sufficient data cached for ${mint.slice(0, 8)}..., skipping API call`);
+            // 6. If we have all cached data, skip API call
+            if (cachedMetadata && cachedPrice !== null && cachedVolume && cachedMarketData && cachedPriceChanges) {
+                logger_1.log.info('All data cached, skipping API call', { mint: mint.slice(0, 8) });
                 this.onChainTokens.set(mint, existing);
                 return;
             }
-            // 7. Check rate limit BEFORE waiting (to avoid unnecessary waits)
+            // 7. Fetch from API only if cache is missing/expired
+            // Wait if rate limit is reached
+            await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener');
+            // Check if we can make request
             if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
-                console.log(`⏳ Rate limit reached for DexScreener, using cached/on-chain data for ${mint.slice(0, 8)}...`);
-                // Try on-chain fallback first
+                logger_1.log.info('Rate limit reached for DexScreener, using on-chain fallback', { mint: mint.slice(0, 8) });
                 const onChainResult = await this.enrichTokenDataOnChain(mint);
                 if (onChainResult) {
                     return;
                 }
-                // If on-chain fails, use what we have from cache
-                this.onChainTokens.set(mint, existing);
+                // If on-chain fails, use cached data
                 return;
             }
-            // 8. Wait if needed (but we already checked canMakeRequest, so this should be quick)
-            await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener', 5000); // Max 5 second wait
-            // Double check after waiting
-            if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
-                console.log(`⏳ Still rate limited after wait, using cached/on-chain data for ${mint.slice(0, 8)}...`);
-                const onChainResult = await this.enrichTokenDataOnChain(mint);
-                if (onChainResult) {
-                    return;
-                }
-                this.onChainTokens.set(mint, existing);
-                return;
-            }
-            const remaining = rate_limiter_1.rateLimiter.getRemainingRequests('dexscreener');
-            console.log(`🔍 Fetching fresh data from DexScreener for ${mint.slice(0, 8)}... (${remaining} requests remaining)`);
-            // Record the request BEFORE making it (to prevent concurrent requests)
-            rate_limiter_1.rateLimiter.recordRequest('dexscreener');
-            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`, {
-                headers: { 'Accept': 'application/json' },
-                signal: AbortSignal.timeout(10000) // 10 second timeout
+            logger_1.log.info('Fetching fresh data from DexScreener', {
+                mint: mint.slice(0, 8),
+                remainingRequests: rate_limiter_1.rateLimiter.getRemainingRequests('dexscreener')
             });
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`, { headers: { 'Accept': 'application/json' } });
+            // Record the request
+            rate_limiter_1.rateLimiter.recordRequest('dexscreener');
             if (!response.ok) {
                 // If API fails, try on-chain fallback
-                console.log(`⚠️ DexScreener API failed for ${mint.slice(0, 8)}..., trying on-chain fallback...`);
+                logger_1.log.warn('DexScreener API failed, trying on-chain fallback', { mint: mint.slice(0, 8) });
                 const onChainResult = await this.enrichTokenDataOnChain(mint);
                 if (onChainResult) {
-                    console.log(`✅ On-chain enrichment successful for ${mint.slice(0, 8)}...`);
+                    logger_1.log.info('On-chain enrichment successful', { mint: mint.slice(0, 8) });
                     return;
                 }
                 // If on-chain also fails, use cached data if available (graceful degradation)
                 if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
-                    console.log(`⚠️ Using cached data as final fallback for ${mint.slice(0, 8)}...`);
+                    logger_1.log.warn('Using cached data as final fallback', { mint: mint.slice(0, 8) });
                 }
                 return;
             }
@@ -590,7 +543,7 @@ class TokenFeedService {
         }
         catch (error) {
             // If API fails, try on-chain fallback first
-            console.log(`⚠️ API error for ${mint.slice(0, 8)}..., trying on-chain fallback...`);
+            logger_1.log.warn('API error, trying on-chain fallback', { mint: mint.slice(0, 8) });
             const onChainResult = await this.enrichTokenDataOnChain(mint);
             if (!onChainResult) {
                 // If on-chain also fails, use cached data (graceful degradation)
@@ -599,7 +552,7 @@ class TokenFeedService {
                 const cachedVolume = this.getCachedVolume(mint);
                 const cachedMarketData = this.getCachedMarketData(mint);
                 if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
-                    console.log(`⚠️ Using cached data as final fallback for ${mint.slice(0, 8)}...`);
+                    logger_1.log.warn('Using cached data as final fallback', { mint: mint.slice(0, 8) });
                     if (cachedMetadata) {
                         existing.name = cachedMetadata.name || existing.name;
                         existing.symbol = cachedMetadata.symbol || existing.symbol;
@@ -645,7 +598,7 @@ class TokenFeedService {
             // 3. Get metadata account
             const metadataAccount = await connection.getAccountInfo(metadataPDA);
             if (!metadataAccount) {
-                console.log(`📊 No Metaplex metadata found on-chain for ${mint.slice(0, 8)}...`);
+                logger_1.log.info('No Metaplex metadata found on-chain', { mint: mint.slice(0, 8) });
                 return false;
             }
             // 4. Parse metadata - look for URI in the data
@@ -653,18 +606,18 @@ class TokenFeedService {
             const dataStr = data.toString('utf8');
             const uriMatch = dataStr.match(/https?:\/\/[^\x00\s]+\.json/);
             if (!uriMatch) {
-                console.log(`📊 No metadata URI found for ${mint.slice(0, 8)}...`);
+                logger_1.log.info('No metadata URI found', { mint: mint.slice(0, 8) });
                 return false;
             }
             const metadataUri = uriMatch[0].replace(/\x00/g, '');
-            console.log(`📊 Found metadata URI on-chain: ${metadataUri}`);
+            logger_1.log.info('Found metadata URI on-chain', { metadataUri });
             // 5. Fetch the JSON metadata from IPFS/Arweave
             const metaResponse = await fetch(metadataUri, {
                 headers: { 'Accept': 'application/json' },
                 signal: AbortSignal.timeout(5000), // 5 second timeout
             });
             if (!metaResponse.ok) {
-                console.log(`📊 Failed to fetch metadata JSON from ${metadataUri}`);
+                logger_1.log.info('Failed to fetch metadata JSON', { metadataUri });
                 return false;
             }
             const metaJson = await metaResponse.json();
@@ -682,12 +635,14 @@ class TokenFeedService {
                 existing.imageUrl = metaJson.image;
                 updated = true;
             }
-            // 7. Get mint info (supply, decimals) - can be stored in MongoDB if needed
+            // 7. Get mint info (supply, decimals)
             try {
                 const mintInfo = await (0, spl_token_1.getMint)(connection, mintPubkey);
                 const supply = Number(mintInfo.supply) / Math.pow(10, mintInfo.decimals);
-                // Note: TokenData doesn't have supply field, but we can store it in MongoDB via tokenIndexer
-                // if needed in the future
+                // Store supply if we don't have it
+                // Note: TokenData doesn't have supply field, but we can store it in MongoDB
+                // if (!existing.supply || existing.supply === 0) {
+                // }
             }
             catch (mintError) {
                 // Ignore mint info errors
@@ -706,13 +661,13 @@ class TokenFeedService {
                     symbol: existing.symbol,
                     imageUrl: existing.imageUrl,
                 }, 'onchain');
-                console.log(`✅ On-chain enrichment successful for ${mint.slice(0, 8)}...`);
+                logger_1.log.info('On-chain enrichment successful', { mint: mint.slice(0, 8) });
                 return true;
             }
             return false;
         }
         catch (error) {
-            console.log(`📊 On-chain enrichment failed for ${mint.slice(0, 8)}...: ${error.message}`);
+            logger_1.log.info('On-chain enrichment failed', { mint: mint.slice(0, 8), error: error.message });
             return false;
         }
     }
@@ -720,33 +675,12 @@ class TokenFeedService {
      * Fetch latest tokens from on-chain + DexScreener
      */
     async fetchTokens(options = {}) {
-        // Filtrar tokens excluidos
-        const filterExcluded = (tokens) => {
-            return tokens.filter(token => {
-                // Excluir tokens conocidos
-                if (EXCLUDED_MINTS.has(token.mint)) {
-                    return false;
-                }
-                // Excluir tokens sin nombre o con nombres genéricos
-                if (!token.name || token.name.trim() === '' ||
-                    token.name.toLowerCase() === 'pump fun' ||
-                    token.name.toLowerCase() === 'pump.fun' ||
-                    token.name.toLowerCase() === 'wrapped solana' ||
-                    token.name.toLowerCase() === 'wrapped sol') {
-                    return false;
-                }
-                return true;
-            });
-        };
         const { filter = 'all', minLiquidity = 0, // Allow 0 liquidity for new tokens
         maxAge = 1440, // 24 hours default
         limit = 50 } = options;
         try {
             const allTokens = [];
             const now = Date.now();
-            let dbTokensCount = 0;
-            let onChainTokensCount = 0;
-            let dexscreenerTokensCount = 0;
             // 1. Try to get tokens from MongoDB first (if available)
             if (token_indexer_1.tokenIndexer.isActive()) {
                 try {
@@ -756,8 +690,6 @@ class TokenFeedService {
                         maxAge,
                         limit: limit * 2 // Get more to merge with in-memory
                     });
-                    dbTokensCount = dbTokens.length;
-                    console.log(`📊 TokenFeed: Found ${dbTokensCount} tokens from MongoDB`);
                     // Convert to TokenData format
                     for (const dbToken of dbTokens) {
                         const tokenData = {
@@ -792,15 +724,10 @@ class TokenFeedService {
                     }
                 }
                 catch (error) {
-                    console.error('❌ TokenFeed: Failed to fetch from MongoDB:', error);
+                    logger_1.log.error('Failed to fetch from MongoDB, using fallback', { error: error instanceof Error ? error.message : String(error) });
                 }
             }
-            else {
-                console.log('⚠️ TokenFeed: MongoDB not active, skipping database tokens');
-            }
             // 2. Add on-chain tokens (real-time) - these take priority
-            onChainTokensCount = this.onChainTokens.size;
-            console.log(`📊 TokenFeed: Found ${onChainTokensCount} tokens from on-chain WebSocket`);
             for (const [mint, token] of this.onChainTokens) {
                 // Update age
                 token.age = Math.floor((now - token.createdAt) / 60000);
@@ -816,8 +743,7 @@ class TokenFeedService {
                     allTokens.push(token);
                 }
             }
-            // 3. Fetch from DexScreener for additional tokens
-            console.log('📊 TokenFeed: Fetching from DexScreener...');
+            // 2. Fetch from DexScreener for additional tokens
             const searchPromises = [
                 this.fetchFromDexScreenerSearch('pump'),
                 this.fetchFromDexScreenerPairs(),
@@ -825,7 +751,6 @@ class TokenFeedService {
             const results = await Promise.allSettled(searchPromises);
             for (const result of results) {
                 if (result.status === 'fulfilled' && result.value) {
-                    dexscreenerTokensCount += result.value.length;
                     for (const token of result.value) {
                         // Don't overwrite on-chain tokens
                         if (!this.onChainTokens.has(token.mint)) {
@@ -833,11 +758,7 @@ class TokenFeedService {
                         }
                     }
                 }
-                else if (result.status === 'rejected') {
-                    console.error('❌ TokenFeed: DexScreener request failed:', result.reason);
-                }
             }
-            console.log(`📊 TokenFeed: Found ${dexscreenerTokensCount} tokens from DexScreener`);
             // Remove duplicates by mint address, prefer on-chain data
             const uniqueTokens = new Map();
             for (const token of allTokens) {
@@ -847,32 +768,9 @@ class TokenFeedService {
                 }
             }
             let tokens = Array.from(uniqueTokens.values());
-            // Apply base filters (but be lenient for new tokens)
-            const beforeFilter = tokens.length;
+            // Apply base filters
             tokens = tokens.filter(t => {
-                // Excluir tokens conocidos (Wrapped SOL, USDC, USDT, etc.)
-                if (EXCLUDED_MINTS.has(t.mint)) {
-                    return false;
-                }
-                // Excluir tokens sin nombre o con nombres genéricos
-                if (!t.name || t.name.trim() === '' ||
-                    t.name.toLowerCase() === 'pump fun' ||
-                    t.name.toLowerCase() === 'pump.fun' ||
-                    t.name.toLowerCase() === 'wrapped solana' ||
-                    t.name.toLowerCase() === 'wrapped sol' ||
-                    t.name.toLowerCase() === 'solana' ||
-                    t.symbol?.toLowerCase() === 'wsol' ||
-                    t.symbol?.toLowerCase() === 'sol') {
-                    return false;
-                }
-                // For 'new' filter, allow tokens with 0 liquidity
-                if (filter === 'new') {
-                    if (t.age > maxAge)
-                        return false;
-                    return true; // Allow all new tokens regardless of liquidity
-                }
-                // For other filters, apply minLiquidity but be lenient (allow 0 if explicitly set)
-                if (minLiquidity > 0 && t.liquidity < minLiquidity)
+                if (filter !== 'new' && t.liquidity < minLiquidity)
                     return false;
                 if (t.age > maxAge)
                     return false;
@@ -896,139 +794,15 @@ class TokenFeedService {
             }
             // Sort by creation time (newest first)
             tokens.sort((a, b) => b.createdAt - a.createdAt);
-            console.log(`📊 TokenFeed: Found ${tokens.length} tokens after filtering (${beforeFilter} before filter, ${dbTokensCount} from DB, ${onChainTokensCount} on-chain, ${dexscreenerTokensCount} from DexScreener)`);
-            // 4. FALLBACK: If no tokens or very few tokens found, use pump.fun API as last resort
-            if (tokens.length === 0 || (tokens.length < 5 && beforeFilter === 0)) {
-                console.log(`⚠️ TokenFeed: Only ${tokens.length} tokens found from primary sources, trying pump.fun API fallback...`);
-                try {
-                    const fallbackTokens = await this.fetchFromPumpFunAPI(limit);
-                    if (fallbackTokens.length > 0) {
-                        console.log(`✅ TokenFeed: Fallback successful! Found ${fallbackTokens.length} tokens from pump.fun API`);
-                        // Apply filters to fallback tokens too
-                        let filteredFallback = fallbackTokens;
-                        if (filter !== 'new' && minLiquidity > 0) {
-                            filteredFallback = fallbackTokens.filter(t => t.liquidity >= minLiquidity);
-                        }
-                        if (filteredFallback.length > 0) {
-                            return filteredFallback.slice(0, limit);
-                        }
-                        // If filters too strict, return unfiltered fallback tokens
-                        return fallbackTokens.slice(0, limit);
-                    }
-                }
-                catch (fallbackError) {
-                    console.error('❌ TokenFeed: Fallback to pump.fun failed:', fallbackError);
-                }
-                console.log('❌ TokenFeed: All sources failed, returning what we have');
-            }
-            return tokens.slice(0, limit);
-        }
-        catch (error) {
-            console.error('❌ TokenFeed: Error fetching tokens:', error);
-            // Last resort fallback
-            console.log('🔄 TokenFeed: Trying pump.fun API as emergency fallback...');
-            try {
-                const fallbackTokens = await this.fetchFromPumpFunAPI(limit);
-                if (fallbackTokens.length > 0) {
-                    console.log(`✅ TokenFeed: Emergency fallback successful! Found ${fallbackTokens.length} tokens`);
-                    return fallbackTokens;
-                }
-            }
-            catch (fallbackError) {
-                console.error('❌ TokenFeed: Emergency fallback also failed:', fallbackError);
-            }
-            return [];
-        }
-    }
-    /**
-     * Fallback: Fetch from pump.fun API (last resort when all other sources fail)
-     */
-    async fetchFromPumpFunAPI(limit) {
-        try {
-            console.log('🔄 TokenFeed: Fetching from pump.fun API...');
-            const pumpUrl = `https://frontend-api.pump.fun/coins?offset=0&limit=${limit}&sort=created_timestamp&order=DESC`;
-            const pumpResponse = await fetch(pumpUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                    'Accept': 'application/json',
-                },
+            logger_1.log.info('TokenFeed: Tokens found', {
+                count: tokens.length,
+                filter,
+                onChainCount: this.onChainTokens.size
             });
-            if (!pumpResponse.ok) {
-                console.error(`❌ TokenFeed: pump.fun API returned status ${pumpResponse.status}`);
-                return [];
-            }
-            const pumpData = await pumpResponse.json();
-            if (!Array.isArray(pumpData) || pumpData.length === 0) {
-                console.log('⚠️ TokenFeed: pump.fun API returned empty or invalid data');
-                return [];
-            }
-            const now = Date.now();
-            const tokens = [];
-            // Filter tokens from last 24 hours
-            const oneDayAgo = now - (24 * 60 * 60 * 1000);
-            for (const token of pumpData) {
-                const createdAt = (token.created_timestamp || 0) * 1000; // Convert to milliseconds
-                if (createdAt < oneDayAgo)
-                    continue; // Skip old tokens
-                const age = Math.floor((now - createdAt) / 60000); // Age in minutes
-                // Excluir tokens conocidos
-                const mint = token.mint || token.address || '';
-                if (EXCLUDED_MINTS.has(mint)) {
-                    continue;
-                }
-                // Filter out generic pump.fun tokens
-                const name = (token.name || '').toLowerCase().trim();
-                const symbol = (token.symbol || '').toLowerCase().trim();
-                const isGeneric = name === 'pump.fun' ||
-                    name === 'pump fun' ||
-                    name === 'pumpfun' ||
-                    name === 'wrapped solana' ||
-                    name === 'wrapped sol' ||
-                    name === 'solana' ||
-                    symbol === 'pump.fun' ||
-                    symbol === 'pumpfun' ||
-                    symbol === 'wsol' ||
-                    symbol === 'sol' ||
-                    !name || name.trim() === ''; // Excluir tokens sin nombre
-                if (isGeneric)
-                    continue;
-                const tokenData = {
-                    mint: token.mint || token.address || '',
-                    name: token.name || `Token ${(token.mint || token.address || '').substring(0, 8)}`,
-                    symbol: token.symbol || 'UNK',
-                    imageUrl: token.image_uri || token.image_uri || '',
-                    price: token.usd_market_cap ? token.usd_market_cap / (token.supply || 1) : 0,
-                    priceChange5m: 0,
-                    priceChange1h: 0,
-                    priceChange24h: token.price_change_24h || 0,
-                    volume5m: 0,
-                    volume1h: 0,
-                    volume24h: token.volume_24h || 0,
-                    liquidity: token.liquidity || 0,
-                    marketCap: token.usd_market_cap || 0,
-                    fdv: token.usd_market_cap || 0,
-                    holders: token.holders || 0,
-                    txns5m: { buys: 0, sells: 0 },
-                    txns1h: { buys: 0, sells: 0 },
-                    txns24h: { buys: 0, sells: 0 },
-                    createdAt,
-                    pairAddress: token.associated_market || token.bonding_curve || '',
-                    dexId: token.complete ? 'raydium' : 'pumpfun',
-                    age,
-                    isNew: age < 30,
-                    isGraduating: !token.complete && (token.liquidity || 0) > 20000,
-                    isTrending: (token.volume_24h || 0) > 50000,
-                    riskScore: age < 10 ? 70 : (token.liquidity || 0) < 5000 ? 60 : 50,
-                };
-                tokens.push(tokenData);
-            }
-            // Sort by creation time (newest first)
-            tokens.sort((a, b) => b.createdAt - a.createdAt);
-            console.log(`✅ TokenFeed: Converted ${tokens.length} tokens from pump.fun API`);
             return tokens.slice(0, limit);
         }
         catch (error) {
-            console.error('❌ TokenFeed: Error fetching from pump.fun API:', error.message);
+            logger_1.log.error('Error fetching tokens', { error: error instanceof Error ? error.message : String(error) });
             return [];
         }
     }
@@ -1039,7 +813,7 @@ class TokenFeedService {
         try {
             // Check rate limit
             if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
-                console.log('⏳ Rate limit reached for DexScreener search, skipping...');
+                logger_1.log.info('Rate limit reached for DexScreener search, skipping');
                 return [];
             }
             await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener');
@@ -1056,7 +830,7 @@ class TokenFeedService {
                 .filter((t) => t !== null);
         }
         catch (error) {
-            console.error('DexScreener search error:', error);
+            logger_1.log.error('DexScreener search error', { error: error instanceof Error ? error.message : String(error) });
             return [];
         }
     }
@@ -1067,7 +841,7 @@ class TokenFeedService {
         try {
             // Check rate limit
             if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
-                console.log('⏳ Rate limit reached for DexScreener pairs, skipping...');
+                logger_1.log.info('Rate limit reached for DexScreener pairs, skipping');
                 return [];
             }
             await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener');
@@ -1091,7 +865,7 @@ class TokenFeedService {
                     }
                 }
                 catch (e) {
-                    console.error('Error fetching from', endpoint, e);
+                    logger_1.log.error('Error fetching from endpoint', { endpoint, error: e instanceof Error ? e.message : String(e) });
                 }
             }
             return allPairs
@@ -1100,7 +874,7 @@ class TokenFeedService {
                 .filter((t) => t !== null);
         }
         catch (error) {
-            console.error('DexScreener pairs error:', error);
+            logger_1.log.error('DexScreener pairs error', { error: error instanceof Error ? error.message : String(error) });
             return [];
         }
     }
@@ -1111,7 +885,7 @@ class TokenFeedService {
         try {
             // Check rate limit
             if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
-                console.log('⏳ Rate limit reached for DexScreener search fallback, skipping...');
+                logger_1.log.info('Rate limit reached for DexScreener search fallback, skipping');
                 return [];
             }
             await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener');
@@ -1130,7 +904,7 @@ class TokenFeedService {
             return tokens.slice(0, options.limit || 50);
         }
         catch (error) {
-            console.error('Search fallback error:', error);
+            logger_1.log.error('Search fallback error', { error: error instanceof Error ? error.message : String(error) });
             return [];
         }
     }
@@ -1164,7 +938,7 @@ class TokenFeedService {
             }
         }
         catch (error) {
-            console.error('Pair data fetch error:', error);
+            logger_1.log.error('Pair data fetch error', { error: error instanceof Error ? error.message : String(error) });
         }
         return tokens;
     }
@@ -1275,7 +1049,7 @@ class TokenFeedService {
         try {
             // Check rate limit
             if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
-                console.log(`⏳ Rate limit reached for DexScreener, trying on-chain for ${mint.slice(0, 8)}...`);
+                logger_1.log.info('Rate limit reached for DexScreener, trying on-chain', { mint: mint.slice(0, 8) });
                 // Try on-chain fallback
                 const onChainResult = await this.enrichTokenDataOnChain(mint);
                 if (onChainResult) {
@@ -1313,3 +1087,4 @@ class TokenFeedService {
 }
 // Singleton instance
 exports.tokenFeed = new TokenFeedService();
+//# sourceMappingURL=token-feed.js.map

@@ -5,6 +5,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.tokenEnricherWorker = void 0;
 const token_indexer_1 = require("./token-indexer");
 const token_feed_1 = require("./token-feed");
+const logger_1 = require("./logger");
 class TokenEnricherWorker {
     constructor() {
         this.isRunning = false;
@@ -17,23 +18,23 @@ class TokenEnricherWorker {
      */
     async start() {
         if (this.isRunning) {
-            console.log('⚠️ Token Enricher Worker already running');
+            logger_1.log.warn('Token Enricher Worker already running');
             return;
         }
         this.isRunning = true;
-        console.log('🔄 Starting Token Enricher Worker...');
-        // Enrich tokens every 10 minutes (reduced frequency to avoid rate limits)
+        logger_1.log.info('Starting Token Enricher Worker');
+        // Enrich tokens every 5 minutes
         this.interval = setInterval(async () => {
             if (!this.processing) {
                 await this.enrichBatch();
             }
-        }, 10 * 60 * 1000); // 10 minutes (was 5)
-        // First execution after 2 minutes (give server time to start and accumulate tokens)
+        }, 5 * 60 * 1000); // 5 minutes
+        // First execution after 30 seconds (give server time to start)
         setTimeout(() => {
             if (this.isRunning && !this.processing) {
                 this.enrichBatch();
             }
-        }, 120000); // 2 minutes (was 30 seconds)
+        }, 30000);
     }
     /**
      * Stop the enricher worker
@@ -45,7 +46,7 @@ class TokenEnricherWorker {
         }
         this.isRunning = false;
         this.processing = false;
-        console.log('🛑 Token Enricher Worker stopped');
+        logger_1.log.info('Token Enricher Worker stopped');
     }
     /**
      * Add token to enrichment queue
@@ -74,38 +75,35 @@ class TokenEnricherWorker {
             // Remove duplicates
             const uniqueMints = Array.from(new Set(tokensToEnrich));
             if (uniqueMints.length === 0) {
-                console.log('📊 No tokens need enrichment at this time');
+                logger_1.log.info('No tokens need enrichment at this time');
                 this.processing = false;
                 return;
             }
-            console.log(`🔄 Enriching ${uniqueMints.length} tokens in background...`);
-            // 3. Process sequentially to avoid rate limits (DexScreener is very strict)
+            logger_1.log.info('Enriching tokens in background', { count: uniqueMints.length });
+            // 3. Process in small batches to avoid rate limits
+            const batchSize = 5;
             let enriched = 0;
             let failed = 0;
-            // Process one at a time with delays to respect rate limits
-            for (let i = 0; i < uniqueMints.length; i++) {
-                const mint = uniqueMints[i];
-                try {
-                    const success = await this.enrichToken(mint);
-                    if (success) {
+            for (let i = 0; i < uniqueMints.length; i += batchSize) {
+                const batch = uniqueMints.slice(i, i + batchSize);
+                const results = await Promise.allSettled(batch.map(mint => this.enrichToken(mint)));
+                for (const result of results) {
+                    if (result.status === 'fulfilled' && result.value) {
                         enriched++;
                     }
                     else {
                         failed++;
                     }
                 }
-                catch (error) {
-                    failed++;
-                }
-                // Delay between tokens to avoid rate limits (8 requests/min = ~7.5s between requests)
-                if (i < uniqueMints.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 8000)); // 8 second delay
+                // Delay between batches to avoid rate limits
+                if (i + batchSize < uniqueMints.length) {
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
                 }
             }
-            console.log(`✅ Enrichment complete: ${enriched} enriched, ${failed} failed`);
+            logger_1.log.info('Enrichment complete', { enriched, failed });
         }
         catch (error) {
-            console.error('❌ Error in enricher worker:', error.message);
+            logger_1.log.error('Error in enricher worker', { error: error.message });
         }
         finally {
             this.processing = false;
@@ -124,7 +122,7 @@ class TokenEnricherWorker {
                 tokens.push(...dbTokens);
             }
             catch (error) {
-                console.error('Failed to get tokens from MongoDB:', error);
+                logger_1.log.error('Failed to get tokens from MongoDB', { error: error instanceof Error ? error.message : String(error) });
             }
         }
         // Priority 2: New tokens from in-memory cache (< 1 hour old, missing metadata)
@@ -144,8 +142,8 @@ class TokenEnricherWorker {
                 }
             }
         }
-        // Limit to 10 tokens per batch (to avoid rate limits with DexScreener)
-        return tokens.slice(0, 10);
+        // Limit to 50 tokens per batch
+        return tokens.slice(0, 50);
     }
     /**
      * Enrich a single token
@@ -157,7 +155,7 @@ class TokenEnricherWorker {
             return true;
         }
         catch (error) {
-            console.error(`Failed to enrich token ${mint.slice(0, 8)}...:`, error.message);
+            logger_1.log.error('Failed to enrich token', { mint: mint.slice(0, 8), error: error.message });
             return false;
         }
     }
@@ -177,7 +175,7 @@ class TokenEnricherWorker {
     async enrichNow(mints) {
         if (mints.length === 0)
             return;
-        console.log(`🔄 Force enriching ${mints.length} tokens...`);
+        logger_1.log.info('Force enriching tokens', { count: mints.length });
         const batchSize = 5;
         for (let i = 0; i < mints.length; i += batchSize) {
             const batch = mints.slice(i, i + batchSize);
@@ -186,7 +184,7 @@ class TokenEnricherWorker {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
-        console.log(`✅ Force enrichment complete for ${mints.length} tokens`);
+        logger_1.log.info('Force enrichment complete', { count: mints.length });
     }
 }
 // Singleton instance

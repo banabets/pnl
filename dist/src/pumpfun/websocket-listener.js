@@ -14,7 +14,7 @@ class PumpFunWebSocketListener {
         this.maxRecentTokens = 100;
         // Use Helius WebSocket endpoint for real-time listening
         // Convert wss:// to https:// for Connection (it handles WebSocket internally)
-        const wsRpcUrl = process.env.WS_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+        const wsRpcUrl = process.env.WS_RPC_URL || process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`;
         this.connection = new web3_js_1.Connection(wsRpcUrl, 'confirmed');
     }
     /**
@@ -43,7 +43,7 @@ class PumpFunWebSocketListener {
             }, 'confirmed');
             // Subscribe to logs to catch transaction signatures
             // This is the most reliable method for catching new token creations
-            this.connection.onLogs(PUMP_FUN_PROGRAM_ID, async (logs, context) => {
+            this.connection.onLogs(PUMP_FUN_PROGRAM_ID, async (logs, _context) => {
                 try {
                     if (logs.err)
                         return; // Skip failed transactions
@@ -105,7 +105,7 @@ class PumpFunWebSocketListener {
                 try {
                     // Try searching SPL Token program for recent token mints
                     // Use a timeout to avoid hanging
-                    const publicRpc = new web3_js_1.Connection('https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997', 'confirmed');
+                    const publicRpc = new web3_js_1.Connection(process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`, 'confirmed');
                     let tokenSignatures = [];
                     try {
                         tokenSignatures = await Promise.race([
@@ -131,7 +131,15 @@ class PumpFunWebSocketListener {
                     const oneDayAgo = Date.now() / 1000 - (24 * 60 * 60);
                     // Reduce processing to avoid rate limits
                     const maxToProcess = Math.min(tokenSignatures.length, 10); // Reduced from 30
+                    // Track global 429 errors to stop processing if too many
+                    let global429Count = 0;
+                    const MAX_GLOBAL_429_ERRORS = 5; // Stop after 5 total 429 errors
                     for (let i = 0; i < maxToProcess; i++) {
+                        // Stop if we've hit too many 429 errors globally
+                        if (global429Count >= MAX_GLOBAL_429_ERRORS) {
+                            console.warn(`🚫 Stopping historical transaction fetch after ${global429Count} rate limit errors. Consider setting HELIUS_API_KEY.`);
+                            return;
+                        }
                         try {
                             const sig = tokenSignatures[i];
                             const txTimestamp = sig.blockTime || Date.now() / 1000;
@@ -142,23 +150,38 @@ class PumpFunWebSocketListener {
                             // Add retry logic with exponential backoff for 429 errors
                             let tx = null;
                             let retries = 0;
-                            const maxRetries = 3;
+                            const maxRetries = 2; // Reduced from 3 to fail faster
                             while (retries < maxRetries && !tx) {
                                 try {
                                     tx = await publicRpc.getTransaction(sig.signature, {
                                         commitment: 'confirmed',
                                         maxSupportedTransactionVersion: 0,
                                     });
+                                    // Success - reset retry counter for next transaction
+                                    retries = 0;
                                 }
                                 catch (error) {
                                     if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests')) {
+                                        global429Count++;
                                         retries++;
-                                        if (retries >= maxRetries) {
-                                            console.log(`⚠️ Rate limited after ${maxRetries} retries, skipping remaining transactions...`);
-                                            return; // Exit early to avoid more rate limits
+                                        // Stop immediately if we've hit global limit
+                                        if (global429Count >= MAX_GLOBAL_429_ERRORS) {
+                                            console.warn(`🚫 Rate limit exceeded (${global429Count} errors). Stopping historical fetch. Set HELIUS_API_KEY to avoid rate limits.`);
+                                            return;
                                         }
-                                        const delay = Math.min(1000 * Math.pow(2, retries), 8000); // Max 8 seconds
-                                        console.log(`Server responded with 429 Too Many Requests. Retrying after ${delay}ms delay...`);
+                                        if (retries >= maxRetries) {
+                                            // Only log once per transaction, not every retry
+                                            if (global429Count === 1 || global429Count % 3 === 0) {
+                                                console.warn(`⚠️ Rate limited (${global429Count}/${MAX_GLOBAL_429_ERRORS}). Skipping transaction ${i + 1}/${maxToProcess}...`);
+                                            }
+                                            break; // Stop retrying this transaction
+                                        }
+                                        // Exponential backoff with longer delays
+                                        const delay = Math.min(2000 * Math.pow(2, retries), 16000); // Max 16 seconds, start at 2s
+                                        // Only log retries occasionally to reduce spam
+                                        if (global429Count <= 2 || global429Count % 5 === 0) {
+                                            console.log(`⏳ Rate limited. Waiting ${delay / 1000}s before retry (${global429Count}/${MAX_GLOBAL_429_ERRORS} total errors)...`);
+                                        }
                                         await new Promise(resolve => setTimeout(resolve, delay));
                                     }
                                     else {
@@ -264,7 +287,7 @@ class PumpFunWebSocketListener {
             for (let i = 0; i < maxToProcess; i += batchSize) {
                 const batch = recentSignatures.slice(i, i + batchSize);
                 // Use the connection that worked (or try both)
-                const rpcToUse = recentSignatures.length > 0 ? this.connection : new web3_js_1.Connection('https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997', 'confirmed');
+                const rpcToUse = recentSignatures.length > 0 ? this.connection : new web3_js_1.Connection(process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`, 'confirmed');
                 await Promise.all(batch.map(async (sig) => {
                     try {
                         // Add retry logic with exponential backoff
@@ -361,7 +384,7 @@ class PumpFunWebSocketListener {
     /**
      * Process account change and extract token mints
      */
-    async processAccountChange(accountData, slot) {
+    async processAccountChange(accountData, _slot) {
         try {
             // Try to extract token mint from account data
             // Pump.fun account structure may vary, so we try multiple approaches
@@ -495,7 +518,7 @@ class PumpFunWebSocketListener {
     /**
      * Check if a token is likely a pump.fun token by checking for bonding curve
      */
-    async isLikelyPumpFunToken(mint) {
+    async _isLikelyPumpFunToken(mint) {
         try {
             // Derive potential bonding curve PDA
             const [bondingCurve] = web3_js_1.PublicKey.findProgramAddressSync([Buffer.from('bonding-curve'), mint.toBuffer()], PUMP_FUN_PROGRAM_ID);

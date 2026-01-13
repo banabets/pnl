@@ -2,6 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.stopLossManager = void 0;
 const portfolio_tracker_1 = require("./portfolio-tracker");
+const jupiter_service_1 = require("./jupiter-service");
+const wallet_service_1 = require("./wallet-service");
+const database_1 = require("./database");
+const logger_1 = require("./logger");
 class StopLossManager {
     constructor() {
         this.stopLossOrders = new Map();
@@ -11,9 +15,10 @@ class StopLossManager {
         this.startPriceMonitoring();
     }
     // Create a stop loss order
-    createStopLoss(positionId, tokenMint, tokenName, tokenSymbol, walletIndex, walletAddress, triggerPrice, amount = 100) {
+    createStopLoss(userId, positionId, tokenMint, tokenName, tokenSymbol, walletIndex, walletAddress, triggerPrice, amount = 100) {
         const order = {
             id: `sl-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            userId,
             positionId,
             tokenMint,
             tokenName,
@@ -31,9 +36,10 @@ class StopLossManager {
         return order;
     }
     // Create a take profit order
-    createTakeProfit(positionId, tokenMint, tokenName, tokenSymbol, walletIndex, walletAddress, triggerPrice, amount = 100) {
+    createTakeProfit(userId, positionId, tokenMint, tokenName, tokenSymbol, walletIndex, walletAddress, triggerPrice, amount = 100) {
         const order = {
             id: `tp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            userId,
             positionId,
             tokenMint,
             tokenName,
@@ -51,9 +57,10 @@ class StopLossManager {
         return order;
     }
     // Create a trailing stop order
-    createTrailingStop(positionId, tokenMint, tokenName, tokenSymbol, walletIndex, walletAddress, trailingPercent, currentPrice) {
+    createTrailingStop(userId, positionId, tokenMint, tokenName, tokenSymbol, walletIndex, walletAddress, trailingPercent, currentPrice) {
         const order = {
             id: `ts-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            userId,
             positionId,
             tokenMint,
             tokenName,
@@ -160,32 +167,218 @@ class StopLossManager {
             }
         }
         catch (error) {
-            console.error(`Error checking orders for ${tokenMint}:`, error);
+            logger_1.log.error('Error checking stop-loss orders', { tokenMint, error: error.message });
         }
     }
     // Execute stop loss order
     async executeStopLoss(order, currentPrice) {
-        // This would execute the actual sell trade
-        // For now, we'll just mark it as triggered
         order.status = 'triggered';
         order.triggeredAt = Date.now() / 1000;
-        console.log(`🛑 Stop Loss triggered for ${order.tokenName} at ${currentPrice}`);
-        // TODO: Execute actual sell trade via trading bot
-        // This would require integration with the trading system
+        logger_1.log.info('Stop Loss triggered', {
+            token: order.tokenName,
+            symbol: order.tokenSymbol,
+            currentPrice,
+            triggerPrice: order.triggerPrice,
+            amount: `${order.amount}%`,
+            orderId: order.id
+        });
+        try {
+            // Get Jupiter service
+            const jupiterService = (0, jupiter_service_1.getJupiterService)();
+            if (!jupiterService) {
+                throw new Error('Jupiter service not available');
+            }
+            // Get wallet keypair (MongoDB required)
+            if (!(0, database_1.isConnected)()) {
+                throw new Error('MongoDB not connected - cannot access wallet');
+            }
+            const walletWithKey = await wallet_service_1.walletService.getWalletWithKey(order.userId, order.walletIndex);
+            if (!walletWithKey) {
+                throw new Error(`Wallet ${order.walletIndex} not found for user`);
+            }
+            // Get position to determine how many tokens to sell
+            const position = portfolio_tracker_1.portfolioTracker.getPosition(order.positionId);
+            if (!position) {
+                throw new Error(`Position ${order.positionId} not found`);
+            }
+            // Calculate amount to sell (percentage of position)
+            const tokensToSell = (position.tokenAmount * order.amount) / 100;
+            logger_1.log.info('Executing sell', { tokensToSell, symbol: order.tokenSymbol });
+            // Execute sell via Jupiter
+            const result = await jupiterService.sellToken(order.tokenMint, tokensToSell, walletWithKey.keypair, 500 // 5% slippage for urgency
+            );
+            if (result.success && result.signature) {
+                order.status = 'executed';
+                order.executedSignature = result.signature;
+                (0, logger_1.logTrade)('sell', {
+                    tokenMint: order.tokenMint,
+                    tokenName: order.tokenName,
+                    tokensSold: tokensToSell,
+                    solReceived: result.outputAmount,
+                    price: currentPrice,
+                    signature: result.signature
+                });
+                logger_1.log.info('Stop Loss executed successfully', {
+                    signature: result.signature,
+                    received: `${result.outputAmount} SOL`,
+                    token: order.tokenName
+                });
+                // Update portfolio
+                portfolio_tracker_1.portfolioTracker.updatePositionAfterSell(order.positionId, tokensToSell, result.outputAmount, currentPrice, result.signature);
+            }
+            else {
+                throw new Error(result.error || 'Sell failed');
+            }
+        }
+        catch (error) {
+            order.status = 'failed';
+            order.error = error.message;
+            logger_1.log.error('Stop Loss execution failed', {
+                error: error.message,
+                token: order.tokenName,
+                orderId: order.id
+            });
+        }
     }
     // Execute take profit order
     async executeTakeProfit(order, currentPrice) {
         order.status = 'triggered';
         order.triggeredAt = Date.now() / 1000;
-        console.log(`🎯 Take Profit triggered for ${order.tokenName} at ${currentPrice}`);
-        // TODO: Execute actual sell trade via trading bot
+        logger_1.log.info('Take Profit triggered', {
+            token: order.tokenName,
+            symbol: order.tokenSymbol,
+            currentPrice,
+            triggerPrice: order.triggerPrice,
+            amount: `${order.amount}%`,
+            orderId: order.id
+        });
+        try {
+            // Get Jupiter service
+            const jupiterService = (0, jupiter_service_1.getJupiterService)();
+            if (!jupiterService) {
+                throw new Error('Jupiter service not available');
+            }
+            // Get wallet keypair (MongoDB required)
+            if (!(0, database_1.isConnected)()) {
+                throw new Error('MongoDB not connected - cannot access wallet');
+            }
+            const walletWithKey = await wallet_service_1.walletService.getWalletWithKey(order.userId, order.walletIndex);
+            if (!walletWithKey) {
+                throw new Error(`Wallet ${order.walletIndex} not found for user`);
+            }
+            // Get position to determine how many tokens to sell
+            const position = portfolio_tracker_1.portfolioTracker.getPosition(order.positionId);
+            if (!position) {
+                throw new Error(`Position ${order.positionId} not found`);
+            }
+            // Calculate amount to sell (percentage of position)
+            const tokensToSell = (position.tokenAmount * order.amount) / 100;
+            logger_1.log.info('Executing sell', { tokensToSell, symbol: order.tokenSymbol });
+            // Execute sell via Jupiter
+            const result = await jupiterService.sellToken(order.tokenMint, tokensToSell, walletWithKey.keypair, 100 // 1% slippage (less urgent than stop-loss)
+            );
+            if (result.success && result.signature) {
+                order.status = 'executed';
+                order.executedSignature = result.signature;
+                (0, logger_1.logTrade)('sell', {
+                    tokenMint: order.tokenMint,
+                    tokenName: order.tokenName,
+                    tokensSold: tokensToSell,
+                    solReceived: result.outputAmount,
+                    price: currentPrice,
+                    signature: result.signature
+                });
+                logger_1.log.info('Take Profit executed successfully', {
+                    signature: result.signature,
+                    received: `${result.outputAmount} SOL`,
+                    token: order.tokenName
+                });
+                // Update portfolio
+                portfolio_tracker_1.portfolioTracker.updatePositionAfterSell(order.positionId, tokensToSell, result.outputAmount, currentPrice, result.signature);
+            }
+            else {
+                throw new Error(result.error || 'Sell failed');
+            }
+        }
+        catch (error) {
+            order.status = 'failed';
+            order.error = error.message;
+            logger_1.log.error('Take Profit execution failed', {
+                error: error.message,
+                token: order.tokenName,
+                orderId: order.id
+            });
+        }
     }
     // Execute trailing stop order
     async executeTrailingStop(order, currentPrice) {
         order.status = 'triggered';
         order.triggeredAt = Date.now() / 1000;
-        console.log(`📉 Trailing Stop triggered for ${order.tokenName} at ${currentPrice}`);
-        // TODO: Execute actual sell trade via trading bot
+        logger_1.log.info('Trailing Stop triggered', {
+            token: order.tokenName,
+            symbol: order.tokenSymbol,
+            currentPrice,
+            highestPrice: order.highestPrice,
+            stopPrice: order.currentStopPrice,
+            orderId: order.id
+        });
+        try {
+            // Get Jupiter service
+            const jupiterService = (0, jupiter_service_1.getJupiterService)();
+            if (!jupiterService) {
+                throw new Error('Jupiter service not available');
+            }
+            // Get wallet keypair (MongoDB required)
+            if (!(0, database_1.isConnected)()) {
+                throw new Error('MongoDB not connected - cannot access wallet');
+            }
+            const walletWithKey = await wallet_service_1.walletService.getWalletWithKey(order.userId, order.walletIndex);
+            if (!walletWithKey) {
+                throw new Error(`Wallet ${order.walletIndex} not found for user`);
+            }
+            // Get position to determine how many tokens to sell
+            const position = portfolio_tracker_1.portfolioTracker.getPosition(order.positionId);
+            if (!position) {
+                throw new Error(`Position ${order.positionId} not found`);
+            }
+            // Trailing stops sell 100% of position
+            const tokensToSell = position.tokenAmount;
+            logger_1.log.info('Executing Trailing Stop sell (100%)', { tokensToSell, symbol: order.tokenSymbol });
+            // Execute sell via Jupiter
+            const result = await jupiterService.sellToken(order.tokenMint, tokensToSell, walletWithKey.keypair, 500 // 5% slippage for urgency
+            );
+            if (result.success && result.signature) {
+                order.status = 'executed';
+                order.executedSignature = result.signature;
+                (0, logger_1.logTrade)('sell', {
+                    tokenMint: order.tokenMint,
+                    tokenName: order.tokenName,
+                    tokensSold: tokensToSell,
+                    solReceived: result.outputAmount,
+                    price: currentPrice,
+                    signature: result.signature
+                });
+                logger_1.log.info('Trailing Stop executed successfully', {
+                    signature: result.signature,
+                    received: `${result.outputAmount} SOL`,
+                    token: order.tokenName
+                });
+                // Update portfolio
+                portfolio_tracker_1.portfolioTracker.updatePositionAfterSell(order.positionId, tokensToSell, result.outputAmount, currentPrice, result.signature);
+            }
+            else {
+                throw new Error(result.error || 'Sell failed');
+            }
+        }
+        catch (error) {
+            order.status = 'failed';
+            order.error = error.message;
+            logger_1.log.error('Trailing Stop execution failed', {
+                error: error.message,
+                token: order.tokenName,
+                orderId: order.id
+            });
+        }
     }
 }
 exports.stopLossManager = new StopLossManager();

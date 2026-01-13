@@ -1,5 +1,6 @@
 export interface StopLossOrder {
     id: string;
+    userId: string;
     positionId: string;
     tokenMint: string;
     tokenName: string;
@@ -9,13 +10,15 @@ export interface StopLossOrder {
     orderType: 'stop-loss' | 'take-profit';
     triggerPrice: number;
     amount: number;
-    status: 'active' | 'triggered' | 'cancelled';
+    status: 'active' | 'triggered' | 'cancelled' | 'executed' | 'failed';
     createdAt: number;
     triggeredAt?: number;
     executedSignature?: string;
+    error?: string;
 }
 export interface TrailingStopOrder {
     id: string;
+    userId: string;
     positionId: string;
     tokenMint: string;
     tokenName: string;
@@ -25,19 +28,20 @@ export interface TrailingStopOrder {
     trailingPercent: number;
     currentStopPrice: number;
     highestPrice: number;
-    status: 'active' | 'triggered' | 'cancelled';
+    status: 'active' | 'triggered' | 'cancelled' | 'executed' | 'failed';
     createdAt: number;
     triggeredAt?: number;
     executedSignature?: string;
+    error?: string;
 }
 declare class StopLossManager {
     private stopLossOrders;
     private trailingStopOrders;
     private priceMonitors;
     constructor();
-    createStopLoss(positionId: string, tokenMint: string, tokenName: string, tokenSymbol: string, walletIndex: number, walletAddress: string, triggerPrice: number, amount?: number): StopLossOrder;
-    createTakeProfit(positionId: string, tokenMint: string, tokenName: string, tokenSymbol: string, walletIndex: number, walletAddress: string, triggerPrice: number, amount?: number): StopLossOrder;
-    createTrailingStop(positionId: string, tokenMint: string, tokenName: string, tokenSymbol: string, walletIndex: number, walletAddress: string, trailingPercent: number, currentPrice: number): TrailingStopOrder;
+    createStopLoss(userId: string, positionId: string, tokenMint: string, tokenName: string, tokenSymbol: string, walletIndex: number, walletAddress: string, triggerPrice: number, amount?: number): StopLossOrder;
+    createTakeProfit(userId: string, positionId: string, tokenMint: string, tokenName: string, tokenSymbol: string, walletIndex: number, walletAddress: string, triggerPrice: number, amount?: number): StopLossOrder;
+    createTrailingStop(userId: string, positionId: string, tokenMint: string, tokenName: string, tokenSymbol: string, walletIndex: number, walletAddress: string, trailingPercent: number, currentPrice: number): TrailingStopOrder;
     cancelOrder(orderId: string): boolean;
     getActiveOrders(): {
         stopLoss: StopLossOrder[];

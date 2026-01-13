@@ -11,6 +11,7 @@ const web3_js_1 = require("@solana/web3.js");
 const jupiter_service_1 = require("./jupiter-service");
 const token_audit_1 = require("./token-audit");
 const mongoose_1 = __importDefault(require("mongoose"));
+const logger_1 = require("./logger");
 // Schema for MongoDB
 const SniperConfigSchema = new mongoose_1.default.Schema({
     userId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
@@ -178,12 +179,12 @@ class SniperBot {
             try {
                 const check = await this.checkToken(tokenMint, config);
                 if (check.pass) {
-                    console.log(`🎯 Token ${tokenMint} passed filters for user ${userId}`);
+                    logger_1.log.info(`🎯 Token ${tokenMint} passed filters for user ${userId}`);
                     // Note: Actual execution requires user's keypair, handled via API
                 }
             }
             catch (error) {
-                console.error(`Error checking token for user ${userId}:`, error);
+                logger_1.log.error(`Error checking token for user ${userId}:`, error);
             }
         }
     }

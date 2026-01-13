@@ -1,5 +1,6 @@
 export interface PriceAlert {
     id: string;
+    userId: string;
     tokenMint: string;
     tokenName: string;
     tokenSymbol: string;
@@ -14,13 +15,17 @@ export interface PriceAlert {
 declare class PriceAlertManager {
     private alerts;
     private priceMonitors;
+    private broadcastCallback;
     constructor();
-    createAlert(tokenMint: string, tokenName: string, tokenSymbol: string, alertType: PriceAlert['alertType'], targetValue: number): PriceAlert;
+    setBroadcastCallback(callback: (event: string, data: any) => void): void;
+    createAlert(userId: string, tokenMint: string, tokenName: string, tokenSymbol: string, alertType: PriceAlert['alertType'], targetValue: number): PriceAlert;
     cancelAlert(alertId: string): boolean;
     getActiveAlerts(): PriceAlert[];
     getAlertsByToken(tokenMint: string): PriceAlert[];
+    getAlertsByUser(userId: string): PriceAlert[];
     private startMonitoringToken;
     private startMonitoring;
+    private fetchTokenData;
     private checkAlerts;
     updateAlertPrice(tokenMint: string, price: number, volume?: number, marketCap?: number): void;
 }

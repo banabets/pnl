@@ -2645,16 +2645,20 @@ app.post('/api/volume/start',
     }
 
     // Get wallets from wallet manager (use first N wallets)
-    const walletsData = await walletService.getAllWallets();
-    if (!walletsData || walletsData.length === 0) {
+    const userId = req.user!.id;
+    const walletsInfo = await walletService.getUserWallets(userId);
+    if (!walletsInfo || walletsInfo.length === 0) {
       return res.status(400).json({ error: 'No wallets available. Create wallets first.' });
     }
 
-    // Convert wallet data to Keypairs
-    const { Keypair } = await import('@solana/web3.js');
-    const wallets = walletsData.slice(0, walletCount).map((w: any) => {
-      return Keypair.fromSecretKey(new Uint8Array(JSON.parse(w.privateKey)));
-    });
+    // Get wallets with private keys
+    const walletsWithKeys = await walletService.getWalletsWithKeys(
+      userId,
+      walletsInfo.slice(0, walletCount).map(w => w.index)
+    );
+
+    // Extract keypairs from wallet data
+    const wallets = walletsWithKeys.map((w) => w.keypair);
 
     const config = {
       tokenMint,
@@ -2717,14 +2721,13 @@ app.post('/api/launchpad/create',
     }
 
     // Get master wallet as creator
-    const masterWalletData = await walletService.getMasterWallet();
+    const userId = req.user!.id;
+    const masterWalletData = await walletService.getMasterWalletWithKey(userId);
     if (!masterWalletData) {
       return res.status(400).json({ error: 'Master wallet not found. Create one first.' });
     }
 
-    // Convert to Keypair
-    const { Keypair } = await import('@solana/web3.js');
-    const creatorWallet = Keypair.fromSecretKey(new Uint8Array(JSON.parse(masterWalletData.privateKey)));
+    const creatorWallet = masterWalletData.keypair;
 
     // Launch token
     const result = await launchpadService.launchToken(

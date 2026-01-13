@@ -9,7 +9,7 @@ const PUMP_FUN_PROGRAM_ID = new web3_js_1.PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvf
  */
 class PumpFunTransactionParser {
     constructor(rpcUrl) {
-        this.connection = new web3_js_1.Connection(rpcUrl || process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997', 'confirmed');
+        this.connection = new web3_js_1.Connection(rpcUrl || process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`, 'confirmed');
     }
     /**
      * Get trades from pump.fun program transactions
@@ -118,9 +118,9 @@ class PumpFunTransactionParser {
                     const solChange = (postBalances[i] - preBalances[i]) / 1e9;
                     // Check if this account has token changes
                     const accountTokenChange = preTokenBalances
-                        .filter(tb => tb.accountIndex === i && tb.mint === tokenMint)
+                        .filter((tb) => tb.accountIndex === i && tb.mint === tokenMint)
                         .reduce((sum, tb) => {
-                        const postTb = postTokenBalances.find(ptb => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint);
+                        const postTb = postTokenBalances.find((ptb) => ptb.accountIndex === tb.accountIndex && ptb.mint === tokenMint);
                         if (postTb) {
                             const preAmt = parseFloat(tb.uiTokenAmount?.uiAmountString || '0');
                             const postAmt = parseFloat(postTb.uiTokenAmount?.uiAmountString || '0');

@@ -3,14 +3,14 @@
 // Prevents 429 errors by tracking and limiting API requests
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rateLimiter = void 0;
+const logger_1 = require("./logger");
 class RateLimiter {
     constructor() {
         this.requests = new Map();
         this.configs = new Map();
         // Configure rate limits for different services
-        // DexScreener free tier: ~10 requests/minute, be conservative
         this.configs.set('dexscreener', {
-            max: 8, // 8 requests (conservative to avoid 429)
+            max: 10, // 10 requests
             window: 60000, // per minute
             name: 'DexScreener'
         });
@@ -70,14 +70,14 @@ class RateLimiter {
         const maxAttempts = 10;
         while (!this.canMakeRequest(service) && attempts < maxAttempts) {
             const waitMs = Math.min(waitTime, maxWait);
-            console.log(`⏳ Rate limit reached for ${config.name}, waiting ${waitMs}ms... (attempt ${attempts + 1}/${maxAttempts})`);
+            logger_1.log.info(`⏳ Rate limit reached for ${config.name}, waiting ${waitMs}ms... (attempt ${attempts + 1}/${maxAttempts})`);
             await new Promise(resolve => setTimeout(resolve, waitMs));
             // Exponential backoff
             waitTime = Math.min(waitTime * 1.5, maxWait);
             attempts++;
         }
         if (attempts >= maxAttempts) {
-            console.warn(`⚠️ Max wait attempts reached for ${config.name}, proceeding anyway`);
+            logger_1.log.warn(`⚠️ Max wait attempts reached for ${config.name}, proceeding anyway`);
         }
     }
     /**
@@ -145,7 +145,7 @@ class RateLimiter {
      */
     reset(service) {
         this.requests.delete(service);
-        console.log(`🔄 Rate limit reset for ${service}`);
+        logger_1.log.info(`🔄 Rate limit reset for ${service}`);
     }
     /**
      * Get all services status

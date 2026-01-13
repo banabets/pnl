@@ -1,104 +1,70 @@
 import { Keypair } from '@solana/web3.js';
-export interface VolumeBotConfig {
+interface VolumeBotConfig {
     tokenMint: string;
-    tokenName?: string;
-    totalSolAmount: number;
-    targetVolumeUSD: number;
-    maxTransactions?: number;
-    minTransactionSize?: number;
-    maxTransactionSize?: number;
-    delayBetweenTrades?: number;
-    useMultipleWallets?: boolean;
-    slippageBps?: number;
+    targetVolume: number;
+    walletCount: number;
+    minTradeSize: number;
+    maxTradeSize: number;
+    delayBetweenTrades: number;
+    duration: number;
 }
-export interface VolumeBotResult {
-    success: boolean;
-    totalVolumeUSD: number;
-    totalTransactions: number;
-    buyTransactions: number;
-    sellTransactions: number;
-    totalSolUsed: number;
-    transactions: Array<{
-        type: 'buy' | 'sell';
-        signature: string;
-        solAmount: number;
-        volumeUSD: number;
-        timestamp: number;
-    }>;
-    errors?: string[];
-    strategy?: {
-        transactionsPerWallet: number;
-        solPerTransaction: number;
-        estimatedVolumeUSD: number;
-    };
+interface VolumeBotStatus {
+    isRunning: boolean;
+    tokenMint: string | null;
+    currentVolume: number;
+    targetVolume: number;
+    tradesExecuted: number;
+    walletsUsed: number;
+    startTime: number | null;
+    errors: string[];
 }
-export declare class VolumeBot {
+declare class VolumeBotService {
     private connection;
+    private status;
     private isRunning;
+    private stopRequested;
     private wallets;
-    private rpcUrl;
-    private program;
-    private globalState;
-    private currentSolPriceUSD;
-    constructor(rpcUrl?: string);
+    constructor();
     /**
-     * Inicializar el bot
-     * Carga wallets desde keypairs o wallet-service
+     * Start the volume bot with given configuration
      */
-    initialize(wallets?: Keypair[]): Promise<void>;
+    start(config: VolumeBotConfig, wallets: Keypair[]): Promise<void>;
     /**
-     * Calcular estrategia óptima para generar volumen objetivo
-     */
-    calculateStrategy(config: VolumeBotConfig): {
-        transactionsPerWallet: number;
-        solPerTransaction: number;
-        estimatedVolumeUSD: number;
-        totalTransactions: number;
-        strategy: 'rapid' | 'distributed' | 'mixed';
-    };
-    /**
-     * Ejecutar bot de volumen
-     */
-    executeVolumeBot(config: VolumeBotConfig): Promise<VolumeBotResult>;
-    /**
-     * Detener el bot
+     * Stop the volume bot
      */
     stop(): void;
     /**
-     * Obtener precio actual de SOL en USD
+     * Get current status
      */
-    private updateSolPrice;
+    getStatus(): VolumeBotStatus;
     /**
-     * Inicializar Anchor program
+     * Main trading loop
      */
-    private initializeProgram;
+    private runTradingLoop;
     /**
-     * Obtener global state
+     * Execute a single trade
      */
-    private getGlobalState;
+    private executeTrade;
     /**
-     * Obtener fee recipient
+     * Execute real trade via Jupiter
      */
-    private getFeeRecipient;
+    private simulateTrade;
     /**
-     * Ejecutar compra
+     * Generate random trade size within bounds
      */
-    private executeBuy;
+    private randomTradeSize;
     /**
-     * Ejecutar venta
+     * Randomize delay to make trading look organic (±30%)
      */
-    private executeSell;
+    private randomizeDelay;
     /**
-     * Obtener tokens de una transacción
+     * Check wallet balances
      */
-    private getTokensFromTransaction;
-    /**
-     * Obtener SOL de una transacción
-     */
-    private getSolFromTransaction;
-    /**
-     * Sleep utility
-     */
-    private sleep;
+    checkWalletBalances(): Promise<{
+        wallet: string;
+        balance: number;
+    }[]>;
 }
+export declare const volumeBotService: VolumeBotService;
+export {};
 //# sourceMappingURL=volume-bot.d.ts.map

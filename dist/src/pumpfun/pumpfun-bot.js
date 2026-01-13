@@ -20,7 +20,7 @@ class PumpFunBot {
         this.wallets = [];
         this.program = null;
         this.globalState = null;
-        this.rpcUrl = rpcUrl || process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=7b05747c-b100-4159-ba5f-c85e8c8d3997';
+        this.rpcUrl = rpcUrl || process.env.RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY || ''}`;
         this.connection = new web3_js_1.Connection(this.rpcUrl, 'confirmed');
     }
     /**

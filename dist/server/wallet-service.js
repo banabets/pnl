@@ -11,9 +11,19 @@ const database_1 = require("./database");
 const web3_js_1 = require("@solana/web3.js");
 const crypto_1 = __importDefault(require("crypto"));
 const mongoose_1 = __importDefault(require("mongoose"));
+const logger_1 = require("./logger");
 // Encriptación de private keys usando AES-256
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto_1.default.randomBytes(32).toString('hex');
+// ENCRYPTION_KEY - MUST be set in environment
+// CRITICAL: If this changes, ALL encrypted wallets become inaccessible!
+if (!process.env.ENCRYPTION_KEY) {
+    throw new Error('ENCRYPTION_KEY must be set in environment variables.\n' +
+        'Generate one with: node -e "log.info(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+}
+if (process.env.ENCRYPTION_KEY.length !== 64 || !/^[0-9a-f]{64}$/i.test(process.env.ENCRYPTION_KEY)) {
+    throw new Error('ENCRYPTION_KEY must be exactly 64 hexadecimal characters (32 bytes)');
+}
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 // Derive encryption key from user password (en producción, usar bcrypt)
 function deriveKeyFromPassword(password, salt) {
     return crypto_1.default.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
@@ -91,7 +101,7 @@ class WalletService {
             index: w.index,
             publicKey: w.publicKey,
             balance: w.balance,
-            label: w.label,
+            label: w.label ? String(w.label) : undefined,
             isActive: w.isActive
         }));
     }
@@ -112,13 +122,13 @@ class WalletService {
                 index: wallet.index,
                 publicKey: wallet.publicKey,
                 balance: wallet.balance,
-                label: wallet.label,
+                label: wallet.label ? String(wallet.label) : undefined,
                 isActive: wallet.isActive,
                 keypair
             };
         }
         catch (error) {
-            console.error('Error decrypting wallet:', error);
+            logger_1.log.error('Error decrypting wallet:', error);
             return null;
         }
     }
@@ -250,7 +260,7 @@ class WalletService {
             };
         }
         catch (error) {
-            console.error('Error decrypting master wallet:', error);
+            logger_1.log.error('Error decrypting master wallet:', error);
             return null;
         }
     }

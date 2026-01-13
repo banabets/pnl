@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireRole = exports.optionalAuth = exports.authenticateToken = void 0;
 const user_auth_1 = require("./user-auth");
+const logger_1 = require("./logger");
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -25,12 +26,12 @@ const authenticateToken = async (req, res, next) => {
         next();
     }
     catch (error) {
-        console.error('Auth middleware error:', error);
+        logger_1.log.error('Auth middleware error:', error);
         res.status(500).json({ error: 'Authentication failed' });
     }
 };
 exports.authenticateToken = authenticateToken;
-const optionalAuth = async (req, res, next) => {
+const optionalAuth = async (req, _res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (token) {
@@ -46,7 +47,7 @@ const optionalAuth = async (req, res, next) => {
         }
         catch (error) {
             // Ignore errors in optional auth
-            console.warn('Optional auth error:', error);
+            logger_1.log.warn('Optional auth error:', error);
         }
     }
     next();

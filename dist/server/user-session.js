@@ -8,6 +8,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserSessionManager = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const logger_1 = require("./logger");
 class UserSessionManager {
     constructor() {
         this.sessionsDir = path_1.default.join(__dirname, '../sessions');
@@ -27,7 +28,7 @@ class UserSessionManager {
             }
         }
         catch (error) {
-            console.error('Error loading sessions:', error);
+            logger_1.log.error('Error loading sessions:', error);
         }
         return [];
     }
@@ -36,7 +37,7 @@ class UserSessionManager {
             fs_1.default.writeFileSync(this.sessionsFile, JSON.stringify(sessions, null, 2));
         }
         catch (error) {
-            console.error('Error saving sessions:', error);
+            logger_1.log.error('Error saving sessions:', error);
         }
     }
     createSession(sessionName) {

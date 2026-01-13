@@ -53,6 +53,10 @@ declare class TokenFeedService {
     private onChainTokens;
     private graduatedTokens;
     private isStarted;
+    /**
+     * Check if service is started (public method)
+     */
+    isServiceStarted(): boolean;
     constructor();
     /**
      * Cleanup expired cache entries
@@ -107,10 +111,6 @@ declare class TokenFeedService {
      */
     getOnChainTokens(): Map<string, TokenData>;
     /**
-     * Check if service is started
-     */
-    isServiceStarted(): boolean;
-    /**
      * Enrich token data with DexScreener metadata (with intelligent caching)
      * Public method so worker can access it
      */
@@ -124,10 +124,6 @@ declare class TokenFeedService {
      * Fetch latest tokens from on-chain + DexScreener
      */
     fetchTokens(options?: Partial<TokenFeedOptions>): Promise<TokenData[]>;
-    /**
-     * Fallback: Fetch from pump.fun API (last resort when all other sources fail)
-     */
-    private fetchFromPumpFunAPI;
     /**
      * Fetch from DexScreener search API
      */

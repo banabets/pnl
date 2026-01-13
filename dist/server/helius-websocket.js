@@ -9,6 +9,7 @@ exports.heliusWebSocket = void 0;
 const ws_1 = __importDefault(require("ws"));
 const web3_js_1 = require("@solana/web3.js");
 const events_1 = require("events");
+const logger_1 = require("./logger");
 // Program IDs
 const PUMP_FUN_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const RAYDIUM_AMM_PROGRAM = '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8';
@@ -16,26 +17,31 @@ const RAYDIUM_CPMM_PROGRAM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 // Helius WebSocket URL
 const getHeliusWsUrl = () => {
-    // Check if SOLANA_RPC_URL is a complete Helius URL
-    const rpcUrl = process.env.SOLANA_RPC_URL;
-    if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
-        // Extract API key from complete URL and convert to WebSocket URL
-        const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
-        if (apiKeyMatch) {
-            const apiKey = apiKeyMatch[1];
-            console.log(`✅ Using Helius WebSocket from SOLANA_RPC_URL, API key: ${apiKey.substring(0, 8)}...`);
-            return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
+    // Try to get API key from various sources
+    let apiKey = process.env.HELIUS_API_KEY;
+    // If not found, try to extract from SOLANA_RPC_URL or RPC_URL
+    if (!apiKey) {
+        const rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
+        if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+            // Extract API key from URL: https://mainnet.helius-rpc.com/?api-key=KEY
+            const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
+            if (match && match[1]) {
+                apiKey = match[1];
+                logger_1.log.info('Extracted Helius API key from RPC_URL', { keyPrefix: apiKey.substring(0, 8) });
+            }
         }
     }
-    // Try to get API key from env or extract from RPC URL
-    const apiKey = process.env.HELIUS_API_KEY ||
-        rpcUrl?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
-        '7b05747c-b100-4159-ba5f-c85e8c8d3997'; // Default Helius API key
     if (!apiKey) {
-        console.warn('⚠️ No Helius API key found, using public RPC (may have rate limits)');
-        return 'wss://api.mainnet-beta.solana.com';
+        logger_1.log.warn('No Helius API key found. WebSocket service will not start.');
+        logger_1.log.warn('Set HELIUS_API_KEY environment variable to enable WebSocket features.');
+        return null; // Return null instead of public RPC to prevent connection attempts
     }
-    console.log(`✅ Using Helius WebSocket with API key: ${apiKey.substring(0, 8)}...`);
+    // Validate API key format (Helius keys are typically UUIDs, 36 chars)
+    if (apiKey.length < 20 || apiKey === 'your-helius-api-key-here' || apiKey === '7b05747c-b100-4159-ba5f-c85e8c8d3997') {
+        logger_1.log.error('Invalid or placeholder Helius API key detected');
+        return null;
+    }
+    logger_1.log.info('Using Helius WebSocket with API key', { keyPrefix: apiKey.substring(0, 8) });
     return `wss://mainnet.helius-rpc.com/?api-key=${apiKey}`;
 };
 class HeliusWebSocketService extends events_1.EventEmitter {
@@ -49,61 +55,75 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         this.subscriptionIds = [];
         this.heartbeatInterval = null;
         this.tokenCache = new Map();
-        // Rate limiting for RPC calls
-        this.rpcCallQueue = [];
-        this.rpcCallInProgress = false;
-        this.lastRpcCallTime = 0;
-        this.minRpcCallInterval = 200; // Minimum 200ms between RPC calls
-        this.consecutive429Errors = 0;
-        this.max429Errors = 5;
-        this.rpcCircuitBreakerOpen = false;
-        this.rpcCircuitBreakerResetTime = 0;
-        this.CIRCUIT_BREAKER_RESET_DELAY = 60000; // 1 minute
-        // Use SOLANA_RPC_URL if it's a complete Helius URL, otherwise construct it
-        let rpcUrl = process.env.SOLANA_RPC_URL;
-        // If SOLANA_RPC_URL is a complete Helius URL, use it directly
-        if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
-            // Already a complete Helius URL, use as-is
-        }
-        else {
-            // Try to extract API key or use default
-            const heliusApiKey = process.env.HELIUS_API_KEY ||
-                rpcUrl?.match(/helius.*?([a-f0-9-]{36})/)?.[1] ||
-                '7b05747c-b100-4159-ba5f-c85e8c8d3997';
+        this.hasAuthError = false; // Track if we have authentication errors
+        this.rpcCircuitBreakerOpen = false; // Circuit breaker for RPC rate limits
+        this.rpc429Count = 0; // Count consecutive 429 errors
+        this.rpc429ResetTime = 0; // Time when we can reset the counter
+        this.lastRpcRequestTime = 0; // Track last RPC request time for rate limiting
+        this.RPC_MIN_DELAY = 200; // Minimum delay between RPC requests (ms)
+        this.MAX_429_ERRORS = 5; // Max consecutive 429 errors before opening circuit breaker
+        this.CIRCUIT_BREAKER_RESET_TIME = 60000; // 1 minute before resetting circuit breaker
+        // Get RPC URL, preferring SOLANA_RPC_URL or RPC_URL
+        let rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
+        // If no RPC URL is set, try to construct from HELIUS_API_KEY
+        if (!rpcUrl) {
+            const heliusApiKey = process.env.HELIUS_API_KEY;
             if (heliusApiKey) {
                 rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`;
             }
             else {
-                rpcUrl = rpcUrl || 'https://api.mainnet-beta.solana.com';
+                rpcUrl = 'https://api.mainnet-beta.solana.com';
             }
         }
         this.connection = new web3_js_1.Connection(rpcUrl, 'confirmed');
-        const isHelius = rpcUrl.includes('helius-rpc.com');
-        console.log(`🔗 Helius WebSocket: Using ${isHelius ? 'Helius RPC (with API key)' : 'Public Solana RPC'}`);
-        if (isHelius) {
-            const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
-            if (apiKeyMatch) {
-                console.log(`   API Key: ${apiKeyMatch[1].substring(0, 8)}...`);
-            }
-        }
     }
     /**
      * Start the WebSocket connection and subscriptions
      */
     async start() {
-        console.log('🔌 Starting Helius WebSocket service...');
+        logger_1.log.info('Starting Helius WebSocket service');
         await this.connect();
     }
     /**
      * Connect to Helius WebSocket
      */
     async connect() {
+        // Don't try to connect if we have auth errors
+        if (this.hasAuthError) {
+            logger_1.log.warn('Skipping WebSocket connection due to previous authentication error');
+            logger_1.log.warn('Please fix HELIUS_API_KEY and restart the server');
+            return;
+        }
         const wsUrl = getHeliusWsUrl();
-        console.log('📡 Connecting to:', wsUrl.replace(/api-key=.*/, 'api-key=***'));
+        // If no valid API key, don't attempt connection
+        if (!wsUrl) {
+            logger_1.log.warn('WebSocket connection skipped: No valid Helius API key found');
+            this.hasAuthError = true; // Mark as auth error to prevent retry attempts
+            return;
+        }
+        // Validate API key before connecting
+        if (wsUrl.includes('helius-rpc.com')) {
+            const apiKeyMatch = wsUrl.match(/api-key=([^&]+)/);
+            if (apiKeyMatch && apiKeyMatch[1]) {
+                const apiKey = apiKeyMatch[1];
+                // Helius API keys are typically UUIDs (36 chars) or similar format
+                if (apiKey.length < 20) {
+                    logger_1.log.error('Helius API key appears to be too short or invalid', { keyLength: apiKey.length });
+                    this.hasAuthError = true;
+                    return;
+                }
+                logger_1.log.info('Connecting to Helius WebSocket with API key', { keyPrefix: apiKey.substring(0, 8) });
+            }
+            else {
+                logger_1.log.error('Could not extract API key from WebSocket URL');
+                this.hasAuthError = true;
+                return;
+            }
+        }
         try {
             this.ws = new ws_1.default(wsUrl);
             this.ws.on('open', () => {
-                console.log('✅ Helius WebSocket connected');
+                logger_1.log.info('Helius WebSocket connected');
                 this.isConnected = true;
                 this.reconnectAttempts = 0;
                 this.setupHeartbeat();
@@ -113,17 +133,75 @@ class HeliusWebSocketService extends events_1.EventEmitter {
                 this.handleMessage(data);
             });
             this.ws.on('error', (error) => {
-                console.error('❌ WebSocket error:', error.message);
+                const errorMsg = error.message || String(error);
+                const errorStr = String(error);
+                // Check if it's an authentication error (401) - check multiple formats
+                const is401Error = errorMsg.includes('401') ||
+                    errorMsg.includes('Unauthorized') ||
+                    errorMsg.includes('Unexpected server response: 401') ||
+                    errorStr.includes('401') ||
+                    errorStr.includes('Unauthorized') ||
+                    error?.code === 401 ||
+                    error?.statusCode === 401;
+                if (is401Error) {
+                    logger_1.log.error('WebSocket authentication failed (401)', {
+                        reasons: [
+                            'The Helius API key is invalid or expired',
+                            'The API key does not have WebSocket permissions',
+                            'The API key format is incorrect',
+                            'The API key was not properly extracted from RPC_URL'
+                        ]
+                    });
+                    const apiKey = process.env.HELIUS_API_KEY;
+                    if (apiKey) {
+                        logger_1.log.error('HELIUS_API_KEY status', {
+                            found: true,
+                            keyPrefix: apiKey.substring(0, 8),
+                            keySuffix: apiKey.substring(apiKey.length - 4),
+                            keyLength: apiKey.length,
+                            expectedLength: 36
+                        });
+                    }
+                    else {
+                        logger_1.log.error('HELIUS_API_KEY not set in environment variables');
+                        const rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
+                        if (rpcUrl && rpcUrl.includes('helius-rpc.com')) {
+                            const match = rpcUrl.match(/api-key=([a-f0-9-]{36})/i);
+                            if (match && match[1]) {
+                                logger_1.log.error('Extracted API key from RPC_URL', {
+                                    keyPrefix: match[1].substring(0, 8),
+                                    keySuffix: match[1].substring(match[1].length - 4)
+                                });
+                            }
+                            else {
+                                logger_1.log.error('Could not extract API key from RPC_URL');
+                            }
+                        }
+                    }
+                    logger_1.log.error('Solution: Get a valid API key from https://helius.dev, set HELIUS_API_KEY environment variable, ensure WebSocket permissions are enabled, and restart the server');
+                    this.hasAuthError = true;
+                    // Don't try to reconnect if we have auth errors
+                    return;
+                }
+                // Log other errors
+                logger_1.log.error('WebSocket error', { error: errorMsg });
             });
-            this.ws.on('close', () => {
-                console.log('🔌 WebSocket disconnected');
+            this.ws.on('close', (code, reason) => {
+                const reasonStr = reason.toString();
+                logger_1.log.info('WebSocket disconnected', { code, reason: reasonStr });
                 this.isConnected = false;
                 this.clearHeartbeat();
+                // Don't reconnect if we have auth errors or if close code indicates auth failure
+                if (this.hasAuthError || code === 1008 || code === 4001 || reasonStr.includes('401') || reasonStr.includes('Unauthorized')) {
+                    logger_1.log.error('Stopping reconnection attempts due to authentication error');
+                    this.hasAuthError = true;
+                    return;
+                }
                 this.scheduleReconnect();
             });
         }
         catch (error) {
-            console.error('Failed to connect:', error);
+            logger_1.log.error('Failed to connect', { error: error instanceof Error ? error.message : String(error) });
             this.scheduleReconnect();
         }
     }
@@ -139,7 +217,7 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         this.subscribeToProgramLogs(RAYDIUM_AMM_PROGRAM, 'raydium_amm');
         // Subscribe to Raydium CPMM
         this.subscribeToProgramLogs(RAYDIUM_CPMM_PROGRAM, 'raydium_cpmm');
-        console.log('📊 Subscribed to on-chain programs');
+        logger_1.log.info('Subscribed to on-chain programs');
     }
     /**
      * Subscribe to program logs
@@ -157,7 +235,7 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             ]
         };
         this.ws.send(JSON.stringify(subscribeMessage));
-        console.log(`📡 Subscribed to ${label} (${programId.slice(0, 8)}...)`);
+        logger_1.log.info('Subscribed to program', { label, programId: programId.slice(0, 8) });
     }
     /**
      * Handle incoming WebSocket messages
@@ -200,49 +278,36 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         }
     }
     /**
-     * Process PumpFun transactions (with rate limiting)
+     * Process PumpFun transactions
      */
     async processPumpFunTransaction(signature, logs) {
         const logsStr = logs.join(' ');
-        // Skip if circuit breaker is open
-        if (this.rpcCircuitBreakerOpen) {
-            return; // Silently skip to avoid more rate limit errors
-        }
         try {
             // Detect new token creation
             if (logsStr.includes('Program log: Instruction: Create') ||
                 logsStr.includes('Program log: Instruction: Initialize')) {
-                // Get transaction details (with rate limiting)
+                // Get transaction details
                 const txDetails = await this.getTransactionDetails(signature);
                 if (!txDetails)
                     return;
-                const mint = txDetails.mint || 'unknown';
                 const event = {
                     type: 'new_token',
-                    mint,
-                    // SIEMPRE proporcionar valores por defecto basados en el mint
-                    name: txDetails.name || `Token ${mint.slice(0, 8)}`,
-                    symbol: txDetails.symbol || mint.slice(0, 4).toUpperCase(),
+                    mint: txDetails.mint || 'unknown',
+                    name: txDetails.name,
+                    symbol: txDetails.symbol,
                     creator: txDetails.creator || 'unknown',
                     signature,
                     timestamp: Date.now(),
                     source: 'pumpfun',
                     bondingCurve: txDetails.bondingCurve,
                 };
-                console.log(`🆕 New PumpFun token: ${event.symbol} (${event.name})`);
+                logger_1.log.info('New PumpFun token detected', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
                 this.emit('new_token', event);
                 this.emit('event', event);
-                // Intentar enriquecer con datos reales de pump.fun API (asíncrono, no bloquea)
-                if (mint !== 'unknown') {
-                    this.enrichTokenFromPumpFunAPI(mint, event).catch(() => {
-                        // Ignorar errores de enriquecimiento
-                    });
-                }
             }
-            // Detect trades (buy/sell) - Skip if circuit breaker is open to reduce load
-            if (!this.rpcCircuitBreakerOpen &&
-                (logsStr.includes('Program log: Instruction: Buy') ||
-                    logsStr.includes('Program log: Instruction: Sell'))) {
+            // Detect trades (buy/sell)
+            if (logsStr.includes('Program log: Instruction: Buy') ||
+                logsStr.includes('Program log: Instruction: Sell')) {
                 const isBuy = logsStr.includes('Buy');
                 const txDetails = await this.getTransactionDetails(signature);
                 if (!txDetails)
@@ -264,21 +329,14 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             }
         }
         catch (error) {
-            // Don't log if it's a circuit breaker or rate limit error
-            if (!error?.message?.includes('circuit breaker') && !error?.message?.includes('429')) {
-                console.error('Error processing PumpFun tx:', error.message);
-            }
+            logger_1.log.error('Error processing PumpFun transaction', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     /**
-     * Process Raydium transactions (detect graduations) - with rate limiting
+     * Process Raydium transactions (detect graduations)
      */
     async processRaydiumTransaction(signature, logs) {
         const logsStr = logs.join(' ');
-        // Skip if circuit breaker is open
-        if (this.rpcCircuitBreakerOpen) {
-            return;
-        }
         try {
             // Detect new pool creation (potential graduation)
             if (logsStr.includes('Program log: ray_log') ||
@@ -297,16 +355,13 @@ class HeliusWebSocketService extends events_1.EventEmitter {
                     raydiumPool: txDetails.poolAddress,
                     liquidity: txDetails.liquidity,
                 };
-                console.log(`🎓 Token graduated: ${event.symbol || event.mint.slice(0, 8)}`);
+                logger_1.log.info('Token graduated', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
                 this.emit('graduation', event);
                 this.emit('event', event);
             }
         }
         catch (error) {
-            // Don't log if it's a circuit breaker or rate limit error
-            if (!error?.message?.includes('circuit breaker') && !error?.message?.includes('429')) {
-                console.error('Error processing Raydium tx:', error.message);
-            }
+            logger_1.log.error('Error processing Raydium transaction', { error: error instanceof Error ? error.message : String(error) });
         }
     }
     /**
@@ -314,21 +369,8 @@ class HeliusWebSocketService extends events_1.EventEmitter {
      */
     async getTransactionDetails(signature) {
         try {
-            // Try to get API key from env or extract from RPC URL
-            const rpcUrl = process.env.SOLANA_RPC_URL;
-            let apiKey = process.env.HELIUS_API_KEY;
-            // If SOLANA_RPC_URL is a complete Helius URL, extract API key from it
-            if (!apiKey && rpcUrl && rpcUrl.includes('helius-rpc.com')) {
-                const apiKeyMatch = rpcUrl.match(/api-key=([a-f0-9-]{36})/);
-                if (apiKeyMatch) {
-                    apiKey = apiKeyMatch[1];
-                }
-            }
-            // Fallback to default key if nothing found
+            const apiKey = process.env.HELIUS_API_KEY;
             if (!apiKey) {
-                apiKey = '7b05747c-b100-4159-ba5f-c85e8c8d3997';
-            }
-            if (!apiKey || apiKey === '') {
                 // Fallback to basic RPC
                 return this.getBasicTransactionDetails(signature);
             }
@@ -348,7 +390,7 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             return this.parseHeliusTransaction(tx);
         }
         catch (error) {
-            console.error('Error fetching tx details:', error);
+            logger_1.log.error('Error fetching transaction details', { error: error instanceof Error ? error.message : String(error) });
             return null;
         }
     }
@@ -392,143 +434,37 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         return result;
     }
     /**
-     * Enriquecer token con datos de pump.fun API
+     * Fallback: Get basic transaction details from RPC
+     * Includes rate limiting and circuit breaker to prevent 429 errors
      */
-    async enrichTokenFromPumpFunAPI(mint, event) {
-        try {
-            // Esperar 2 segundos antes de intentar (para que el token esté indexado)
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            const pumpApiUrl = `https://frontend-api.pump.fun/coins/${mint}`;
-            const response = await fetch(pumpApiUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                    'Accept': 'application/json',
-                    'Referer': 'https://pump.fun/',
-                },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                // Actualizar evento con información real
-                let updated = false;
-                if (data.name && data.name.trim() && data.name.toLowerCase() !== 'pump fun') {
-                    event.name = data.name;
-                    updated = true;
-                }
-                if (data.symbol && data.symbol.trim() && data.symbol.toLowerCase() !== 'pump') {
-                    event.symbol = data.symbol;
-                    updated = true;
-                }
-                // Agregar datos adicionales
-                const updatedEvent = {
-                    ...event,
-                    price: data.usd_market_cap ? data.usd_market_cap / (data.market_cap || 1) : undefined,
-                    marketCap: data.usd_market_cap || data.market_cap,
-                    liquidity: data.liquidity,
-                    volume: data.volume_24h || data.volume,
-                    holders: data.holders,
-                };
-                if (updated) {
-                    console.log(`✅ Token enriquecido: ${updatedEvent.symbol} (${updatedEvent.name})`);
-                    // Emitir evento actualizado
-                    this.emit('token_updated', updatedEvent);
-                    this.emit('event', { ...updatedEvent, type: 'token_updated' });
-                }
-            }
-        }
-        catch (error) {
-            // Ignorar errores silenciosamente
-        }
-    }
-    /**
-     * Throttled RPC call with rate limiting and circuit breaker
-     */
-    async throttledRpcCall(fn) {
+    async getBasicTransactionDetails(signature) {
         // Check circuit breaker
         if (this.rpcCircuitBreakerOpen) {
             const now = Date.now();
-            if (now < this.rpcCircuitBreakerResetTime) {
-                // Circuit breaker still open, reject immediately
-                throw new Error('RPC circuit breaker is open due to rate limiting');
+            if (now < this.rpc429ResetTime) {
+                // Circuit breaker still open, skip request
+                return null;
             }
             else {
                 // Reset circuit breaker
                 this.rpcCircuitBreakerOpen = false;
-                this.consecutive429Errors = 0;
-                console.log('🔄 RPC circuit breaker reset');
+                this.rpc429Count = 0;
             }
         }
-        return new Promise((resolve, reject) => {
-            this.rpcCallQueue.push({ resolve, reject, fn });
-            this.processRpcQueue();
-        });
-    }
-    /**
-     * Process RPC call queue with rate limiting
-     */
-    async processRpcQueue() {
-        if (this.rpcCallInProgress || this.rpcCallQueue.length === 0) {
-            return;
+        // Rate limiting: Ensure minimum delay between requests
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRpcRequestTime;
+        if (timeSinceLastRequest < this.RPC_MIN_DELAY) {
+            await new Promise(resolve => setTimeout(resolve, this.RPC_MIN_DELAY - timeSinceLastRequest));
         }
-        this.rpcCallInProgress = true;
-        while (this.rpcCallQueue.length > 0) {
-            const item = this.rpcCallQueue.shift();
-            if (!item)
-                break;
-            // Rate limiting: wait if needed
-            const now = Date.now();
-            const timeSinceLastCall = now - this.lastRpcCallTime;
-            if (timeSinceLastCall < this.minRpcCallInterval) {
-                await new Promise(resolve => setTimeout(resolve, this.minRpcCallInterval - timeSinceLastCall));
-            }
-            try {
-                this.lastRpcCallTime = Date.now();
-                const result = await item.fn();
-                this.consecutive429Errors = 0; // Reset on success
-                item.resolve(result);
-            }
-            catch (error) {
-                // Handle 429 errors
-                if (error?.message?.includes('429') || error?.message?.includes('Too Many Requests')) {
-                    this.consecutive429Errors++;
-                    console.error(`❌ RPC 429 error (${this.consecutive429Errors}/${this.max429Errors}):`, error.message);
-                    // Open circuit breaker if too many 429 errors
-                    if (this.consecutive429Errors >= this.max429Errors) {
-                        this.rpcCircuitBreakerOpen = true;
-                        this.rpcCircuitBreakerResetTime = Date.now() + this.CIRCUIT_BREAKER_RESET_DELAY;
-                        console.error(`🚨 RPC circuit breaker opened due to ${this.consecutive429Errors} consecutive 429 errors. Will reset in ${this.CIRCUIT_BREAKER_RESET_DELAY / 1000}s`);
-                        // Reject remaining items in queue
-                        while (this.rpcCallQueue.length > 0) {
-                            const queuedItem = this.rpcCallQueue.shift();
-                            if (queuedItem) {
-                                queuedItem.reject(new Error('RPC circuit breaker is open'));
-                            }
-                        }
-                        item.reject(error);
-                        break;
-                    }
-                    // Exponential backoff for 429 errors
-                    const backoffDelay = Math.min(1000 * Math.pow(2, this.consecutive429Errors - 1), 10000);
-                    await new Promise(resolve => setTimeout(resolve, backoffDelay));
-                    item.reject(error);
-                }
-                else {
-                    // Other errors, reject immediately
-                    item.reject(error);
-                }
-            }
-        }
-        this.rpcCallInProgress = false;
-    }
-    /**
-     * Fallback: Get basic transaction details from RPC (with rate limiting)
-     */
-    async getBasicTransactionDetails(signature) {
         try {
-            // Use throttled RPC call
-            const tx = await this.throttledRpcCall(() => this.connection.getParsedTransaction(signature, {
+            this.lastRpcRequestTime = Date.now();
+            const tx = await this.connection.getParsedTransaction(signature, {
                 maxSupportedTransactionVersion: 0,
                 commitment: 'confirmed'
-            }));
+            });
+            // Reset 429 counter on success
+            this.rpc429Count = 0;
             if (!tx)
                 return null;
             const result = {
@@ -562,10 +498,41 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             return result;
         }
         catch (error) {
-            // Don't log 429 errors here, already logged in throttledRpcCall
-            if (!error?.message?.includes('429') && !error?.message?.includes('Too Many Requests') && !error?.message?.includes('circuit breaker')) {
-                console.error('Error getting basic tx details:', error.message);
+            // Check if it's a 429 error
+            const is429Error = error?.message?.includes('429') ||
+                error?.message?.includes('Too Many Requests') ||
+                error?.code === 429;
+            if (is429Error) {
+                this.rpc429Count++;
+                // Open circuit breaker if too many consecutive 429 errors
+                if (this.rpc429Count >= this.MAX_429_ERRORS) {
+                    this.rpcCircuitBreakerOpen = true;
+                    this.rpc429ResetTime = Date.now() + this.CIRCUIT_BREAKER_RESET_TIME;
+                    logger_1.log.warn('RPC Circuit breaker opened due to rate limiting', {
+                        consecutiveErrors: this.rpc429Count,
+                        retryAfterSeconds: this.CIRCUIT_BREAKER_RESET_TIME / 1000,
+                        suggestion: 'Set HELIUS_API_KEY environment variable to avoid rate limits'
+                    });
+                }
+                else {
+                    // Log but don't spam - only log first error and every 5th error
+                    if (this.rpc429Count === 1 || this.rpc429Count % 5 === 0) {
+                        logger_1.log.warn('RPC rate limited (429)', {
+                            count: this.rpc429Count,
+                            maxErrors: this.MAX_429_ERRORS,
+                            suggestion: 'Set HELIUS_API_KEY environment variable for better performance'
+                        });
+                    }
+                }
+                // Don't log the error message for 429 errors to reduce spam
+                return null;
             }
+            else {
+                // Reset counter on non-429 errors
+                this.rpc429Count = 0;
+            }
+            // Don't log every error to avoid spam - only log non-429 errors
+            logger_1.log.error('Error getting basic transaction details', { error: error.message || String(error) });
             return null;
         }
     }
@@ -593,15 +560,29 @@ class HeliusWebSocketService extends events_1.EventEmitter {
      * Schedule reconnection with exponential backoff
      */
     scheduleReconnect() {
+        // Don't reconnect if we have authentication errors
+        if (this.hasAuthError) {
+            logger_1.log.error('Skipping reconnection due to authentication error');
+            return;
+        }
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.error('Max reconnection attempts reached');
+            logger_1.log.error('Max reconnection attempts reached', {
+                attempts: this.maxReconnectAttempts,
+                suggestion: 'If this is an authentication issue, please check your HELIUS_API_KEY'
+            });
             return;
         }
         const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
         this.reconnectAttempts++;
-        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        logger_1.log.info('Reconnecting WebSocket', {
+            delayMs: delay,
+            attempt: this.reconnectAttempts,
+            maxAttempts: this.maxReconnectAttempts
+        });
         setTimeout(() => {
-            this.connect();
+            if (!this.hasAuthError) {
+                this.connect();
+            }
         }, delay);
     }
     /**
@@ -630,7 +611,7 @@ class HeliusWebSocketService extends events_1.EventEmitter {
      * Stop the WebSocket connection
      */
     stop() {
-        console.log('🛑 Stopping Helius WebSocket service...');
+        logger_1.log.info('Stopping Helius WebSocket service');
         this.clearHeartbeat();
         if (this.ws) {
             this.ws.close();
@@ -642,3 +623,4 @@ class HeliusWebSocketService extends events_1.EventEmitter {
 }
 // Singleton instance
 exports.heliusWebSocket = new HeliusWebSocketService();
+//# sourceMappingURL=helius-websocket.js.map

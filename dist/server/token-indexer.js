@@ -1,12 +1,9 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.tokenIndexer = void 0;
 // Token Indexer Service - Persist tokens discovered on-chain to MongoDB
 const database_1 = require("./database");
-const mongoose_1 = __importDefault(require("mongoose"));
+const logger_1 = require("./logger");
 class TokenIndexerService {
     constructor() {
         this.isEnabled = false;
@@ -17,10 +14,10 @@ class TokenIndexerService {
     async initialize() {
         this.isEnabled = (0, database_1.isConnected)();
         if (this.isEnabled) {
-            console.log('✅ Token Indexer initialized (MongoDB connected)');
+            logger_1.log.info('Token Indexer initialized (MongoDB connected)');
         }
         else {
-            console.log('⚠️ Token Indexer disabled (MongoDB not connected)');
+            logger_1.log.warn('Token Indexer disabled (MongoDB not connected)');
         }
     }
     /**
@@ -29,12 +26,6 @@ class TokenIndexerService {
     async indexToken(data) {
         if (!this.isEnabled) {
             return; // Silently skip if MongoDB not available
-        }
-        // Get TokenIndex model - try exported one first, then from mongoose.models
-        const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
-        if (!TokenModel || !(0, database_1.isConnected)()) {
-            // Silently skip - MongoDB might not be fully initialized yet
-            return;
         }
         try {
             const tokenDoc = {
@@ -71,17 +62,11 @@ class TokenIndexerService {
                 age: data.age,
             };
             // Use upsert to update if exists, create if not
-            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
-            if (!TokenModel)
-                return;
-            await TokenModel.findOneAndUpdate({ mint: data.mint }, { $set: tokenDoc }, { upsert: true, new: true });
+            await database_1.TokenIndex.findOneAndUpdate({ mint: data.mint }, { $set: tokenDoc }, { upsert: true, new: true });
         }
         catch (error) {
             // Log but don't throw - indexing failures shouldn't break the app
-            // Only log if it's not a connection error (to avoid spam)
-            if (!error.message?.includes('connection') && !error.message?.includes('undefined')) {
-                console.error(`Failed to index token ${data.mint?.substring(0, 8) || 'unknown'}:`, error.message);
-            }
+            logger_1.log.error('Failed to index token', { mint: data.mint, error: error.message });
         }
     }
     /**
@@ -116,9 +101,9 @@ class TokenIndexerService {
                             priceChange5m: token.priceChange5m,
                             priceChange1h: token.priceChange1h,
                             priceChange24h: token.priceChange24h,
-                            txns5m: token.txns5m ? { buys: token.txns5m.buys || 0, sells: token.txns5m.sells || 0 } : { buys: 0, sells: 0 },
-                            txns1h: token.txns1h ? { buys: token.txns1h.buys || 0, sells: token.txns1h.sells || 0 } : { buys: 0, sells: 0 },
-                            txns24h: token.txns24h ? { buys: token.txns24h.buys || 0, sells: token.txns24h.sells || 0 } : { buys: 0, sells: 0 },
+                            txns5m: token.txns5m,
+                            txns1h: token.txns1h,
+                            txns24h: token.txns24h,
                             lastEnrichedAt: token.lastEnrichedAt ? new Date(token.lastEnrichedAt) : undefined,
                             enrichmentSource: token.enrichmentSource,
                             isNew: token.isNew,
@@ -134,10 +119,10 @@ class TokenIndexerService {
                 }
             }));
             await database_1.TokenIndex.bulkWrite(operations);
-            console.log(`✅ Indexed ${tokens.length} tokens to MongoDB`);
+            logger_1.log.info('Indexed tokens to MongoDB', { count: tokens.length });
         }
         catch (error) {
-            console.error(`Failed to batch index tokens:`, error.message);
+            logger_1.log.error('Failed to batch index tokens', { error: error.message });
         }
     }
     /**
@@ -173,52 +158,47 @@ class TokenIndexerService {
                     query.isTrending = true;
                     break;
             }
-            // Get TokenIndex model - try exported one first, then from mongoose.models
-            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
-            if (!TokenModel || !(0, database_1.isConnected)()) {
-                return [];
-            }
-            const tokens = await TokenModel.find(query)
+            const tokens = await database_1.TokenIndex.find(query)
                 .sort({ createdAt: -1 })
                 .limit(limit)
                 .lean();
             // Convert to TokenIndexData format
             return tokens.map(token => ({
                 mint: token.mint,
-                name: token.name,
-                symbol: token.symbol,
-                imageUrl: token.imageUrl,
+                name: token.name ?? undefined,
+                symbol: token.symbol ?? undefined,
+                imageUrl: token.imageUrl ?? undefined,
                 createdAt: token.createdAt.getTime(),
-                creator: token.creator,
-                bondingCurve: token.bondingCurve,
+                creator: token.creator ?? undefined,
+                bondingCurve: token.bondingCurve ?? undefined,
                 source: token.source,
-                price: token.price,
-                marketCap: token.marketCap,
-                liquidity: token.liquidity,
-                volume24h: token.volume24h,
-                volume1h: token.volume1h,
-                volume5m: token.volume5m,
-                holders: token.holders,
-                supply: token.supply,
-                priceChange5m: token.priceChange5m,
-                priceChange1h: token.priceChange1h,
-                priceChange24h: token.priceChange24h,
-                txns5m: token.txns5m ? { buys: token.txns5m.buys || 0, sells: token.txns5m.sells || 0 } : { buys: 0, sells: 0 },
-                txns1h: token.txns1h ? { buys: token.txns1h.buys || 0, sells: token.txns1h.sells || 0 } : { buys: 0, sells: 0 },
-                txns24h: token.txns24h ? { buys: token.txns24h.buys || 0, sells: token.txns24h.sells || 0 } : { buys: 0, sells: 0 },
+                price: token.price ?? undefined,
+                marketCap: token.marketCap ?? undefined,
+                liquidity: token.liquidity ?? undefined,
+                volume24h: token.volume24h ?? undefined,
+                volume1h: token.volume1h ?? undefined,
+                volume5m: token.volume5m ?? undefined,
+                holders: token.holders ?? undefined,
+                supply: token.supply ?? undefined,
+                priceChange5m: token.priceChange5m ?? undefined,
+                priceChange1h: token.priceChange1h ?? undefined,
+                priceChange24h: token.priceChange24h ?? undefined,
+                txns5m: token.txns5m ? { buys: token.txns5m.buys ?? 0, sells: token.txns5m.sells ?? 0 } : undefined,
+                txns1h: token.txns1h ? { buys: token.txns1h.buys ?? 0, sells: token.txns1h.sells ?? 0 } : undefined,
+                txns24h: token.txns24h ? { buys: token.txns24h.buys ?? 0, sells: token.txns24h.sells ?? 0 } : undefined,
                 lastEnrichedAt: token.lastEnrichedAt?.getTime(),
-                enrichmentSource: token.enrichmentSource,
+                enrichmentSource: token.enrichmentSource ?? undefined,
                 isNew: token.isNew,
                 isGraduating: token.isGraduating,
                 isTrending: token.isTrending,
-                riskScore: token.riskScore,
-                pairAddress: token.pairAddress,
-                dexId: token.dexId,
-                age: token.age,
+                riskScore: token.riskScore ?? undefined,
+                pairAddress: token.pairAddress ?? undefined,
+                dexId: token.dexId ?? undefined,
+                age: token.age ?? undefined,
             }));
         }
         catch (error) {
-            console.error('Failed to get tokens from MongoDB:', error.message);
+            logger_1.log.error('Failed to get tokens from MongoDB', { error: error.message });
             return [];
         }
     }
@@ -230,50 +210,46 @@ class TokenIndexerService {
             return null;
         }
         try {
-            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
-            if (!TokenModel || !(0, database_1.isConnected)()) {
-                return null;
-            }
-            const token = await TokenModel.findOne({ mint }).lean();
+            const token = await database_1.TokenIndex.findOne({ mint }).lean();
             if (!token) {
                 return null;
             }
             return {
                 mint: token.mint,
-                name: token.name,
-                symbol: token.symbol,
-                imageUrl: token.imageUrl,
+                name: token.name ?? undefined,
+                symbol: token.symbol ?? undefined,
+                imageUrl: token.imageUrl ?? undefined,
                 createdAt: token.createdAt.getTime(),
-                creator: token.creator,
-                bondingCurve: token.bondingCurve,
+                creator: token.creator ?? undefined,
+                bondingCurve: token.bondingCurve ?? undefined,
                 source: token.source,
-                price: token.price,
-                marketCap: token.marketCap,
-                liquidity: token.liquidity,
-                volume24h: token.volume24h,
-                volume1h: token.volume1h,
-                volume5m: token.volume5m,
-                holders: token.holders,
-                supply: token.supply,
-                priceChange5m: token.priceChange5m,
-                priceChange1h: token.priceChange1h,
-                priceChange24h: token.priceChange24h,
-                txns5m: token.txns5m ? { buys: token.txns5m.buys || 0, sells: token.txns5m.sells || 0 } : { buys: 0, sells: 0 },
-                txns1h: token.txns1h ? { buys: token.txns1h.buys || 0, sells: token.txns1h.sells || 0 } : { buys: 0, sells: 0 },
-                txns24h: token.txns24h ? { buys: token.txns24h.buys || 0, sells: token.txns24h.sells || 0 } : { buys: 0, sells: 0 },
+                price: token.price ?? undefined,
+                marketCap: token.marketCap ?? undefined,
+                liquidity: token.liquidity ?? undefined,
+                volume24h: token.volume24h ?? undefined,
+                volume1h: token.volume1h ?? undefined,
+                volume5m: token.volume5m ?? undefined,
+                holders: token.holders ?? undefined,
+                supply: token.supply ?? undefined,
+                priceChange5m: token.priceChange5m ?? undefined,
+                priceChange1h: token.priceChange1h ?? undefined,
+                priceChange24h: token.priceChange24h ?? undefined,
+                txns5m: token.txns5m ? { buys: token.txns5m.buys ?? 0, sells: token.txns5m.sells ?? 0 } : undefined,
+                txns1h: token.txns1h ? { buys: token.txns1h.buys ?? 0, sells: token.txns1h.sells ?? 0 } : undefined,
+                txns24h: token.txns24h ? { buys: token.txns24h.buys ?? 0, sells: token.txns24h.sells ?? 0 } : undefined,
                 lastEnrichedAt: token.lastEnrichedAt?.getTime(),
-                enrichmentSource: token.enrichmentSource,
+                enrichmentSource: token.enrichmentSource ?? undefined,
                 isNew: token.isNew,
                 isGraduating: token.isGraduating,
                 isTrending: token.isTrending,
-                riskScore: token.riskScore,
-                pairAddress: token.pairAddress,
-                dexId: token.dexId,
-                age: token.age,
+                riskScore: token.riskScore ?? undefined,
+                pairAddress: token.pairAddress ?? undefined,
+                dexId: token.dexId ?? undefined,
+                age: token.age ?? undefined,
             };
         }
         catch (error) {
-            console.error(`Failed to get token ${mint} from MongoDB:`, error.message);
+            logger_1.log.error('Failed to get token from MongoDB', { mint, error: error.message });
             return null;
         }
     }
@@ -284,13 +260,8 @@ class TokenIndexerService {
         if (!this.isEnabled) {
             return;
         }
-        // Get TokenIndex model - try exported one first, then from mongoose.models
-        const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
-        if (!TokenModel || !(0, database_1.isConnected)()) {
-            return; // Silently skip if model not available or not connected
-        }
         try {
-            await TokenModel.findOneAndUpdate({ mint }, {
+            await database_1.TokenIndex.findOneAndUpdate({ mint }, {
                 $set: {
                     ...data,
                     lastEnrichedAt: new Date(),
@@ -299,7 +270,7 @@ class TokenIndexerService {
             });
         }
         catch (error) {
-            console.error(`Failed to update enrichment for ${mint}:`, error.message);
+            logger_1.log.error('Failed to update enrichment', { mint, error: error.message });
         }
     }
     /**
@@ -311,13 +282,8 @@ class TokenIndexerService {
         }
         try {
             const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-            // Get TokenIndex model
-            const TokenModel = database_1.TokenIndex || mongoose_1.default.models.TokenIndex;
-            if (!TokenModel || !(0, database_1.isConnected)()) {
-                return [];
-            }
             // Priority: tokens created in last hour without enrichment, or with old enrichment
-            const tokens = await TokenModel.find({
+            const tokens = await database_1.TokenIndex.find({
                 $or: [
                     { lastEnrichedAt: { $exists: false } },
                     { lastEnrichedAt: { $lt: oneHourAgo } }
@@ -331,7 +297,7 @@ class TokenIndexerService {
             return tokens.map(t => t.mint);
         }
         catch (error) {
-            console.error('Failed to get tokens needing enrichment:', error.message);
+            logger_1.log.error('Failed to get tokens needing enrichment', { error: error.message });
             return [];
         }
     }

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.portfolioTracker = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const logger_1 = require("./logger");
 class PortfolioTracker {
     constructor() {
         const dataDir = path_1.default.join(__dirname, '../data');
@@ -26,7 +27,7 @@ class PortfolioTracker {
             }
         }
         catch (error) {
-            console.error('Error loading positions:', error);
+            logger_1.log.error('Error loading positions:', error);
         }
         try {
             if (fs_1.default.existsSync(this.tradesFile)) {
@@ -34,7 +35,7 @@ class PortfolioTracker {
             }
         }
         catch (error) {
-            console.error('Error loading trades:', error);
+            logger_1.log.error('Error loading trades:', error);
         }
     }
     saveData() {
@@ -44,7 +45,7 @@ class PortfolioTracker {
             fs_1.default.writeFileSync(this.tradesFile, JSON.stringify(this.trades, null, 2));
         }
         catch (error) {
-            console.error('Error saving data:', error);
+            logger_1.log.error('Error saving data:', error);
         }
     }
     // Record a buy trade
@@ -192,6 +193,27 @@ class PortfolioTracker {
     getPositionsByWallet(walletIndex) {
         return Array.from(this.positions.values())
             .filter(p => p.walletIndex === walletIndex);
+    }
+    // Get a single position by ID
+    getPosition(positionId) {
+        return this.positions.get(positionId);
+    }
+    // Update position after sell
+    updatePositionAfterSell(positionId, tokensSold, solReceived, currentPrice, signature) {
+        const position = this.positions.get(positionId);
+        if (!position)
+            return;
+        position.tokenAmount -= tokensSold;
+        position.currentPrice = currentPrice;
+        position.currentValue = position.tokenAmount * currentPrice;
+        if (position.tokenAmount <= 0.000001) {
+            position.status = 'closed';
+            position.exitPrice = currentPrice;
+            position.exitTimestamp = Date.now() / 1000;
+        }
+        position.lastUpdateTimestamp = Date.now() / 1000;
+        this.positions.set(positionId, position);
+        this.saveData();
     }
     // Get all trades
     getTrades(limit) {

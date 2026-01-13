@@ -49,6 +49,8 @@ declare class PortfolioTracker {
     getAllPositions(): Position[];
     getPositionsByToken(tokenMint: string): Position[];
     getPositionsByWallet(walletIndex: number): Position[];
+    getPosition(positionId: string): Position | undefined;
+    updatePositionAfterSell(positionId: string, tokensSold: number, solReceived: number, currentPrice: number, signature: string): void;
     getTrades(limit?: number): Trade[];
     getTradesByToken(tokenMint: string): Trade[];
     getPortfolioSummary(): {

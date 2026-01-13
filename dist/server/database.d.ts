@@ -3,114 +3,114 @@ export declare function connectDatabase(): Promise<void>;
 export declare function disconnectDatabase(): Promise<void>;
 export declare const User: mongoose.Model<{
     id: string;
-    createdAt: NativeDate;
-    updatedAt: NativeDate;
     username: string;
     email: string;
     passwordHash: string;
+    createdAt: NativeDate;
+    updatedAt: NativeDate;
     emailVerified: boolean;
     role: "user" | "admin" | "premium";
     status: "active" | "suspended" | "banned";
-    lastLogin?: NativeDate;
+    lastLogin?: NativeDate | null | undefined;
     profile?: {
-        displayName?: string;
-        bio?: string;
-        avatar?: string;
-        timezone?: string;
-        language?: string;
-    };
+        displayName?: string | null | undefined;
+        bio?: string | null | undefined;
+        avatar?: string | null | undefined;
+        timezone?: string | null | undefined;
+        language?: string | null | undefined;
+    } | null | undefined;
     settings?: {
         theme: "light" | "dark" | "auto";
         notifications?: {
             email: boolean;
             priceAlerts: boolean;
             tradeAlerts: boolean;
-        };
+        } | null | undefined;
         trading?: {
             defaultSlippage: number;
             defaultWalletIndex: number;
-        };
-    };
+        } | null | undefined;
+    } | null | undefined;
     stats?: {
         totalTrades: number;
         totalVolume: number;
         totalProfit: number;
         winRate: number;
-    };
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     id: string;
-    createdAt: NativeDate;
-    updatedAt: NativeDate;
     username: string;
     email: string;
     passwordHash: string;
+    createdAt: NativeDate;
+    updatedAt: NativeDate;
     emailVerified: boolean;
     role: "user" | "admin" | "premium";
     status: "active" | "suspended" | "banned";
-    lastLogin?: NativeDate;
+    lastLogin?: NativeDate | null | undefined;
     profile?: {
-        displayName?: string;
-        bio?: string;
-        avatar?: string;
-        timezone?: string;
-        language?: string;
-    };
+        displayName?: string | null | undefined;
+        bio?: string | null | undefined;
+        avatar?: string | null | undefined;
+        timezone?: string | null | undefined;
+        language?: string | null | undefined;
+    } | null | undefined;
     settings?: {
         theme: "light" | "dark" | "auto";
         notifications?: {
             email: boolean;
             priceAlerts: boolean;
             tradeAlerts: boolean;
-        };
+        } | null | undefined;
         trading?: {
             defaultSlippage: number;
             defaultWalletIndex: number;
-        };
-    };
+        } | null | undefined;
+    } | null | undefined;
     stats?: {
         totalTrades: number;
         totalVolume: number;
         totalProfit: number;
         winRate: number;
-    };
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
     id: string;
-    createdAt: NativeDate;
-    updatedAt: NativeDate;
     username: string;
     email: string;
     passwordHash: string;
+    createdAt: NativeDate;
+    updatedAt: NativeDate;
     emailVerified: boolean;
     role: "user" | "admin" | "premium";
     status: "active" | "suspended" | "banned";
-    lastLogin?: NativeDate;
+    lastLogin?: NativeDate | null | undefined;
     profile?: {
-        displayName?: string;
-        bio?: string;
-        avatar?: string;
-        timezone?: string;
-        language?: string;
-    };
+        displayName?: string | null | undefined;
+        bio?: string | null | undefined;
+        avatar?: string | null | undefined;
+        timezone?: string | null | undefined;
+        language?: string | null | undefined;
+    } | null | undefined;
     settings?: {
         theme: "light" | "dark" | "auto";
         notifications?: {
             email: boolean;
             priceAlerts: boolean;
             tradeAlerts: boolean;
-        };
+        } | null | undefined;
         trading?: {
             defaultSlippage: number;
             defaultWalletIndex: number;
-        };
-    };
+        } | null | undefined;
+    } | null | undefined;
     stats?: {
         totalTrades: number;
         totalVolume: number;
         totalProfit: number;
         winRate: number;
-    };
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -119,114 +119,114 @@ export declare const User: mongoose.Model<{
     timestamps: true;
 }, {
     id: string;
-    createdAt: NativeDate;
-    updatedAt: NativeDate;
     username: string;
     email: string;
     passwordHash: string;
+    createdAt: NativeDate;
+    updatedAt: NativeDate;
     emailVerified: boolean;
     role: "user" | "admin" | "premium";
     status: "active" | "suspended" | "banned";
-    lastLogin?: NativeDate;
+    lastLogin?: NativeDate | null | undefined;
     profile?: {
-        displayName?: string;
-        bio?: string;
-        avatar?: string;
-        timezone?: string;
-        language?: string;
-    };
+        displayName?: string | null | undefined;
+        bio?: string | null | undefined;
+        avatar?: string | null | undefined;
+        timezone?: string | null | undefined;
+        language?: string | null | undefined;
+    } | null | undefined;
     settings?: {
         theme: "light" | "dark" | "auto";
         notifications?: {
             email: boolean;
             priceAlerts: boolean;
             tradeAlerts: boolean;
-        };
+        } | null | undefined;
         trading?: {
             defaultSlippage: number;
             defaultWalletIndex: number;
-        };
-    };
+        } | null | undefined;
+    } | null | undefined;
     stats?: {
         totalTrades: number;
         totalVolume: number;
         totalProfit: number;
         winRate: number;
-    };
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     id: string;
-    createdAt: NativeDate;
-    updatedAt: NativeDate;
     username: string;
     email: string;
     passwordHash: string;
+    createdAt: NativeDate;
+    updatedAt: NativeDate;
     emailVerified: boolean;
     role: "user" | "admin" | "premium";
     status: "active" | "suspended" | "banned";
-    lastLogin?: NativeDate;
+    lastLogin?: NativeDate | null | undefined;
     profile?: {
-        displayName?: string;
-        bio?: string;
-        avatar?: string;
-        timezone?: string;
-        language?: string;
-    };
+        displayName?: string | null | undefined;
+        bio?: string | null | undefined;
+        avatar?: string | null | undefined;
+        timezone?: string | null | undefined;
+        language?: string | null | undefined;
+    } | null | undefined;
     settings?: {
         theme: "light" | "dark" | "auto";
         notifications?: {
             email: boolean;
             priceAlerts: boolean;
             tradeAlerts: boolean;
-        };
+        } | null | undefined;
         trading?: {
             defaultSlippage: number;
             defaultWalletIndex: number;
-        };
-    };
+        } | null | undefined;
+    } | null | undefined;
     stats?: {
         totalTrades: number;
         totalVolume: number;
         totalProfit: number;
         winRate: number;
-    };
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
     id: string;
-    createdAt: NativeDate;
-    updatedAt: NativeDate;
     username: string;
     email: string;
     passwordHash: string;
+    createdAt: NativeDate;
+    updatedAt: NativeDate;
     emailVerified: boolean;
     role: "user" | "admin" | "premium";
     status: "active" | "suspended" | "banned";
-    lastLogin?: NativeDate;
+    lastLogin?: NativeDate | null | undefined;
     profile?: {
-        displayName?: string;
-        bio?: string;
-        avatar?: string;
-        timezone?: string;
-        language?: string;
-    };
+        displayName?: string | null | undefined;
+        bio?: string | null | undefined;
+        avatar?: string | null | undefined;
+        timezone?: string | null | undefined;
+        language?: string | null | undefined;
+    } | null | undefined;
     settings?: {
         theme: "light" | "dark" | "auto";
         notifications?: {
             email: boolean;
             priceAlerts: boolean;
             tradeAlerts: boolean;
-        };
+        } | null | undefined;
         trading?: {
             defaultSlippage: number;
             defaultWalletIndex: number;
-        };
-    };
+        } | null | undefined;
+    } | null | undefined;
     stats?: {
         totalTrades: number;
         totalVolume: number;
         totalProfit: number;
         winRate: number;
-    };
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -238,24 +238,24 @@ export declare const Session: mongoose.Model<{
     token: string;
     lastActive: NativeDate;
     expiresAt: NativeDate;
-    ipAddress?: string;
-    userAgent?: string;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 }, {}, {}, {}, mongoose.Document<unknown, {}, {
     createdAt: NativeDate;
     userId: mongoose.Types.ObjectId;
     token: string;
     lastActive: NativeDate;
     expiresAt: NativeDate;
-    ipAddress?: string;
-    userAgent?: string;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 }, {}, mongoose.DefaultSchemaOptions> & {
     createdAt: NativeDate;
     userId: mongoose.Types.ObjectId;
     token: string;
     lastActive: NativeDate;
     expiresAt: NativeDate;
-    ipAddress?: string;
-    userAgent?: string;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 } & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -266,24 +266,24 @@ export declare const Session: mongoose.Model<{
     token: string;
     lastActive: NativeDate;
     expiresAt: NativeDate;
-    ipAddress?: string;
-    userAgent?: string;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 }, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     createdAt: NativeDate;
     userId: mongoose.Types.ObjectId;
     token: string;
     lastActive: NativeDate;
     expiresAt: NativeDate;
-    ipAddress?: string;
-    userAgent?: string;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 }>, {}, mongoose.ResolveSchemaOptions<mongoose.DefaultSchemaOptions>> & mongoose.FlatRecord<{
     createdAt: NativeDate;
     userId: mongoose.Types.ObjectId;
     token: string;
     lastActive: NativeDate;
     expiresAt: NativeDate;
-    ipAddress?: string;
-    userAgent?: string;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 }> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -291,36 +291,36 @@ export declare const Session: mongoose.Model<{
 }>>;
 export declare const Wallet: mongoose.Model<{
     publicKey: string;
+    index: number;
     createdAt: NativeDate;
     updatedAt: NativeDate;
-    index: number;
     userId: mongoose.Types.ObjectId;
     encryptedPrivateKey: string;
     balance: number;
     isActive: boolean;
-    label?: string;
+    label?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     publicKey: string;
+    index: number;
     createdAt: NativeDate;
     updatedAt: NativeDate;
-    index: number;
     userId: mongoose.Types.ObjectId;
     encryptedPrivateKey: string;
     balance: number;
     isActive: boolean;
-    label?: string;
+    label?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
     publicKey: string;
+    index: number;
     createdAt: NativeDate;
     updatedAt: NativeDate;
-    index: number;
     userId: mongoose.Types.ObjectId;
     encryptedPrivateKey: string;
     balance: number;
     isActive: boolean;
-    label?: string;
+    label?: string | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -329,36 +329,36 @@ export declare const Wallet: mongoose.Model<{
     timestamps: true;
 }, {
     publicKey: string;
+    index: number;
     createdAt: NativeDate;
     updatedAt: NativeDate;
-    index: number;
     userId: mongoose.Types.ObjectId;
     encryptedPrivateKey: string;
     balance: number;
     isActive: boolean;
-    label?: string;
+    label?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     publicKey: string;
+    index: number;
     createdAt: NativeDate;
     updatedAt: NativeDate;
-    index: number;
     userId: mongoose.Types.ObjectId;
     encryptedPrivateKey: string;
     balance: number;
     isActive: boolean;
-    label?: string;
+    label?: string | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
     publicKey: string;
+    index: number;
     createdAt: NativeDate;
     updatedAt: NativeDate;
-    index: number;
     userId: mongoose.Types.ObjectId;
     encryptedPrivateKey: string;
     balance: number;
     isActive: boolean;
-    label?: string;
+    label?: string | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -519,7 +519,7 @@ export declare const Trade: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     tradeType: "buy" | "sell";
-    tokenName?: string;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     signature: string;
     price: number;
@@ -531,7 +531,7 @@ export declare const Trade: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     tradeType: "buy" | "sell";
-    tokenName?: string;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -545,7 +545,7 @@ export declare const Trade: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     tradeType: "buy" | "sell";
-    tokenName?: string;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -563,7 +563,7 @@ export declare const Trade: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     tradeType: "buy" | "sell";
-    tokenName?: string;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     signature: string;
     price: number;
@@ -575,7 +575,7 @@ export declare const Trade: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     tradeType: "buy" | "sell";
-    tokenName?: string;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -589,7 +589,7 @@ export declare const Trade: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     tradeType: "buy" | "sell";
-    tokenName?: string;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -603,8 +603,8 @@ export declare const StopLossOrder: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     triggerPrice: number;
-    amount?: number;
-    executedAt?: NativeDate;
+    amount?: number | null | undefined;
+    executedAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     type: "stop-loss" | "take-profit" | "trailing-stop";
     createdAt: NativeDate;
@@ -613,8 +613,8 @@ export declare const StopLossOrder: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     triggerPrice: number;
-    amount?: number;
-    executedAt?: NativeDate;
+    amount?: number | null | undefined;
+    executedAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -625,8 +625,8 @@ export declare const StopLossOrder: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     triggerPrice: number;
-    amount?: number;
-    executedAt?: NativeDate;
+    amount?: number | null | undefined;
+    executedAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -641,8 +641,8 @@ export declare const StopLossOrder: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     triggerPrice: number;
-    amount?: number;
-    executedAt?: NativeDate;
+    amount?: number | null | undefined;
+    executedAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     type: "stop-loss" | "take-profit" | "trailing-stop";
     createdAt: NativeDate;
@@ -651,8 +651,8 @@ export declare const StopLossOrder: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     triggerPrice: number;
-    amount?: number;
-    executedAt?: NativeDate;
+    amount?: number | null | undefined;
+    executedAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -663,8 +663,8 @@ export declare const StopLossOrder: mongoose.Model<{
     tokenMint: string;
     walletIndex: number;
     triggerPrice: number;
-    amount?: number;
-    executedAt?: NativeDate;
+    amount?: number | null | undefined;
+    executedAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -678,7 +678,7 @@ export declare const PriceAlert: mongoose.Model<{
     userId: mongoose.Types.ObjectId;
     tokenMint: string;
     condition: "above" | "below";
-    triggeredAt?: NativeDate;
+    triggeredAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     type: "price" | "volume" | "market-cap";
     value: number;
@@ -687,7 +687,7 @@ export declare const PriceAlert: mongoose.Model<{
     userId: mongoose.Types.ObjectId;
     tokenMint: string;
     condition: "above" | "below";
-    triggeredAt?: NativeDate;
+    triggeredAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -698,7 +698,7 @@ export declare const PriceAlert: mongoose.Model<{
     userId: mongoose.Types.ObjectId;
     tokenMint: string;
     condition: "above" | "below";
-    triggeredAt?: NativeDate;
+    triggeredAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -713,7 +713,7 @@ export declare const PriceAlert: mongoose.Model<{
     userId: mongoose.Types.ObjectId;
     tokenMint: string;
     condition: "above" | "below";
-    triggeredAt?: NativeDate;
+    triggeredAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     type: "price" | "volume" | "market-cap";
     value: number;
@@ -722,7 +722,7 @@ export declare const PriceAlert: mongoose.Model<{
     userId: mongoose.Types.ObjectId;
     tokenMint: string;
     condition: "above" | "below";
-    triggeredAt?: NativeDate;
+    triggeredAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -733,7 +733,7 @@ export declare const PriceAlert: mongoose.Model<{
     userId: mongoose.Types.ObjectId;
     tokenMint: string;
     condition: "above" | "below";
-    triggeredAt?: NativeDate;
+    triggeredAt?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -743,25 +743,25 @@ export declare const ActivityLog: mongoose.Model<{
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
     action: string;
-    ipAddress?: string;
-    userAgent?: string;
     details?: any;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
     action: string;
-    ipAddress?: string;
-    userAgent?: string;
     details?: any;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
     action: string;
-    ipAddress?: string;
-    userAgent?: string;
     details?: any;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -772,25 +772,100 @@ export declare const ActivityLog: mongoose.Model<{
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
     action: string;
-    ipAddress?: string;
-    userAgent?: string;
     details?: any;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
     action: string;
-    ipAddress?: string;
-    userAgent?: string;
     details?: any;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
     action: string;
-    ipAddress?: string;
-    userAgent?: string;
     details?: any;
+    userAgent?: string | null | undefined;
+    ipAddress?: string | null | undefined;
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
+export declare const AuditLog: mongoose.Model<{
+    timestamp: NativeDate;
+    userId: string;
+    action: string;
+    resource: string;
+    success: boolean;
+    error?: string | null | undefined;
+    details?: any;
+    ip?: string | null | undefined;
+    userAgent?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    timestamp: NativeDate;
+    userId: string;
+    action: string;
+    resource: string;
+    success: boolean;
+    error?: string | null | undefined;
+    details?: any;
+    ip?: string | null | undefined;
+    userAgent?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    timestamp: NativeDate;
+    userId: string;
+    action: string;
+    resource: string;
+    success: boolean;
+    error?: string | null | undefined;
+    details?: any;
+    ip?: string | null | undefined;
+    userAgent?: string | null | undefined;
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    timestamp: NativeDate;
+    userId: string;
+    action: string;
+    resource: string;
+    success: boolean;
+    error?: string | null | undefined;
+    details?: any;
+    ip?: string | null | undefined;
+    userAgent?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    timestamp: NativeDate;
+    userId: string;
+    action: string;
+    resource: string;
+    success: boolean;
+    error?: string | null | undefined;
+    details?: any;
+    ip?: string | null | undefined;
+    userAgent?: string | null | undefined;
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    timestamp: NativeDate;
+    userId: string;
+    action: string;
+    resource: string;
+    success: boolean;
+    error?: string | null | undefined;
+    details?: any;
+    ip?: string | null | undefined;
+    userAgent?: string | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -805,8 +880,8 @@ export declare const TradingFee: mongoose.Model<{
     feePercent: number;
     feeAmount: number;
     feeCollected: boolean;
-    signature?: string;
-    tradeId?: mongoose.Types.ObjectId;
+    signature?: string | null | undefined;
+    tradeId?: mongoose.Types.ObjectId | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
@@ -816,8 +891,8 @@ export declare const TradingFee: mongoose.Model<{
     feePercent: number;
     feeAmount: number;
     feeCollected: boolean;
-    signature?: string;
-    tradeId?: mongoose.Types.ObjectId;
+    signature?: string | null | undefined;
+    tradeId?: mongoose.Types.ObjectId | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -829,8 +904,8 @@ export declare const TradingFee: mongoose.Model<{
     feePercent: number;
     feeAmount: number;
     feeCollected: boolean;
-    signature?: string;
-    tradeId?: mongoose.Types.ObjectId;
+    signature?: string | null | undefined;
+    tradeId?: mongoose.Types.ObjectId | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -846,8 +921,8 @@ export declare const TradingFee: mongoose.Model<{
     feePercent: number;
     feeAmount: number;
     feeCollected: boolean;
-    signature?: string;
-    tradeId?: mongoose.Types.ObjectId;
+    signature?: string | null | undefined;
+    tradeId?: mongoose.Types.ObjectId | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     timestamp: NativeDate;
     userId: mongoose.Types.ObjectId;
@@ -857,8 +932,8 @@ export declare const TradingFee: mongoose.Model<{
     feePercent: number;
     feeAmount: number;
     feeCollected: boolean;
-    signature?: string;
-    tradeId?: mongoose.Types.ObjectId;
+    signature?: string | null | undefined;
+    tradeId?: mongoose.Types.ObjectId | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -870,8 +945,8 @@ export declare const TradingFee: mongoose.Model<{
     feePercent: number;
     feeAmount: number;
     feeCollected: boolean;
-    signature?: string;
-    tradeId?: mongoose.Types.ObjectId;
+    signature?: string | null | undefined;
+    tradeId?: mongoose.Types.ObjectId | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -884,15 +959,15 @@ export declare const Subscription: mongoose.Model<{
     maxWallets: number;
     startDate: NativeDate;
     autoRenew: boolean;
-    paymentMethod?: string;
+    paymentMethod?: string | null | undefined;
     features?: {
         copyTrading: boolean;
         sniperBot: boolean;
         dcaBot: boolean;
         advancedAnalytics: boolean;
         prioritySupport: boolean;
-    };
-    endDate?: NativeDate;
+    } | null | undefined;
+    endDate?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     userId: mongoose.Types.ObjectId;
     plan: "premium" | "free" | "basic" | "whale";
@@ -900,15 +975,15 @@ export declare const Subscription: mongoose.Model<{
     maxWallets: number;
     startDate: NativeDate;
     autoRenew: boolean;
-    paymentMethod?: string;
+    paymentMethod?: string | null | undefined;
     features?: {
         copyTrading: boolean;
         sniperBot: boolean;
         dcaBot: boolean;
         advancedAnalytics: boolean;
         prioritySupport: boolean;
-    };
-    endDate?: NativeDate;
+    } | null | undefined;
+    endDate?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -918,15 +993,15 @@ export declare const Subscription: mongoose.Model<{
     maxWallets: number;
     startDate: NativeDate;
     autoRenew: boolean;
-    paymentMethod?: string;
+    paymentMethod?: string | null | undefined;
     features?: {
         copyTrading: boolean;
         sniperBot: boolean;
         dcaBot: boolean;
         advancedAnalytics: boolean;
         prioritySupport: boolean;
-    };
-    endDate?: NativeDate;
+    } | null | undefined;
+    endDate?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -940,15 +1015,15 @@ export declare const Subscription: mongoose.Model<{
     maxWallets: number;
     startDate: NativeDate;
     autoRenew: boolean;
-    paymentMethod?: string;
+    paymentMethod?: string | null | undefined;
     features?: {
         copyTrading: boolean;
         sniperBot: boolean;
         dcaBot: boolean;
         advancedAnalytics: boolean;
         prioritySupport: boolean;
-    };
-    endDate?: NativeDate;
+    } | null | undefined;
+    endDate?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     userId: mongoose.Types.ObjectId;
     plan: "premium" | "free" | "basic" | "whale";
@@ -956,15 +1031,15 @@ export declare const Subscription: mongoose.Model<{
     maxWallets: number;
     startDate: NativeDate;
     autoRenew: boolean;
-    paymentMethod?: string;
+    paymentMethod?: string | null | undefined;
     features?: {
         copyTrading: boolean;
         sniperBot: boolean;
         dcaBot: boolean;
         advancedAnalytics: boolean;
         prioritySupport: boolean;
-    };
-    endDate?: NativeDate;
+    } | null | undefined;
+    endDate?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -974,15 +1049,15 @@ export declare const Subscription: mongoose.Model<{
     maxWallets: number;
     startDate: NativeDate;
     autoRenew: boolean;
-    paymentMethod?: string;
+    paymentMethod?: string | null | undefined;
     features?: {
         copyTrading: boolean;
         sniperBot: boolean;
         dcaBot: boolean;
         advancedAnalytics: boolean;
         prioritySupport: boolean;
-    };
-    endDate?: NativeDate;
+    } | null | undefined;
+    endDate?: NativeDate | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -1053,129 +1128,129 @@ export declare const Referral: mongoose.Model<{
 }>>;
 export declare const TokenIndex: mongoose.Model<{
     mint: string;
-    createdAt: NativeDate;
     isNew: boolean;
+    createdAt: NativeDate;
     source: "pumpfun" | "raydium" | "unknown";
     isGraduating: boolean;
     isTrending: boolean;
-    symbol?: string;
-    bondingCurve?: string;
-    name?: string;
-    price?: number;
-    imageUrl?: string;
-    creator?: string;
-    marketCap?: number;
-    liquidity?: number;
-    volume24h?: number;
-    volume1h?: number;
-    volume5m?: number;
-    holders?: number;
-    supply?: number;
-    priceChange5m?: number;
-    priceChange1h?: number;
-    priceChange24h?: number;
-    lastEnrichedAt?: NativeDate;
-    enrichmentSource?: string;
-    riskScore?: number;
-    pairAddress?: string;
-    dexId?: string;
-    age?: number;
+    symbol?: string | null | undefined;
+    bondingCurve?: string | null | undefined;
+    name?: string | null | undefined;
+    price?: number | null | undefined;
+    imageUrl?: string | null | undefined;
+    creator?: string | null | undefined;
+    marketCap?: number | null | undefined;
+    liquidity?: number | null | undefined;
+    volume24h?: number | null | undefined;
+    volume1h?: number | null | undefined;
+    volume5m?: number | null | undefined;
+    holders?: number | null | undefined;
+    supply?: number | null | undefined;
+    priceChange5m?: number | null | undefined;
+    priceChange1h?: number | null | undefined;
+    priceChange24h?: number | null | undefined;
+    lastEnrichedAt?: NativeDate | null | undefined;
+    enrichmentSource?: string | null | undefined;
+    riskScore?: number | null | undefined;
+    pairAddress?: string | null | undefined;
+    dexId?: string | null | undefined;
+    age?: number | null | undefined;
     txns5m?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns1h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns24h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     mint: string;
-    createdAt: NativeDate;
     isNew: boolean;
+    createdAt: NativeDate;
     source: "pumpfun" | "raydium" | "unknown";
     isGraduating: boolean;
     isTrending: boolean;
-    symbol?: string;
-    bondingCurve?: string;
-    name?: string;
-    price?: number;
-    imageUrl?: string;
-    creator?: string;
-    marketCap?: number;
-    liquidity?: number;
-    volume24h?: number;
-    volume1h?: number;
-    volume5m?: number;
-    holders?: number;
-    supply?: number;
-    priceChange5m?: number;
-    priceChange1h?: number;
-    priceChange24h?: number;
-    lastEnrichedAt?: NativeDate;
-    enrichmentSource?: string;
-    riskScore?: number;
-    pairAddress?: string;
-    dexId?: string;
-    age?: number;
+    symbol?: string | null | undefined;
+    bondingCurve?: string | null | undefined;
+    name?: string | null | undefined;
+    price?: number | null | undefined;
+    imageUrl?: string | null | undefined;
+    creator?: string | null | undefined;
+    marketCap?: number | null | undefined;
+    liquidity?: number | null | undefined;
+    volume24h?: number | null | undefined;
+    volume1h?: number | null | undefined;
+    volume5m?: number | null | undefined;
+    holders?: number | null | undefined;
+    supply?: number | null | undefined;
+    priceChange5m?: number | null | undefined;
+    priceChange1h?: number | null | undefined;
+    priceChange24h?: number | null | undefined;
+    lastEnrichedAt?: NativeDate | null | undefined;
+    enrichmentSource?: string | null | undefined;
+    riskScore?: number | null | undefined;
+    pairAddress?: string | null | undefined;
+    dexId?: string | null | undefined;
+    age?: number | null | undefined;
     txns5m?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns1h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns24h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
     mint: string;
-    createdAt: NativeDate;
     isNew: boolean;
+    createdAt: NativeDate;
     source: "pumpfun" | "raydium" | "unknown";
     isGraduating: boolean;
     isTrending: boolean;
-    symbol?: string;
-    bondingCurve?: string;
-    name?: string;
-    price?: number;
-    imageUrl?: string;
-    creator?: string;
-    marketCap?: number;
-    liquidity?: number;
-    volume24h?: number;
-    volume1h?: number;
-    volume5m?: number;
-    holders?: number;
-    supply?: number;
-    priceChange5m?: number;
-    priceChange1h?: number;
-    priceChange24h?: number;
-    lastEnrichedAt?: NativeDate;
-    enrichmentSource?: string;
-    riskScore?: number;
-    pairAddress?: string;
-    dexId?: string;
-    age?: number;
+    symbol?: string | null | undefined;
+    bondingCurve?: string | null | undefined;
+    name?: string | null | undefined;
+    price?: number | null | undefined;
+    imageUrl?: string | null | undefined;
+    creator?: string | null | undefined;
+    marketCap?: number | null | undefined;
+    liquidity?: number | null | undefined;
+    volume24h?: number | null | undefined;
+    volume1h?: number | null | undefined;
+    volume5m?: number | null | undefined;
+    holders?: number | null | undefined;
+    supply?: number | null | undefined;
+    priceChange5m?: number | null | undefined;
+    priceChange1h?: number | null | undefined;
+    priceChange24h?: number | null | undefined;
+    lastEnrichedAt?: NativeDate | null | undefined;
+    enrichmentSource?: string | null | undefined;
+    riskScore?: number | null | undefined;
+    pairAddress?: string | null | undefined;
+    dexId?: string | null | undefined;
+    age?: number | null | undefined;
     txns5m?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns1h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns24h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -1184,129 +1259,129 @@ export declare const TokenIndex: mongoose.Model<{
     timestamps: true;
 }, {
     mint: string;
-    createdAt: NativeDate;
     isNew: boolean;
+    createdAt: NativeDate;
     source: "pumpfun" | "raydium" | "unknown";
     isGraduating: boolean;
     isTrending: boolean;
-    symbol?: string;
-    bondingCurve?: string;
-    name?: string;
-    price?: number;
-    imageUrl?: string;
-    creator?: string;
-    marketCap?: number;
-    liquidity?: number;
-    volume24h?: number;
-    volume1h?: number;
-    volume5m?: number;
-    holders?: number;
-    supply?: number;
-    priceChange5m?: number;
-    priceChange1h?: number;
-    priceChange24h?: number;
-    lastEnrichedAt?: NativeDate;
-    enrichmentSource?: string;
-    riskScore?: number;
-    pairAddress?: string;
-    dexId?: string;
-    age?: number;
+    symbol?: string | null | undefined;
+    bondingCurve?: string | null | undefined;
+    name?: string | null | undefined;
+    price?: number | null | undefined;
+    imageUrl?: string | null | undefined;
+    creator?: string | null | undefined;
+    marketCap?: number | null | undefined;
+    liquidity?: number | null | undefined;
+    volume24h?: number | null | undefined;
+    volume1h?: number | null | undefined;
+    volume5m?: number | null | undefined;
+    holders?: number | null | undefined;
+    supply?: number | null | undefined;
+    priceChange5m?: number | null | undefined;
+    priceChange1h?: number | null | undefined;
+    priceChange24h?: number | null | undefined;
+    lastEnrichedAt?: NativeDate | null | undefined;
+    enrichmentSource?: string | null | undefined;
+    riskScore?: number | null | undefined;
+    pairAddress?: string | null | undefined;
+    dexId?: string | null | undefined;
+    age?: number | null | undefined;
     txns5m?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns1h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns24h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     mint: string;
-    createdAt: NativeDate;
     isNew: boolean;
+    createdAt: NativeDate;
     source: "pumpfun" | "raydium" | "unknown";
     isGraduating: boolean;
     isTrending: boolean;
-    symbol?: string;
-    bondingCurve?: string;
-    name?: string;
-    price?: number;
-    imageUrl?: string;
-    creator?: string;
-    marketCap?: number;
-    liquidity?: number;
-    volume24h?: number;
-    volume1h?: number;
-    volume5m?: number;
-    holders?: number;
-    supply?: number;
-    priceChange5m?: number;
-    priceChange1h?: number;
-    priceChange24h?: number;
-    lastEnrichedAt?: NativeDate;
-    enrichmentSource?: string;
-    riskScore?: number;
-    pairAddress?: string;
-    dexId?: string;
-    age?: number;
+    symbol?: string | null | undefined;
+    bondingCurve?: string | null | undefined;
+    name?: string | null | undefined;
+    price?: number | null | undefined;
+    imageUrl?: string | null | undefined;
+    creator?: string | null | undefined;
+    marketCap?: number | null | undefined;
+    liquidity?: number | null | undefined;
+    volume24h?: number | null | undefined;
+    volume1h?: number | null | undefined;
+    volume5m?: number | null | undefined;
+    holders?: number | null | undefined;
+    supply?: number | null | undefined;
+    priceChange5m?: number | null | undefined;
+    priceChange1h?: number | null | undefined;
+    priceChange24h?: number | null | undefined;
+    lastEnrichedAt?: NativeDate | null | undefined;
+    enrichmentSource?: string | null | undefined;
+    riskScore?: number | null | undefined;
+    pairAddress?: string | null | undefined;
+    dexId?: string | null | undefined;
+    age?: number | null | undefined;
     txns5m?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns1h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns24h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
     mint: string;
-    createdAt: NativeDate;
     isNew: boolean;
+    createdAt: NativeDate;
     source: "pumpfun" | "raydium" | "unknown";
     isGraduating: boolean;
     isTrending: boolean;
-    symbol?: string;
-    bondingCurve?: string;
-    name?: string;
-    price?: number;
-    imageUrl?: string;
-    creator?: string;
-    marketCap?: number;
-    liquidity?: number;
-    volume24h?: number;
-    volume1h?: number;
-    volume5m?: number;
-    holders?: number;
-    supply?: number;
-    priceChange5m?: number;
-    priceChange1h?: number;
-    priceChange24h?: number;
-    lastEnrichedAt?: NativeDate;
-    enrichmentSource?: string;
-    riskScore?: number;
-    pairAddress?: string;
-    dexId?: string;
-    age?: number;
+    symbol?: string | null | undefined;
+    bondingCurve?: string | null | undefined;
+    name?: string | null | undefined;
+    price?: number | null | undefined;
+    imageUrl?: string | null | undefined;
+    creator?: string | null | undefined;
+    marketCap?: number | null | undefined;
+    liquidity?: number | null | undefined;
+    volume24h?: number | null | undefined;
+    volume1h?: number | null | undefined;
+    volume5m?: number | null | undefined;
+    holders?: number | null | undefined;
+    supply?: number | null | undefined;
+    priceChange5m?: number | null | undefined;
+    priceChange1h?: number | null | undefined;
+    priceChange24h?: number | null | undefined;
+    lastEnrichedAt?: NativeDate | null | undefined;
+    enrichmentSource?: string | null | undefined;
+    riskScore?: number | null | undefined;
+    pairAddress?: string | null | undefined;
+    dexId?: string | null | undefined;
+    age?: number | null | undefined;
     txns5m?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns1h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
     txns24h?: {
-        buys?: number;
-        sells?: number;
-    };
+        buys?: number | null | undefined;
+        sells?: number | null | undefined;
+    } | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {

@@ -28,8 +28,8 @@ export declare const DCAOrder: mongoose.Model<{
     averagePrice: number;
     nextBuyAt: NativeDate;
     maxSlippage: number;
-    walletIndex?: number;
-    tokenName?: string;
+    walletIndex?: number | null | undefined;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     status: "active" | "cancelled" | "paused" | "completed";
     userId: mongoose.Types.ObjectId;
@@ -43,8 +43,8 @@ export declare const DCAOrder: mongoose.Model<{
     averagePrice: number;
     nextBuyAt: NativeDate;
     maxSlippage: number;
-    walletIndex?: number;
-    tokenName?: string;
+    walletIndex?: number | null | undefined;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -60,8 +60,8 @@ export declare const DCAOrder: mongoose.Model<{
     averagePrice: number;
     nextBuyAt: NativeDate;
     maxSlippage: number;
-    walletIndex?: number;
-    tokenName?: string;
+    walletIndex?: number | null | undefined;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -81,8 +81,8 @@ export declare const DCAOrder: mongoose.Model<{
     averagePrice: number;
     nextBuyAt: NativeDate;
     maxSlippage: number;
-    walletIndex?: number;
-    tokenName?: string;
+    walletIndex?: number | null | undefined;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     status: "active" | "cancelled" | "paused" | "completed";
     userId: mongoose.Types.ObjectId;
@@ -96,8 +96,8 @@ export declare const DCAOrder: mongoose.Model<{
     averagePrice: number;
     nextBuyAt: NativeDate;
     maxSlippage: number;
-    walletIndex?: number;
-    tokenName?: string;
+    walletIndex?: number | null | undefined;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -113,8 +113,8 @@ export declare const DCAOrder: mongoose.Model<{
     averagePrice: number;
     nextBuyAt: NativeDate;
     maxSlippage: number;
-    walletIndex?: number;
-    tokenName?: string;
+    walletIndex?: number | null | undefined;
+    tokenName?: string | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -129,8 +129,8 @@ export declare const DCAExecution: mongoose.Model<{
     amountSol: number;
     tokensReceived: number;
     pricePerToken: number;
-    signature?: string;
-    error?: string;
+    signature?: string | null | undefined;
+    error?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     timestamp: NativeDate;
     status: "failed" | "success";
@@ -140,8 +140,8 @@ export declare const DCAExecution: mongoose.Model<{
     amountSol: number;
     tokensReceived: number;
     pricePerToken: number;
-    signature?: string;
-    error?: string;
+    signature?: string | null | undefined;
+    error?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -153,8 +153,8 @@ export declare const DCAExecution: mongoose.Model<{
     amountSol: number;
     tokensReceived: number;
     pricePerToken: number;
-    signature?: string;
-    error?: string;
+    signature?: string | null | undefined;
+    error?: string | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -170,8 +170,8 @@ export declare const DCAExecution: mongoose.Model<{
     amountSol: number;
     tokensReceived: number;
     pricePerToken: number;
-    signature?: string;
-    error?: string;
+    signature?: string | null | undefined;
+    error?: string | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     timestamp: NativeDate;
     status: "failed" | "success";
@@ -181,8 +181,8 @@ export declare const DCAExecution: mongoose.Model<{
     amountSol: number;
     tokensReceived: number;
     pricePerToken: number;
-    signature?: string;
-    error?: string;
+    signature?: string | null | undefined;
+    error?: string | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -194,8 +194,8 @@ export declare const DCAExecution: mongoose.Model<{
     amountSol: number;
     tokensReceived: number;
     pricePerToken: number;
-    signature?: string;
-    error?: string;
+    signature?: string | null | undefined;
+    error?: string | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {

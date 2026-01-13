@@ -5,6 +5,7 @@ exports.getJupiterService = getJupiterService;
 exports.initJupiterService = initJupiterService;
 // Jupiter Aggregator Service - Best price swaps across Solana DEXs
 const web3_js_1 = require("@solana/web3.js");
+const logger_1 = require("./logger");
 const JUPITER_API = 'https://quote-api.jup.ag/v6';
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 class JupiterService {
@@ -28,7 +29,7 @@ class JupiterService {
             });
             const response = await fetch(`${JUPITER_API}/quote?${params}`);
             if (!response.ok) {
-                console.error('Jupiter quote error:', await response.text());
+                logger_1.log.error('Jupiter quote error:', await response.text());
                 return null;
             }
             const quote = await response.json();
@@ -38,7 +39,7 @@ class JupiterService {
             };
         }
         catch (error) {
-            console.error('Error getting Jupiter quote:', error);
+            logger_1.log.error('Error getting Jupiter quote:', error);
             return null;
         }
     }

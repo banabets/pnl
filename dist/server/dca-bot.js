@@ -8,6 +8,7 @@ exports.initDCABot = initDCABot;
 exports.getDCABot = getDCABot;
 const jupiter_service_1 = require("./jupiter-service");
 const mongoose_1 = __importDefault(require("mongoose"));
+const logger_1 = require("./logger");
 // Schema
 const DCAOrderSchema = new mongoose_1.default.Schema({
     userId: { type: mongoose_1.default.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -169,7 +170,7 @@ class DCABot {
      */
     async processPendingOrders() {
         if (!this.getKeypairForUser) {
-            console.warn('DCA Bot: Keypair getter not set');
+            logger_1.log.warn('DCA Bot: Keypair getter not set');
             return;
         }
         const now = new Date();
@@ -179,16 +180,16 @@ class DCABot {
         }).lean();
         for (const order of pendingOrders) {
             try {
-                const keypair = await this.getKeypairForUser(order.userId.toString(), order.walletIndex);
+                const keypair = await this.getKeypairForUser(order.userId.toString(), order.walletIndex ?? undefined);
                 if (!keypair) {
-                    console.warn(`DCA: No keypair for user ${order.userId}`);
+                    logger_1.log.warn(`DCA: No keypair for user ${order.userId}`);
                     continue;
                 }
                 const result = await this.executeBuy(order, keypair);
-                console.log(`DCA executed for order ${order._id}: ${result.success ? 'success' : result.error}`);
+                logger_1.log.info(`DCA executed for order ${order._id}: ${result.success ? 'success' : result.error}`);
             }
             catch (error) {
-                console.error(`DCA execution error for order ${order._id}:`, error);
+                logger_1.log.error(`DCA execution error for order ${order._id}:`, error);
             }
         }
     }
@@ -200,9 +201,11 @@ class DCABot {
             return;
         this.isRunning = true;
         this.intervalId = setInterval(() => {
-            this.processPendingOrders().catch(console.error);
+            this.processPendingOrders().catch((error) => {
+                logger_1.log.error('Error processing pending DCA orders', { error: error instanceof Error ? error.message : String(error) });
+            });
         }, intervalMs);
-        console.log('✅ DCA Bot started');
+        logger_1.log.info('✅ DCA Bot started');
     }
     /**
      * Stop the DCA scheduler
@@ -213,7 +216,7 @@ class DCABot {
             this.intervalId = null;
         }
         this.isRunning = false;
-        console.log('⏹️ DCA Bot stopped');
+        logger_1.log.info('⏹️ DCA Bot stopped');
     }
     /**
      * Get DCA stats for user

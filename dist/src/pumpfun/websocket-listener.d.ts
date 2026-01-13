@@ -51,6 +51,6 @@ export declare class PumpFunWebSocketListener {
     /**
      * Check if a token is likely a pump.fun token by checking for bonding curve
      */
-    private isLikelyPumpFunToken;
+    private _isLikelyPumpFunToken;
 }
 //# sourceMappingURL=websocket-listener.d.ts.map

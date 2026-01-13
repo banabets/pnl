@@ -23,12 +23,12 @@ export declare const SnipeHistory: mongoose.Model<{
     tokensReceived: number;
     buyAmountSol: number;
     buyPrice: number;
-    signature?: string;
-    pnl?: number;
-    pnlPercent?: number;
-    tokenName?: string;
-    tokenSymbol?: string;
-    sellPrice?: number;
+    signature?: string | null | undefined;
+    pnl?: number | null | undefined;
+    pnlPercent?: number | null | undefined;
+    tokenName?: string | null | undefined;
+    tokenSymbol?: string | null | undefined;
+    sellPrice?: number | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
     timestamp: NativeDate;
     status: "pending" | "failed" | "bought" | "sold";
@@ -37,12 +37,12 @@ export declare const SnipeHistory: mongoose.Model<{
     tokensReceived: number;
     buyAmountSol: number;
     buyPrice: number;
-    signature?: string;
-    pnl?: number;
-    pnlPercent?: number;
-    tokenName?: string;
-    tokenSymbol?: string;
-    sellPrice?: number;
+    signature?: string | null | undefined;
+    pnl?: number | null | undefined;
+    pnlPercent?: number | null | undefined;
+    tokenName?: string | null | undefined;
+    tokenSymbol?: string | null | undefined;
+    sellPrice?: number | null | undefined;
 } & mongoose.DefaultTimestampProps, {}, {
     timestamps: true;
 }> & {
@@ -53,12 +53,12 @@ export declare const SnipeHistory: mongoose.Model<{
     tokensReceived: number;
     buyAmountSol: number;
     buyPrice: number;
-    signature?: string;
-    pnl?: number;
-    pnlPercent?: number;
-    tokenName?: string;
-    tokenSymbol?: string;
-    sellPrice?: number;
+    signature?: string | null | undefined;
+    pnl?: number | null | undefined;
+    pnlPercent?: number | null | undefined;
+    tokenName?: string | null | undefined;
+    tokenSymbol?: string | null | undefined;
+    sellPrice?: number | null | undefined;
 } & mongoose.DefaultTimestampProps & {
     _id: mongoose.Types.ObjectId;
 } & {
@@ -73,12 +73,12 @@ export declare const SnipeHistory: mongoose.Model<{
     tokensReceived: number;
     buyAmountSol: number;
     buyPrice: number;
-    signature?: string;
-    pnl?: number;
-    pnlPercent?: number;
-    tokenName?: string;
-    tokenSymbol?: string;
-    sellPrice?: number;
+    signature?: string | null | undefined;
+    pnl?: number | null | undefined;
+    pnlPercent?: number | null | undefined;
+    tokenName?: string | null | undefined;
+    tokenSymbol?: string | null | undefined;
+    sellPrice?: number | null | undefined;
 } & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
     timestamp: NativeDate;
     status: "pending" | "failed" | "bought" | "sold";
@@ -87,12 +87,12 @@ export declare const SnipeHistory: mongoose.Model<{
     tokensReceived: number;
     buyAmountSol: number;
     buyPrice: number;
-    signature?: string;
-    pnl?: number;
-    pnlPercent?: number;
-    tokenName?: string;
-    tokenSymbol?: string;
-    sellPrice?: number;
+    signature?: string | null | undefined;
+    pnl?: number | null | undefined;
+    pnlPercent?: number | null | undefined;
+    tokenName?: string | null | undefined;
+    tokenSymbol?: string | null | undefined;
+    sellPrice?: number | null | undefined;
 } & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
     timestamps: true;
 }>> & mongoose.FlatRecord<{
@@ -103,12 +103,12 @@ export declare const SnipeHistory: mongoose.Model<{
     tokensReceived: number;
     buyAmountSol: number;
     buyPrice: number;
-    signature?: string;
-    pnl?: number;
-    pnlPercent?: number;
-    tokenName?: string;
-    tokenSymbol?: string;
-    sellPrice?: number;
+    signature?: string | null | undefined;
+    pnl?: number | null | undefined;
+    pnlPercent?: number | null | undefined;
+    tokenName?: string | null | undefined;
+    tokenSymbol?: string | null | undefined;
+    sellPrice?: number | null | undefined;
 } & mongoose.DefaultTimestampProps> & {
     _id: mongoose.Types.ObjectId;
 } & {
