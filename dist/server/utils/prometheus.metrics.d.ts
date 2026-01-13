@@ -2,23 +2,22 @@
  * Prometheus Metrics
  * Advanced metrics collection for monitoring
  */
-import client from 'prom-client';
-export declare const register: client.Registry<"text/plain; version=0.0.4; charset=utf-8">;
-export declare const tradesCounter: client.Counter<"type" | "status" | "token_mint">;
-export declare const tradeDuration: client.Histogram<"type">;
-export declare const tradeAmount: client.Histogram<"type">;
-export declare const httpRequestDuration: client.Histogram<"route" | "method" | "status_code">;
-export declare const httpRequestTotal: client.Counter<"route" | "method" | "status_code">;
-export declare const websocketConnections: client.Gauge<string>;
-export declare const websocketMessages: client.Counter<"type">;
-export declare const databaseQueries: client.Counter<"collection" | "operation">;
-export declare const databaseQueryDuration: client.Histogram<"collection" | "operation">;
-export declare const cacheHits: client.Counter<"cache_type">;
-export declare const cacheMisses: client.Counter<"cache_type">;
-export declare const errorsTotal: client.Counter<"type" | "severity">;
-export declare const activeUsers: client.Gauge<string>;
-export declare const totalWallets: client.Gauge<string>;
-export declare const totalPositions: client.Gauge<string>;
+export declare const register: any;
+export declare const tradesCounter: any;
+export declare const tradeDuration: any;
+export declare const tradeAmount: any;
+export declare const httpRequestDuration: any;
+export declare const httpRequestTotal: any;
+export declare const websocketConnections: any;
+export declare const websocketMessages: any;
+export declare const databaseQueries: any;
+export declare const databaseQueryDuration: any;
+export declare const cacheHits: any;
+export declare const cacheMisses: any;
+export declare const errorsTotal: any;
+export declare const activeUsers: any;
+export declare const totalWallets: any;
+export declare const totalPositions: any;
 /**
  * Get metrics endpoint handler
  */

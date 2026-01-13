@@ -1,20 +1,20 @@
-export declare const generalLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const authLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const tradingLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const walletLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const adminLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const readLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const alertsLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const fundsLimiter: import("express-rate-limit").RateLimitRequestHandler;
+export declare const generalLimiter: any;
+export declare const authLimiter: any;
+export declare const tradingLimiter: any;
+export declare const walletLimiter: any;
+export declare const adminLimiter: any;
+export declare const readLimiter: any;
+export declare const alertsLimiter: any;
+export declare const fundsLimiter: any;
 export declare const rateLimiters: {
-    general: import("express-rate-limit").RateLimitRequestHandler;
-    auth: import("express-rate-limit").RateLimitRequestHandler;
-    trading: import("express-rate-limit").RateLimitRequestHandler;
-    wallet: import("express-rate-limit").RateLimitRequestHandler;
-    admin: import("express-rate-limit").RateLimitRequestHandler;
-    read: import("express-rate-limit").RateLimitRequestHandler;
-    alerts: import("express-rate-limit").RateLimitRequestHandler;
-    funds: import("express-rate-limit").RateLimitRequestHandler;
+    general: any;
+    auth: any;
+    trading: any;
+    wallet: any;
+    admin: any;
+    read: any;
+    alerts: any;
+    funds: any;
 };
 export declare function getRateLimiterForEndpoint(path: string, method: string): any;
 //# sourceMappingURL=http-rate-limiter.d.ts.map

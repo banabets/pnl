@@ -12,7 +12,8 @@ const rate_limiter_1 = require("./rate-limiter");
 const jupiter_service_1 = require("./jupiter-service");
 const form_data_1 = __importDefault(require("form-data"));
 // Pump.fun program ID on Solana mainnet
-const PUMPFUN_PROGRAM_ID = new web3_js_1.PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
+// NOTE: Must be the full 44-char program id (with trailing "x")
+const PUMPFUN_PROGRAM_ID = new web3_js_1.PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
 class LaunchpadService {
     constructor() {
         const rpcUrl = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';

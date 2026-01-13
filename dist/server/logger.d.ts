@@ -1,5 +1,4 @@
-import winston from 'winston';
-declare const logger: winston.Logger;
+declare const logger: any;
 export declare const httpLoggerStream: {
     write: (message: string) => void;
 };

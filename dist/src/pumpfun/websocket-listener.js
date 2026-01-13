@@ -18,6 +18,15 @@ class PumpFunWebSocketListener {
         this.connection = new web3_js_1.Connection(wsRpcUrl, 'confirmed');
     }
     /**
+     * Get a snapshot of recently discovered tokens.
+     * Useful as a fallback when richer feeds are unavailable.
+     */
+    getRecentTokens() {
+        return Array.from(this.recentTokens.values())
+            .sort((a, b) => b.timestamp - a.timestamp)
+            .slice(0, this.maxRecentTokens);
+    }
+    /**
      * Start listening to pump.fun program transactions via WebSocket
      */
     async startListening() {

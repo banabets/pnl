@@ -29,6 +29,16 @@ export class PumpFunWebSocketListener {
   }
 
   /**
+   * Get a snapshot of recently discovered tokens.
+   * Useful as a fallback when richer feeds are unavailable.
+   */
+  public getRecentTokens(): TokenUpdate[] {
+    return Array.from(this.recentTokens.values())
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, this.maxRecentTokens);
+  }
+
+  /**
    * Start listening to pump.fun program transactions via WebSocket
    */
   public async startListening(): Promise<void> {

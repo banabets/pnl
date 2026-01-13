@@ -7,7 +7,10 @@ import { EventEmitter } from 'events';
 import { log } from './logger';
 
 // Program IDs
-const PUMP_FUN_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+// NOTE: Must be the full 44-char program id. (Some older copies of this file were missing the trailing "x")
+const PUMP_FUN_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px';
+// Pump.fun -> Raydium migration program (used to detect graduations)
+const PUMP_MIGRATION_PROGRAM = '39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg';
 const RAYDIUM_AMM_PROGRAM = '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8';
 const RAYDIUM_CPMM_PROGRAM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
@@ -284,6 +287,9 @@ class HeliusWebSocketService extends EventEmitter {
     // Subscribe to PumpFun program logs
     this.subscribeToProgramLogs(PUMP_FUN_PROGRAM, 'pumpfun');
 
+    // Subscribe to Pump.fun migration program (graduations to Raydium)
+    this.subscribeToProgramLogs(PUMP_MIGRATION_PROGRAM, 'pump_migration');
+
     // Subscribe to Raydium AMM for graduations
     this.subscribeToProgramLogs(RAYDIUM_AMM_PROGRAM, 'raydium_amm');
 
@@ -353,7 +359,12 @@ class HeliusWebSocketService extends EventEmitter {
       await this.processPumpFunTransaction(signature, logs);
     }
 
-    // Detect Raydium events (graduations)
+    // Detect Pump.fun migration events (graduations to Raydium)
+    if (logsStr.includes(PUMP_MIGRATION_PROGRAM)) {
+      await this.processPumpMigrationTransaction(signature, logs);
+    }
+
+    // Detect Raydium events (pool creation, swaps)
     if (logsStr.includes(RAYDIUM_AMM_PROGRAM) || logsStr.includes(RAYDIUM_CPMM_PROGRAM)) {
       await this.processRaydiumTransaction(signature, logs);
     }
@@ -494,6 +505,24 @@ class HeliusWebSocketService extends EventEmitter {
     }
   }
 
+
+
+/**
+ * Pick the most likely token mint from Helius tokenTransfers array.
+ * Filters out wSOL and chooses the transfer with the largest absolute token amount.
+ */
+private pickBestMintFromTransfers(tokenTransfers: any[]): { mint?: string; tokenAmount?: number } {
+  if (!Array.isArray(tokenTransfers) || tokenTransfers.length === 0) return {};
+  const WSOL = 'So11111111111111111111111111111111111111112';
+  const candidates = tokenTransfers
+    .filter(t => t && typeof t.mint === 'string' && t.mint !== WSOL)
+    .map(t => ({ mint: t.mint as string, tokenAmount: Number(t.tokenAmount || 0) }))
+    .filter(t => t.mint && !Number.isNaN(t.tokenAmount));
+  if (candidates.length === 0) return {};
+  candidates.sort((a, b) => Math.abs(b.tokenAmount) - Math.abs(a.tokenAmount));
+  return candidates[0];
+}
+
   /**
    * Parse Helius enhanced transaction format
    */
@@ -505,9 +534,11 @@ class HeliusWebSocketService extends EventEmitter {
 
     // Extract token info from token transfers
     if (tx.tokenTransfers?.length > 0) {
-      const transfer = tx.tokenTransfers[0];
-      result.mint = transfer.mint;
-      result.tokenAmount = transfer.tokenAmount;
+      const best = this.pickBestMintFromTransfers(tx.tokenTransfers);
+      if (best.mint) {
+        result.mint = best.mint;
+        result.tokenAmount = best.tokenAmount;
+      }
     }
 
     // Extract SOL amount from native transfers

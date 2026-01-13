@@ -98,6 +98,11 @@ declare class HeliusWebSocketService extends EventEmitter {
      */
     private getTransactionDetails;
     /**
+     * Pick the most likely token mint from Helius tokenTransfers array.
+     * Filters out wSOL and chooses the transfer with the largest absolute token amount.
+     */
+    private pickBestMintFromTransfers;
+    /**
      * Parse Helius enhanced transaction format
      */
     private parseHeliusTransaction;

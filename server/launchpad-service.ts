@@ -8,7 +8,8 @@ import { getJupiterService } from './jupiter-service';
 import FormData from 'form-data';
 
 // Pump.fun program ID on Solana mainnet
-const PUMPFUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
+// NOTE: Must be the full 44-char program id (with trailing "x")
+const PUMPFUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
 
 interface TokenMetadata {
   name: string;

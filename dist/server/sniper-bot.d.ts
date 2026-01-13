@@ -1,5 +1,4 @@
 import { Keypair } from '@solana/web3.js';
-import mongoose from 'mongoose';
 export interface SniperConfig {
     userId: string;
     enabled: boolean;
@@ -15,105 +14,7 @@ export interface SniperConfig {
     autoSellPercent?: number;
     stopLossPercent?: number;
 }
-export declare const SnipeHistory: mongoose.Model<{
-    timestamp: NativeDate;
-    status: "pending" | "failed" | "bought" | "sold";
-    userId: mongoose.Types.ObjectId;
-    tokenMint: string;
-    tokensReceived: number;
-    buyAmountSol: number;
-    buyPrice: number;
-    signature?: string | null | undefined;
-    pnl?: number | null | undefined;
-    pnlPercent?: number | null | undefined;
-    tokenName?: string | null | undefined;
-    tokenSymbol?: string | null | undefined;
-    sellPrice?: number | null | undefined;
-} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
-    timestamp: NativeDate;
-    status: "pending" | "failed" | "bought" | "sold";
-    userId: mongoose.Types.ObjectId;
-    tokenMint: string;
-    tokensReceived: number;
-    buyAmountSol: number;
-    buyPrice: number;
-    signature?: string | null | undefined;
-    pnl?: number | null | undefined;
-    pnlPercent?: number | null | undefined;
-    tokenName?: string | null | undefined;
-    tokenSymbol?: string | null | undefined;
-    sellPrice?: number | null | undefined;
-} & mongoose.DefaultTimestampProps, {}, {
-    timestamps: true;
-}> & {
-    timestamp: NativeDate;
-    status: "pending" | "failed" | "bought" | "sold";
-    userId: mongoose.Types.ObjectId;
-    tokenMint: string;
-    tokensReceived: number;
-    buyAmountSol: number;
-    buyPrice: number;
-    signature?: string | null | undefined;
-    pnl?: number | null | undefined;
-    pnlPercent?: number | null | undefined;
-    tokenName?: string | null | undefined;
-    tokenSymbol?: string | null | undefined;
-    sellPrice?: number | null | undefined;
-} & mongoose.DefaultTimestampProps & {
-    _id: mongoose.Types.ObjectId;
-} & {
-    __v: number;
-}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
-    timestamps: true;
-}, {
-    timestamp: NativeDate;
-    status: "pending" | "failed" | "bought" | "sold";
-    userId: mongoose.Types.ObjectId;
-    tokenMint: string;
-    tokensReceived: number;
-    buyAmountSol: number;
-    buyPrice: number;
-    signature?: string | null | undefined;
-    pnl?: number | null | undefined;
-    pnlPercent?: number | null | undefined;
-    tokenName?: string | null | undefined;
-    tokenSymbol?: string | null | undefined;
-    sellPrice?: number | null | undefined;
-} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
-    timestamp: NativeDate;
-    status: "pending" | "failed" | "bought" | "sold";
-    userId: mongoose.Types.ObjectId;
-    tokenMint: string;
-    tokensReceived: number;
-    buyAmountSol: number;
-    buyPrice: number;
-    signature?: string | null | undefined;
-    pnl?: number | null | undefined;
-    pnlPercent?: number | null | undefined;
-    tokenName?: string | null | undefined;
-    tokenSymbol?: string | null | undefined;
-    sellPrice?: number | null | undefined;
-} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
-    timestamps: true;
-}>> & mongoose.FlatRecord<{
-    timestamp: NativeDate;
-    status: "pending" | "failed" | "bought" | "sold";
-    userId: mongoose.Types.ObjectId;
-    tokenMint: string;
-    tokensReceived: number;
-    buyAmountSol: number;
-    buyPrice: number;
-    signature?: string | null | undefined;
-    pnl?: number | null | undefined;
-    pnlPercent?: number | null | undefined;
-    tokenName?: string | null | undefined;
-    tokenSymbol?: string | null | undefined;
-    sellPrice?: number | null | undefined;
-} & mongoose.DefaultTimestampProps> & {
-    _id: mongoose.Types.ObjectId;
-} & {
-    __v: number;
-}>>;
+export declare const SnipeHistory: any;
 export declare class SniperBot {
     private activeSnipes;
     private connection;

@@ -159,25 +159,22 @@ const volume_bot_1 = require("./volume-bot");
 const launchpad_service_1 = require("./launchpad-service");
 // MongoDB Connection
 const database_3 = require("./database");
-// Connect to MongoDB
+// Connect to MongoDB (optional). Token discovery should NOT depend on MongoDB.
 (0, database_3.connectDatabase)().then(() => {
-    logger_1.log.info('MongoDB connected - Starting token feed and enricher services');
-    // Start token feed service (requires HELIUS_API_KEY for optimal performance)
-    token_feed_1.tokenFeed.start().then(() => {
-        logger_1.log.info('Token feed service started successfully');
-        // ⚠️ Token Enricher DISABLED to save API credits
-        // Uncomment to re-enable: tokenEnricherWorker.start()
-        logger_1.log.warn('Token Enricher Worker DISABLED to conserve API credits');
-        // tokenEnricherWorker.start().catch((error) => {
-        //   log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
-        // });
-    }).catch((error) => {
-        logger_1.log.error('Failed to start token feed', { error: error.message, stack: error.stack });
-        logger_1.log.warn('Token feed service disabled - Token Explorer will use pump.fun API fallback');
-    });
+    logger_1.log.info('MongoDB connected');
 }).catch((error) => {
     logger_1.log.error('Failed to connect to MongoDB', { error: error.message, stack: error.stack });
-    logger_1.log.warn('Continuing without MongoDB - Token Explorer will use pump.fun API');
+    logger_1.log.warn('Continuing without MongoDB (token discovery will run in-memory)');
+});
+// Start token feed service (on-chain). This is the preferred source for Pump.fun tokens.
+// Requires HELIUS_API_KEY for best performance, but the app should still run without it.
+token_feed_1.tokenFeed.start().then(() => {
+    logger_1.log.info('Token feed service started successfully');
+    // ⚠️ Token Enricher DISABLED to save API credits
+    logger_1.log.warn('Token Enricher Worker DISABLED to conserve API credits');
+}).catch((error) => {
+    logger_1.log.error('Failed to start token feed', { error: error.message, stack: error.stack });
+    logger_1.log.warn('Token feed service disabled - will rely on pure RPC WebSocket listener');
 });
 const app = (0, express_1.default)();
 app.set('trust proxy', 1); // Trust first proxy (Railway, Heroku, etc.)
@@ -282,7 +279,10 @@ const swagger_1 = require("./utils/swagger");
 // Simple in-memory cache for token data
 let tokenCache = { data: [], timestamp: 0 };
 const CACHE_DURATION = 30000; // 30 seconds cache
-// Helper function to fetch and cache tokens from pump.fun
+// Helper: pump.fun API is frequently protected by Cloudflare.
+// Default behavior: DO NOT hit pump.fun API unless explicitly enabled.
+const ALLOW_PUMPFUN_API = (process.env.ALLOW_PUMPFUN_API || '').toLowerCase() === 'true';
+// Helper function to fetch and cache tokens (preferred: on-chain via tokenFeed)
 async function fetchPumpFunTokens() {
     const now = Date.now();
     // Return cached data if still fresh
@@ -291,11 +291,33 @@ async function fetchPumpFunTokens() {
         return tokenCache.data;
     }
     try {
+        // 1) Preferred source: on-chain feed (Pump.fun + Raydium) enriched via DexScreener when available
+        if (token_feed_1.tokenFeed.isServiceStarted()) {
+            const tokens = await token_feed_1.tokenFeed.getNew(100);
+            if (tokens && tokens.length > 0) {
+                // Cache and return
+                tokenCache = { data: tokens, timestamp: now };
+                return tokenCache.data;
+            }
+        }
+        // 2) Secondary source: our pure RPC wsListener recent tokens (minimal data)
+        // If tokenFeed isn't available (e.g., missing HELIUS_API_KEY), we still return something.
+        const recent = wsListener.getRecentTokens?.() || [];
+        if (Array.isArray(recent) && recent.length > 0) {
+            tokenCache = { data: recent, timestamp: now };
+            return tokenCache.data;
+        }
+        // 3) Last resort: pump.fun API (explicitly enabled only)
+        if (!ALLOW_PUMPFUN_API) {
+            logger_1.log.warn('pump.fun API is disabled (ALLOW_PUMPFUN_API=false). Returning empty list.');
+            tokenCache = { data: [], timestamp: now };
+            return tokenCache.data;
+        }
         const pumpUrl = 'https://frontend-api.pump.fun/coins?offset=0&limit=100&sort=created_timestamp&order=DESC';
-        logger_1.log.info('Fetching tokens from pump.fun API', { url: pumpUrl });
+        logger_1.log.info('Fetching tokens from pump.fun API (explicitly enabled)', { url: pumpUrl });
         const response = await fetch(pumpUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0',
                 'Accept': 'application/json',
             },
         });
@@ -304,33 +326,19 @@ async function fetchPumpFunTokens() {
             const data = await response.json();
             logger_1.log.info('Pump.fun API data received', { isArray: Array.isArray(data), length: Array.isArray(data) ? data.length : 0 });
             if (Array.isArray(data) && data.length > 0) {
-                // Filter and enrich tokens - transform to frontend format
                 const enrichedTokens = data
-                    .filter((token) => {
-                    // Only filter out completely invalid tokens
-                    // Keep tokens even if they have generic names - just ensure they have a mint
-                    return token.mint && token.mint.length > 0;
-                })
+                    .filter((token) => token.mint && token.mint.length > 0)
                     .map((token) => {
                     const createdTimestamp = token.created_timestamp || 0;
-                    const now = Date.now() / 1000;
-                    const ageSeconds = now - createdTimestamp;
-                    // Generate better fallback names and images
+                    const nowSec = Date.now() / 1000;
+                    const ageSeconds = nowSec - createdTimestamp;
                     const hasName = token.name && token.name.trim().length > 0;
                     const hasSymbol = token.symbol && token.symbol.trim().length > 0;
                     const hasImage = token.image_uri && token.image_uri.trim().length > 0;
-                    // Create a readable name from whatever data is available
-                    let displayName = hasName ? token.name :
-                        hasSymbol ? token.symbol :
-                            `New Token`;
-                    // Create symbol from name if missing
-                    let displaySymbol = hasSymbol ? token.symbol :
-                        hasName ? token.name.substring(0, 6).toUpperCase() :
-                            `TOKEN`;
+                    const displayName = hasName ? token.name : hasSymbol ? token.symbol : 'New Token';
+                    const displaySymbol = hasSymbol ? token.symbol : hasName ? token.name.substring(0, 6).toUpperCase() : 'TOKEN';
                     return {
-                        // Keep original pump.fun format for compatibility
                         ...token,
-                        // Add frontend-expected camelCase fields
                         mint: token.mint,
                         name: displayName,
                         symbol: displaySymbol,
@@ -2384,711 +2392,41 @@ app.get('/api/launchpad/token/:mint', async (req, res) => {
     }
 });
 // Pump.fun Tokens - Try WebSocket recent tokens first, then API, then on-chain
+// Pump.fun Tokens (DexScreener-style feed)
+// Preferred: on-chain TokenFeed (Helius WS + on-chain parsing) with DexScreener enrichment.
+// Fallback: pure RPC WebSocket listener (minimal fields). Last resort: pump.fun API if explicitly enabled.
 app.get('/api/pumpfun/tokens', async (req, res) => {
     try {
         const offset = parseInt(req.query.offset) || 0;
-        const limit = parseInt(req.query.limit) || 100;
+        const limit = Math.min(parseInt(req.query.limit) || 100, 200);
+        // 1) On-chain feed (best)
+        if (token_feed_1.tokenFeed.isServiceStarted()) {
+            const tokens = await token_feed_1.tokenFeed.getNew(limit + offset);
+            return res.json(tokens.slice(offset, offset + limit));
+        }
+        // 2) Minimal fallback (mint + signature + timestamp)
+        const recent = wsListener.getRecentTokens();
+        if (recent.length > 0) {
+            return res.json(recent.slice(offset, offset + limit));
+        }
+        // 3) Last resort: pump.fun API (only if enabled)
+        if (!ALLOW_PUMPFUN_API) {
+            return res.json([]);
+        }
         const sort = req.query.sort || 'created_timestamp';
         const order = req.query.order || 'DESC';
-        logger_1.log.info('Fetching tokens from pump.fun');
-        // Method 1: Try pump.fun API first (fastest and most reliable) ⭐
-        try {
-            logger_1.log.info('Trying pump.fun API (fastest method)');
-            const pumpUrl = `https://frontend-api.pump.fun/coins?offset=${offset}&limit=${limit}&sort=${sort}&order=${order}`;
-            const pumpResponse = await fetch(pumpUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                    'Accept': 'application/json',
-                },
-            });
-            if (pumpResponse.ok) {
-                const pumpData = await pumpResponse.json();
-                if (pumpData && Array.isArray(pumpData) && pumpData.length > 0) {
-                    // Filter and prioritize: last 6 hours, prioritize last 2 hours
-                    const now = Date.now() / 1000;
-                    const sixHoursAgo = now - (6 * 60 * 60);
-                    const twoHoursAgo = now - (2 * 60 * 60);
-                    const oneHourAgo = now - (60 * 60);
-                    const thirtyMinutesAgo = now - (30 * 60);
-                    // Get tokens from last 6 hours (more flexible)
-                    const recentTokens = pumpData.filter((token) => {
-                        const tokenTime = token.created_timestamp || 0;
-                        // Include if timestamp is valid and within last 6 hours
-                        return tokenTime > 0 && tokenTime >= sixHoursAgo;
-                    });
-                    if (recentTokens.length > 0) {
-                        // Separate by recency - prioritize very recent
-                        const last30min = recentTokens.filter((token) => (token.created_timestamp || 0) >= thirtyMinutesAgo);
-                        const lastHour = recentTokens.filter((token) => {
-                            const t = token.created_timestamp || 0;
-                            return t >= oneHourAgo && t < thirtyMinutesAgo;
-                        });
-                        const lastTwoHours = recentTokens.filter((token) => {
-                            const t = token.created_timestamp || 0;
-                            return t >= twoHoursAgo && t < oneHourAgo;
-                        });
-                        const lastSixHours = recentTokens.filter((token) => {
-                            const t = token.created_timestamp || 0;
-                            return t >= sixHoursAgo && t < twoHoursAgo;
-                        });
-                        // Prioritize: last 30min first, then last 1h, then last 2h, then last 6h
-                        const sortedTokens = [...last30min, ...lastHour, ...lastTwoHours, ...lastSixHours]
-                            .sort((a, b) => (b.created_timestamp || 0) - (a.created_timestamp || 0))
-                            .slice(0, limit);
-                        // Filter out generic pump.fun tokens and ensure all required fields are present
-                        const enrichedTokens = sortedTokens
-                            .filter((token) => {
-                            // Filter out only truly generic pump.fun placeholder tokens
-                            const name = (token.name || '').toLowerCase().trim();
-                            const symbol = (token.symbol || '').toLowerCase().trim();
-                            const isGeneric = name === 'pump.fun' ||
-                                name === 'pump fun' ||
-                                name === 'pumpfun' ||
-                                symbol === 'pump.fun' ||
-                                symbol === 'pumpfun';
-                            if (isGeneric) {
-                                logger_1.log.info('Filtered out generic token', {
-                                    name: token.name,
-                                    symbol: token.symbol
-                                });
-                            }
-                            return !isGeneric;
-                        })
-                            .map((token) => {
-                            // Ensure all required fields are present
-                            const enriched = {
-                                ...token,
-                                // Ensure name is not "pump fun" or generic (fallback)
-                                name: (token.name && token.name.toLowerCase() !== 'pump fun' && token.name.toLowerCase() !== 'pump.fun' && token.name.length > 2)
-                                    ? token.name
-                                    : (token.symbol || `Token ${token.mint?.substring(0, 8) || 'Unknown'}`),
-                                // Add missing fields with defaults - ALWAYS include these fields
-                                liquidity: typeof token.liquidity === 'number' ? token.liquidity : 0,
-                                holders: typeof token.holders === 'number' ? token.holders : 0,
-                                volume_24h: typeof token.volume_24h === 'number' ? token.volume_24h : 0,
-                                dev_holdings: typeof token.dev_holdings === 'number' ? token.dev_holdings : 0,
-                                dev_holdings_percent: typeof token.dev_holdings_percent === 'number' ? token.dev_holdings_percent : 0,
-                                sniper_holdings: typeof token.sniper_holdings === 'number' ? token.sniper_holdings : 0,
-                                sniper_holdings_percent: typeof token.sniper_holdings_percent === 'number' ? token.sniper_holdings_percent : 0,
-                                insider_holdings: typeof token.insider_holdings === 'number' ? token.insider_holdings : 0,
-                                insider_holdings_percent: typeof token.insider_holdings_percent === 'number' ? token.insider_holdings_percent : 0,
-                                dex_is_paid: typeof token.dex_is_paid === 'boolean' ? token.dex_is_paid : false,
-                            };
-                            return enriched;
-                        });
-                        logger_1.log.info('Found tokens from pump.fun API', {
-                            total: enrichedTokens.length,
-                            last30min: last30min.length,
-                            lastHour: lastHour.length,
-                            lastTwoHours: lastTwoHours.length,
-                            lastSixHours: lastSixHours.length
-                        });
-                        // Log token ages for debugging
-                        const nowSeconds = Date.now() / 1000;
-                        enrichedTokens.slice(0, 10).forEach((token) => {
-                            const ageMinutes = ((nowSeconds - (token.created_timestamp || 0)) / 60).toFixed(0);
-                            const ageHours = ((nowSeconds - (token.created_timestamp || 0)) / 3600).toFixed(1);
-                            logger_1.log.info('Token age details', {
-                                name: token.name || 'Token',
-                                ageMinutes,
-                                ageHours,
-                                timestamp: token.created_timestamp
-                            });
-                        });
-                        return res.json(enrichedTokens);
-                    }
-                    else {
-                        // If no tokens in last 6h, show newest available (up to 24h)
-                        const oneDayAgo = now - (24 * 60 * 60);
-                        const fallbackTokens = pumpData.filter((token) => {
-                            const tokenTime = token.created_timestamp || 0;
-                            return tokenTime > 0 && tokenTime >= oneDayAgo;
-                        });
-                        if (fallbackTokens.length > 0) {
-                            const sorted = fallbackTokens
-                                .sort((a, b) => (b.created_timestamp || 0) - (a.created_timestamp || 0))
-                                .slice(0, limit);
-                            // Ensure all required fields are present
-                            const enrichedFallback = sorted.map((token) => ({
-                                ...token,
-                                name: (token.name && token.name.toLowerCase() !== 'pump fun' && token.name.toLowerCase() !== 'pump.fun' && token.name.length > 2)
-                                    ? token.name
-                                    : (token.symbol || `Token ${token.mint?.substring(0, 8) || 'Unknown'}`),
-                                liquidity: token.liquidity || 0,
-                                holders: token.holders || 0,
-                                volume_24h: token.volume_24h || 0,
-                                dev_holdings: token.dev_holdings || 0,
-                                dev_holdings_percent: token.dev_holdings_percent || 0,
-                                sniper_holdings: token.sniper_holdings || 0,
-                                sniper_holdings_percent: token.sniper_holdings_percent || 0,
-                                insider_holdings: token.insider_holdings || 0,
-                                insider_holdings_percent: token.insider_holdings_percent || 0,
-                                dex_is_paid: token.dex_is_paid || false,
-                            }));
-                            logger_1.log.warn('No tokens in last 6h, showing newest from last 24h', {
-                                count: enrichedFallback.length
-                            });
-                            return res.json(enrichedFallback);
-                        }
-                        logger_1.log.warn('No tokens found in last 24 hours from pump.fun API');
-                        // Continue to next method
-                    }
-                }
-            }
-        }
-        catch (pumpError) {
-            logger_1.log.error('pump.fun API failed', { error: pumpError.message });
-        }
-        // Method 2: Try DexScreener API (not blocked by Cloudflare, very fast) ⭐
-        logger_1.log.info('Trying DexScreener API (no Cloudflare blocking, fast)');
-        try {
-            const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
-            const oneHourAgo = Date.now() - (60 * 60 * 1000);
-            // Strategy: Get recent Solana pairs and filter for pump.fun
-            let allPairs = [];
-            // Get all Solana pairs - try multiple endpoints
-            try {
-                // Endpoint 1: Latest Solana pairs
-                const recentPairsUrl = `https://api.dexscreener.com/latest/dex/pairs/solana`;
-                const dexResponse = await fetch(recentPairsUrl, {
-                    headers: { 'Accept': 'application/json' },
-                });
-                if (dexResponse.ok) {
-                    const dexData = await dexResponse.json();
-                    if (dexData.pairs && Array.isArray(dexData.pairs)) {
-                        allPairs = dexData.pairs;
-                        logger_1.log.info('DexScreener returned Solana pairs', { count: allPairs.length });
-                    }
-                }
-            }
-            catch (err) {
-                logger_1.log.error('DexScreener pairs endpoint failed', { error: err.message });
-            }
-            // Endpoint 2: Search for pump.fun specifically
-            try {
-                const searchUrl = `https://api.dexscreener.com/latest/dex/search?q=pump.fun`;
-                const searchResponse = await fetch(searchUrl, {
-                    headers: { 'Accept': 'application/json' },
-                });
-                if (searchResponse.ok) {
-                    const searchData = await searchResponse.json();
-                    if (searchData.pairs && Array.isArray(searchData.pairs)) {
-                        const searchPairs = searchData.pairs.filter((p) => p.chainId === 'solana');
-                        const existingAddresses = new Set(allPairs.map((p) => p.pairAddress));
-                        for (const pair of searchPairs) {
-                            if (!existingAddresses.has(pair.pairAddress)) {
-                                allPairs.push(pair);
-                            }
-                        }
-                        logger_1.log.info('Added pairs from pump.fun search', {
-                            searchPairs: searchPairs.length,
-                            total: allPairs.length
-                        });
-                    }
-                }
-            }
-            catch (err) {
-                logger_1.log.error('DexScreener search endpoint failed', { error: err.message });
-            }
-            // Endpoint 3: Try trending tokens
-            try {
-                const trendingUrl = `https://api.dexscreener.com/latest/dex/tokens/solana`;
-                const trendingResponse = await fetch(trendingUrl, {
-                    headers: { 'Accept': 'application/json' },
-                });
-                if (trendingResponse.ok) {
-                    const trendingData = await trendingResponse.json();
-                    if (trendingData.pairs && Array.isArray(trendingData.pairs)) {
-                        const trendingPairs = trendingData.pairs.filter((p) => p.chainId === 'solana');
-                        const existingAddresses = new Set(allPairs.map((p) => p.pairAddress));
-                        for (const pair of trendingPairs) {
-                            if (!existingAddresses.has(pair.pairAddress)) {
-                                allPairs.push(pair);
-                            }
-                        }
-                        logger_1.log.info('Added pairs from trending', {
-                            trendingPairs: trendingPairs.length,
-                            total: allPairs.length
-                        });
-                    }
-                }
-            }
-            catch (err) {
-                logger_1.log.error('DexScreener trending endpoint failed', { error: err.message });
-            }
-            if (allPairs.length > 0) {
-                // Filter for pump.fun tokens - prioritize URL and DEX ID over name
-                // FIRST: Filter out generic pump.fun tokens aggressively
-                const solanaPairs = allPairs.filter((pair) => {
-                    if (pair.chainId !== 'solana')
-                        return false;
-                    const tokenName = (pair.baseToken?.name || '').toLowerCase().trim();
-                    const tokenSymbol = (pair.baseToken?.symbol || '').toLowerCase().trim();
-                    // Filter only truly generic pump.fun placeholder tokens (be specific, not aggressive)
-                    const isGenericPumpName = tokenName === 'pump.fun' ||
-                        tokenName === 'pump fun' ||
-                        tokenName === 'pumpfun';
-                    const isGenericPumpSymbol = tokenSymbol === 'pump.fun' ||
-                        tokenSymbol === 'pumpfun';
-                    // REJECT only truly generic placeholder tokens
-                    if (isGenericPumpName || isGenericPumpSymbol) {
-                        logger_1.log.info('Rejected generic token from DexScreener', {
-                            name: pair.baseToken?.name,
-                            symbol: pair.baseToken?.symbol
-                        });
-                        return false;
-                    }
-                    // Only accept tokens with pump.fun URL or DEX ID
-                    const urlHasPumpFun = pair.url?.includes('pump.fun');
-                    const isPumpDex = pair.dexId === 'pump' || pair.dexId === 'pumpswap';
-                    if (urlHasPumpFun || isPumpDex) {
-                        // Double check - exclude official platform token
-                        const isOfficialPlatform = (tokenName === 'pump.fun' && tokenSymbol === 'pump');
-                        return !isOfficialPlatform;
-                    }
-                    // Don't accept tokens without pump.fun URL/DEX ID
-                    return false;
-                });
-                solanaPairs.sort((a, b) => (b.pairCreatedAt || 0) - (a.pairCreatedAt || 0));
-                logger_1.log.info('Filtered Solana pump.fun pairs', { count: solanaPairs.length });
-                // Remove duplicates by token address, keep most recent
-                const uniqueTokens = new Map();
-                for (const pair of solanaPairs) {
-                    const tokenAddress = pair.baseToken?.address;
-                    if (tokenAddress) {
-                        // pairCreatedAt is in milliseconds, convert to seconds
-                        // Only use pairCreatedAt if it exists and is valid, otherwise skip (don't use current time as fallback)
-                        const pairCreatedAtMs = pair.pairCreatedAt || 0;
-                        if (pairCreatedAtMs === 0) {
-                            // Skip tokens without creation timestamp
-                            continue;
-                        }
-                        const createdAt = pairCreatedAtMs / 1000; // Convert ms to seconds
-                        const existing = uniqueTokens.get(tokenAddress);
-                        // Only keep if timestamp is valid and more recent than existing
-                        if (!existing || createdAt > existing.created_timestamp) {
-                            // Get token name - avoid "pump fun" or generic names
-                            let tokenName = pair.baseToken?.name || '';
-                            const tokenNameLower = tokenName.toLowerCase();
-                            // If name is too generic or contains "pump fun" as the actual name, use symbol or mint
-                            if (!tokenName ||
-                                tokenNameLower === 'pump fun' ||
-                                tokenNameLower === 'pump.fun' ||
-                                tokenNameLower.includes('pump.fun clone') ||
-                                tokenNameLower.includes('pumpfun clone') ||
-                                (tokenNameLower.includes('pump') && (tokenNameLower.includes('clone') || tokenNameLower.includes('copy'))) ||
-                                tokenName.length < 2) {
-                                // Use symbol if it's not generic, otherwise use mint
-                                const symbol = pair.baseToken?.symbol || '';
-                                const symbolLower = symbol.toLowerCase();
-                                if (symbol && symbolLower !== 'pump' && symbolLower !== 'pump.fun' && symbolLower !== 'clone' && symbol.length > 1) {
-                                    tokenName = symbol;
-                                }
-                                else {
-                                    tokenName = `Token ${tokenAddress.substring(0, 8)}`;
-                                }
-                            }
-                            uniqueTokens.set(tokenAddress, {
-                                mint: tokenAddress,
-                                name: tokenName,
-                                symbol: pair.baseToken?.symbol || 'TKN',
-                                created_timestamp: createdAt,
-                                complete: pair.liquidity?.usd ? pair.liquidity.usd > 100000 : false,
-                                market_cap: pair.fdv || 0,
-                                usd_market_cap: pair.marketCap || pair.fdv || 0,
-                                image_uri: pair.baseToken?.logoURI,
-                                description: '',
-                                creator: '',
-                                pumpfun: {
-                                    bonding_curve: '',
-                                    associated_bonding_curve: '',
-                                    associated_market: pair.url || '',
-                                },
-                                price_usd: pair.priceUsd || 0,
-                                price_change_24h: pair.priceChange?.h24 || 0,
-                                // Add missing fields from DexScreener
-                                liquidity: parseFloat(pair.liquidity?.usd || 0),
-                                holders: parseInt(pair.holders || 0),
-                                volume_24h: parseFloat(pair.volume?.h24 || 0),
-                                dex_is_paid: !!(pair.liquidity?.usd && pair.volume?.h24),
-                                // Holdings analysis (if available from DexScreener)
-                                dev_holdings: 0, // Will be enriched later if available
-                                dev_holdings_percent: 0,
-                                sniper_holdings: 0,
-                                sniper_holdings_percent: 0,
-                                insider_holdings: 0,
-                                insider_holdings_percent: 0,
-                            });
-                        }
-                    }
-                }
-                // Filter and prioritize: last 6 hours, prioritize last 2 hours
-                const now = Date.now() / 1000;
-                const sixHoursAgoSeconds = now - (6 * 60 * 60);
-                const twoHoursAgoSeconds = now - (2 * 60 * 60);
-                const oneHourAgoSeconds = now - (60 * 60);
-                const thirtyMinutesAgoSeconds = now - (30 * 60);
-                const allTokens = Array.from(uniqueTokens.values());
-                // Filter for last 6 hours (more flexible)
-                const tokensLast6h = allTokens.filter((t) => {
-                    const ts = t.created_timestamp || 0;
-                    return ts > 0 && ts >= sixHoursAgoSeconds;
-                });
-                if (tokensLast6h.length > 0) {
-                    // Separate by recency - prioritize very recent
-                    const last30min = tokensLast6h.filter((t) => t.created_timestamp >= thirtyMinutesAgoSeconds);
-                    const lastHour = tokensLast6h.filter((t) => {
-                        const ts = t.created_timestamp || 0;
-                        return ts >= oneHourAgoSeconds && ts < thirtyMinutesAgoSeconds;
-                    });
-                    const lastTwoHours = tokensLast6h.filter((t) => {
-                        const ts = t.created_timestamp || 0;
-                        return ts >= twoHoursAgoSeconds && ts < oneHourAgoSeconds;
-                    });
-                    const lastSixHours = tokensLast6h.filter((t) => {
-                        const ts = t.created_timestamp || 0;
-                        return ts >= sixHoursAgoSeconds && ts < twoHoursAgoSeconds;
-                    });
-                    // Combine: last 30min first, then last 1h, then last 2h, then last 6h
-                    const pumpFunTokens = [...last30min, ...lastHour, ...lastTwoHours, ...lastSixHours]
-                        .sort((a, b) => {
-                        if (a.created_timestamp === 0 && b.created_timestamp > 0)
-                            return 1;
-                        if (b.created_timestamp === 0 && a.created_timestamp > 0)
-                            return -1;
-                        return b.created_timestamp - a.created_timestamp;
-                    })
-                        // Filter only truly generic pump.fun placeholder tokens
-                        .filter((token) => {
-                        const name = (token.name || '').toLowerCase().trim();
-                        const symbol = (token.symbol || '').toLowerCase().trim();
-                        const isGeneric = name === 'pump.fun' ||
-                            name === 'pump fun' ||
-                            name === 'pumpfun' ||
-                            symbol === 'pump.fun' ||
-                            symbol === 'pumpfun';
-                        if (isGeneric) {
-                            logger_1.log.info('FINAL FILTER: Rejected generic token', {
-                                name: token.name,
-                                symbol: token.symbol
-                            });
-                            return false;
-                        }
-                        return true;
-                    })
-                        .slice(0, limit);
-                    logger_1.log.info('Found tokens from DexScreener', {
-                        total: pumpFunTokens.length,
-                        last30min: last30min.length,
-                        lastHour: lastHour.length,
-                        lastTwoHours: lastTwoHours.length,
-                        lastSixHours: lastSixHours.length
-                    });
-                    // Log token ages for debugging
-                    const nowSeconds = Date.now() / 1000;
-                    pumpFunTokens.slice(0, 10).forEach((token) => {
-                        const ageMinutes = ((nowSeconds - token.created_timestamp) / 60).toFixed(0);
-                        const ageHours = ((nowSeconds - token.created_timestamp) / 3600).toFixed(1);
-                        logger_1.log.info('DexScreener token age details', {
-                            name: token.name,
-                            ageMinutes,
-                            ageHours,
-                            timestamp: token.created_timestamp
-                        });
-                    });
-                    return res.json(pumpFunTokens);
-                }
-                else {
-                    // If no tokens in last 6h, show newest available (up to 24h)
-                    const oneDayAgoSeconds = now - (24 * 60 * 60);
-                    const fallbackTokens = allTokens.filter((t) => {
-                        const ts = t.created_timestamp || 0;
-                        return ts > 0 && ts >= oneDayAgoSeconds;
-                    });
-                    if (fallbackTokens.length > 0) {
-                        const sorted = fallbackTokens
-                            .sort((a, b) => b.created_timestamp - a.created_timestamp)
-                            .slice(0, limit);
-                        logger_1.log.warn('No tokens in last 6h from DexScreener, showing newest from last 24h', {
-                            count: sorted.length
-                        });
-                        return res.json(sorted);
-                    }
-                    logger_1.log.warn('No tokens found in last 24 hours from DexScreener');
-                }
-            }
-        }
-        catch (dexError) {
-            logger_1.log.error('DexScreener API failed', { error: dexError.message });
-        }
-        // Method 2.5: Try on-chain search for recent pump.fun tokens (slower, as fallback)
-        logger_1.log.info('Trying on-chain search for recent pump.fun tokens (fallback)');
-        try {
-            const { Connection, PublicKey } = require('@solana/web3.js');
-            const config = configManager.getConfig();
-            const connection = new Connection(config.rpcUrl || (0, env_validator_1.getValidatedRpcUrl)(), 'confirmed');
-            const PUMP_FUN_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px');
-            // Get recent transactions from pump.fun program - get more for better coverage
-            const signatures = await connection.getSignaturesForAddress(PUMP_FUN_PROGRAM_ID, { limit: 200 }, // Increased from 100 to 200
-            'confirmed');
-            if (signatures.length > 0) {
-                logger_1.log.info('Found recent pump.fun transactions', { count: signatures.length });
-                // Filter for very recent transactions (last 2 hours for fresher tokens)
-                const now = Date.now() / 1000;
-                const twoHoursAgo = now - (2 * 60 * 60);
-                const recentSignatures = signatures.filter((sig) => {
-                    const sigTime = sig.blockTime || 0;
-                    return sigTime >= twoHoursAgo;
-                });
-                logger_1.log.info('Filtered transactions from last 2 hours', { count: recentSignatures.length });
-                // Process transactions to extract token mints (process more for better results)
-                const tokensFound = new Map();
-                const processLimit = Math.min(50, recentSignatures.length); // Increased from 20 to 50
-                for (let i = 0; i < processLimit; i++) {
-                    try {
-                        const sig = recentSignatures[i];
-                        const tx = await connection.getTransaction(sig.signature, {
-                            commitment: 'confirmed',
-                            maxSupportedTransactionVersion: 0,
-                        });
-                        if (tx?.meta && !tx.meta.err) {
-                            // Extract token mints from transaction
-                            const postTokenBalances = tx.meta.postTokenBalances || [];
-                            for (const balance of postTokenBalances) {
-                                if (balance.mint && balance.mint.length > 30) {
-                                    const timestamp = sig.blockTime ? sig.blockTime * 1000 : Date.now();
-                                    const existing = tokensFound.get(balance.mint);
-                                    if (!existing || timestamp > existing) {
-                                        tokensFound.set(balance.mint, timestamp);
-                                    }
-                                }
-                            }
-                        }
-                        // Delay after every request to avoid rate limiting
-                        await new Promise(resolve => setTimeout(resolve, 150));
-                    }
-                    catch (err) {
-                        // Skip failed transactions
-                    }
-                }
-                if (tokensFound.size > 0) {
-                    // Filter tokens by timestamp (last 2 hours for fresher tokens)
-                    const nowMs = Date.now();
-                    const twoHoursAgoMs = nowMs - (2 * 60 * 60 * 1000);
-                    const onChainTokens = Array.from(tokensFound.entries())
-                        .filter(([_, timestamp]) => timestamp >= twoHoursAgoMs)
-                        .map(([mint, timestamp]) => ({
-                        mint,
-                        name: `Token ${mint.substring(0, 8)}`,
-                        symbol: 'TKN',
-                        created_timestamp: timestamp / 1000,
-                        complete: false,
-                        market_cap: 0,
-                        usd_market_cap: 0,
-                        image_uri: '',
-                        description: '',
-                        creator: '',
-                        pumpfun: {
-                            bonding_curve: '',
-                            associated_bonding_curve: '',
-                            associated_market: '',
-                        },
-                        price_usd: 0,
-                        price_change_24h: 0,
-                        // Add missing fields with defaults
-                        liquidity: 0,
-                        holders: 0,
-                        volume_24h: 0,
-                        dev_holdings: 0,
-                        dev_holdings_percent: 0,
-                        sniper_holdings: 0,
-                        sniper_holdings_percent: 0,
-                        insider_holdings: 0,
-                        insider_holdings_percent: 0,
-                        dex_is_paid: false,
-                    }))
-                        .sort((a, b) => b.created_timestamp - a.created_timestamp)
-                        .slice(0, limit);
-                    if (onChainTokens.length > 0) {
-                        logger_1.log.info('Found recent tokens from on-chain search', {
-                            count: onChainTokens.length,
-                            timeframe: 'last 2h'
-                        });
-                        return res.json(onChainTokens);
-                    }
-                }
-            }
-        }
-        catch (onChainError) {
-            logger_1.log.error('On-chain direct search failed', { error: onChainError.message });
-        }
-        // Method 3: Try WebSocket listener for real-time tokens
-        logger_1.log.info('Trying WebSocket listener for real-time tokens');
-        const wsTokens = wsListener.getRecentTokens(limit * 2);
-        if (wsTokens.length > 0) {
-            logger_1.log.info('Found tokens from WebSocket listener', { count: wsTokens.length });
-            // Filter for recent tokens (last 6 hours)
-            const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
-            const recentWsTokens = wsTokens.filter(token => token.timestamp >= sixHoursAgo);
-            if (recentWsTokens.length > 0) {
-                // Convert to expected format
-                const formattedTokens = recentWsTokens
-                    .sort((a, b) => b.timestamp - a.timestamp)
-                    .slice(0, limit)
-                    .map(token => ({
-                    mint: token.mint,
-                    name: `Token ${token.mint.substring(0, 8)}`,
-                    symbol: 'TKN',
-                    created_timestamp: token.timestamp / 1000,
-                    complete: false,
-                    market_cap: 0,
-                    usd_market_cap: 0,
-                    image_uri: '',
-                    description: '',
-                    creator: '',
-                    pumpfun: {
-                        bonding_curve: '',
-                        associated_bonding_curve: '',
-                        associated_market: '',
-                    },
-                    price_usd: 0,
-                    price_change_24h: 0,
-                    // Add missing fields with defaults
-                    liquidity: 0,
-                    holders: 0,
-                    volume_24h: 0,
-                    dev_holdings: 0,
-                    dev_holdings_percent: 0,
-                    sniper_holdings: 0,
-                    sniper_holdings_percent: 0,
-                    insider_holdings: 0,
-                    insider_holdings_percent: 0,
-                    dex_is_paid: false,
-                }));
-                logger_1.log.info('Returning recent tokens from WebSocket', {
-                    count: formattedTokens.length,
-                    timeframe: 'last 6h'
-                });
-                return res.json(formattedTokens);
-            }
-        }
-        // Method 4: Try using public Solana RPC directly (bypass Helius restrictions)
-        logger_1.log.warn('All APIs failed, trying public Solana RPC');
-        try {
-            const publicRpc = new (require('@solana/web3.js').Connection)((0, env_validator_1.getValidatedRpcUrl)(), 'confirmed');
-            // Get recent signatures from pump.fun program using public RPC
-            const recentSignatures = await publicRpc.getSignaturesForAddress(new (require('@solana/web3.js').PublicKey)('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6Px'), { limit: Math.min(limit * 2, 20) }, // Limit to avoid rate limiting
-            'confirmed');
-            logger_1.log.info('Found recent pump.fun transactions from public RPC', { count: recentSignatures.length });
-            const tokenMints = new Set();
-            // Process a few transactions to extract token mints
-            for (let i = 0; i < Math.min(recentSignatures.length, 10); i++) {
-                try {
-                    const tx = await publicRpc.getTransaction(recentSignatures[i].signature, {
-                        commitment: 'confirmed',
-                        maxSupportedTransactionVersion: 0,
-                    });
-                    if (tx?.meta?.postTokenBalances) {
-                        for (const balance of tx.meta.postTokenBalances) {
-                            if (balance.mint) {
-                                tokenMints.add(balance.mint);
-                            }
-                        }
-                    }
-                    // Small delay to avoid rate limiting
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                }
-                catch (err) {
-                    continue;
-                }
-            }
-            if (tokenMints.size > 0) {
-                logger_1.log.info('Found token mints from public RPC', { count: tokenMints.size });
-                // Convert to token format
-                const tokens = Array.from(tokenMints).slice(0, limit).map((mint, idx) => ({
-                    mint,
-                    name: `Token ${mint.substring(0, 8)}`,
-                    symbol: 'TKN',
-                    created_timestamp: Date.now() / 1000 - (idx * 60),
-                    complete: false,
-                    market_cap: 0,
-                    usd_market_cap: 0,
-                }));
-                return res.json(tokens);
-            }
-        }
-        catch (publicRpcError) {
-            logger_1.log.error('Public RPC search failed', { error: publicRpcError.message });
-        }
-        // Method 3: Fallback to on-chain search with Helius (may fail due to permissions)
-        if (onChainSearch) {
-            logger_1.log.warn('Trying on-chain search with configured RPC');
-            try {
-                const [pumpFunTokens, programTokens] = await Promise.allSettled([
-                    onChainSearch.searchRecentTokens(limit),
-                    onChainSearch.searchPumpFunProgramAccounts(limit),
-                ]);
-                const allTokens = [];
-                if (pumpFunTokens.status === 'fulfilled' && pumpFunTokens.value.length > 0) {
-                    logger_1.log.info('Found tokens from on-chain search', { count: pumpFunTokens.value.length });
-                    allTokens.push(...pumpFunTokens.value);
-                }
-                if (programTokens.status === 'fulfilled' && programTokens.value.length > 0) {
-                    logger_1.log.info('Found tokens from program accounts', { count: programTokens.value.length });
-                    allTokens.push(...programTokens.value);
-                }
-                if (allTokens.length > 0) {
-                    // Remove duplicates
-                    const uniqueTokens = Array.from(new Map(allTokens.map(token => [token.mint, token])).values());
-                    uniqueTokens.sort((a, b) => {
-                        const timeA = a.createdTimestamp || 0;
-                        const timeB = b.createdTimestamp || 0;
-                        return timeB - timeA;
-                    });
-                    logger_1.log.info('Returning unique tokens from on-chain', { count: uniqueTokens.length });
-                    return res.json(uniqueTokens.slice(0, limit));
-                }
-            }
-            catch (onChainError) {
-                logger_1.log.error('On-chain search also failed', { error: onChainError.message });
-            }
-        }
-        // If all methods fail, return helpful message with example tokens
-        logger_1.log.warn('No tokens found via any method', {
-            tip: 'Users can manually enter token mint addresses in the Pump.fun tab'
+        const pumpUrl = `https://frontend-api.pump.fun/coins?offset=${offset}&limit=${limit}&sort=${sort}&order=${order}`;
+        const pumpResponse = await fetch(pumpUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
         });
-        // Return empty array - the UI will show helpful instructions
-        // Note: The WebSocket listener will detect new tokens in real-time when they're created
-        return res.json([]);
+        if (!pumpResponse.ok)
+            return res.json([]);
+        const pumpData = await pumpResponse.json();
+        return res.json(Array.isArray(pumpData) ? pumpData : []);
     }
     catch (error) {
-        logger_1.log.error('Token search error', { error: error.message, stack: error.stack });
-        return res.status(500).json({ error: String(error) });
-    }
-});
-// Test WebSocket APIs for Token Explorer
-app.get('/api/pumpfun/test-websockets', async (req, res) => {
-    try {
-        if (!compareWebSocketAPIs) {
-            return res.status(503).json({
-                success: false,
-                error: 'WebSocket comparison not available. Install dependencies: npm install ws socket.io-client @types/ws',
-            });
-        }
-        logger_1.log.info('Testing WebSocket APIs for Token Explorer');
-        const comparison = await compareWebSocketAPIs();
-        res.json({
-            success: true,
-            comparison,
-            timestamp: Date.now(),
-        });
-    }
-    catch (error) {
-        logger_1.log.error('Error testing WebSocket APIs', { error: error.message });
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : String(error)
-        });
+        logger_1.log.error('Error fetching pumpfun tokens', { error: error.message, stack: error.stack });
+        return res.status(500).json({ error: error.message });
     }
 });
 // Test WebSocket APIs for Token Explorer

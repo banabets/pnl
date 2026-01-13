@@ -329,7 +329,11 @@ class TokenFeedService {
             if (existing) {
                 existing.isGraduating = false;
                 existing.dexId = 'raydium';
+                // If we don't yet know the Raydium pool address, we'll enrich via DexScreener right away.
                 existing.pairAddress = event.raydiumPool || existing.pairAddress;
+                if (!event.raydiumPool) {
+                    setTimeout(() => this.enrichTokenData(event.mint), 2000);
+                }
                 existing.liquidity = event.liquidity || existing.liquidity;
                 this.broadcast([existing]);
                 // Update in MongoDB
@@ -476,7 +480,30 @@ class TokenFeedService {
                 return;
             }
             const data = await response.json();
-            const pair = data.pairs?.[0];
+            // Choose the best pair:
+            // - If the token already graduated, prefer Raydium pairs
+            // - Otherwise prefer Pump.fun pairs when available
+            // - Fallback to highest-liquidity Solana pair
+            const pairs = Array.isArray(data.pairs) ? data.pairs : [];
+            const solanaPairs = pairs.filter((p) => (p?.chainId || '').toLowerCase() === 'solana');
+            const wantsRaydium = (existing.dexId === 'raydium') || this.graduatedTokens.has(mint);
+            const byLiquidityDesc = (a, b) => ((b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
+            let candidatePairs = solanaPairs;
+            if (wantsRaydium) {
+                const raydiumPairs = solanaPairs.filter((p) => (p?.dexId || '').toLowerCase().includes('raydium'));
+                if (raydiumPairs.length > 0)
+                    candidatePairs = raydiumPairs;
+            }
+            else {
+                const pumpPairs = solanaPairs.filter((p) => {
+                    const dex = (p?.dexId || '').toLowerCase();
+                    return dex.includes('pump') || dex.includes('pumpfun');
+                });
+                if (pumpPairs.length > 0)
+                    candidatePairs = pumpPairs;
+            }
+            candidatePairs.sort(byLiquidityDesc);
+            const pair = candidatePairs[0];
             if (!pair)
                 return;
             // 8. Update with fresh DexScreener data
@@ -515,6 +542,13 @@ class TokenFeedService {
             existing.volume24h = volume.volume24h || 0;
             if (marketData.holders) {
                 existing.holders = marketData.holders;
+            }
+            // Keep pairAddress/dexId in sync with the selected DexScreener pair
+            if (pair.pairAddress) {
+                existing.pairAddress = pair.pairAddress;
+            }
+            if (pair.dexId) {
+                existing.dexId = pair.dexId;
             }
             // 10. Update all caches with fresh data
             this.setCachedMetadata(mint, metadata);
