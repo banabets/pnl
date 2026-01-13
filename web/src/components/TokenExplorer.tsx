@@ -792,8 +792,8 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         {/* Filter Tabs */}
         <div className="flex flex-wrap gap-2">
           {[
-            { key: 'all', label: 'All Tokens' },
             { key: 'new', label: 'New (< 30m)' },
+            { key: 'all', label: 'All Tokens' },
             { key: 'graduating', label: 'Graduating' },
             { key: 'trending', label: 'Trending' },
           ].map((filter) => (
