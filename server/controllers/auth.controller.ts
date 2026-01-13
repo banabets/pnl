@@ -71,12 +71,17 @@ export async function registerUser(req: Request, res: Response) {
  * Login user
  */
 export async function loginUser(req: Request, res: Response) {
-  const { email, password }: LoginInput = req.body;
+  const { usernameOrEmail, password }: LoginInput = req.body;
 
-  // Find user
-  const user = await User.findOne({ email });
+  // Find user by email or username
+  const user = await User.findOne({
+    $or: [
+      { email: usernameOrEmail },
+      { username: usernameOrEmail }
+    ]
+  });
   if (!user) {
-    throw new UnauthorizedError('Invalid email or password');
+    throw new UnauthorizedError('Invalid email/username or password');
   }
 
   // Check password
@@ -105,7 +110,7 @@ export async function loginUser(req: Request, res: Response) {
     userAgent: req.headers['user-agent'],
   });
 
-  log.info('User logged in', { userId: user.id, email });
+  log.info('User logged in', { userId: user.id, email: user.email });
 
   res.json({
     success: true,

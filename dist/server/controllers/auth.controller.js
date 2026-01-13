@@ -70,11 +70,16 @@ async function registerUser(req, res) {
  * Login user
  */
 async function loginUser(req, res) {
-    const { email, password } = req.body;
-    // Find user
-    const user = await database_1.User.findOne({ email });
+    const { usernameOrEmail, password } = req.body;
+    // Find user by email or username
+    const user = await database_1.User.findOne({
+        $or: [
+            { email: usernameOrEmail },
+            { username: usernameOrEmail }
+        ]
+    });
     if (!user) {
-        throw new app_error_1.UnauthorizedError('Invalid email or password');
+        throw new app_error_1.UnauthorizedError('Invalid email/username or password');
     }
     // Check password
     const isValid = await bcrypt_1.default.compare(password, user.passwordHash);
@@ -98,7 +103,7 @@ async function loginUser(req, res) {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
     });
-    logger_1.log.info('User logged in', { userId: user.id, email });
+    logger_1.log.info('User logged in', { userId: user.id, email: user.email });
     res.json({
         success: true,
         token,

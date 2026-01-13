@@ -17,14 +17,14 @@ export declare const registerSchema: z.ZodObject<{
     password: string;
 }>;
 export declare const loginSchema: z.ZodObject<{
-    email: z.ZodString;
+    usernameOrEmail: z.ZodString;
     password: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    email: string;
     password: string;
+    usernameOrEmail: string;
 }, {
-    email: string;
     password: string;
+    usernameOrEmail: string;
 }>;
 export declare const changePasswordSchema: z.ZodObject<{
     currentPassword: z.ZodString;

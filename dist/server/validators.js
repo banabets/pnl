@@ -25,7 +25,7 @@ exports.registerSchema = zod_1.z.object({
         .regex(/[0-9]/, 'Password must contain at least one number'),
 });
 exports.loginSchema = zod_1.z.object({
-    username: zod_1.z.string().min(1, 'Username is required'),
+    usernameOrEmail: zod_1.z.string().min(1, 'Username or email is required'),
     password: zod_1.z.string().min(1, 'Password is required'),
 });
 // ============================================
