@@ -23,18 +23,18 @@ class TokenEnricherWorker {
         }
         this.isRunning = true;
         logger_1.log.info('Starting Token Enricher Worker');
-        // Enrich tokens every 5 minutes
+        // Enrich tokens every 30 minutes (reduced from 5 to save API credits)
         this.interval = setInterval(async () => {
             if (!this.processing) {
                 await this.enrichBatch();
             }
-        }, 5 * 60 * 1000); // 5 minutes
-        // First execution after 30 seconds (give server time to start)
+        }, 30 * 60 * 1000); // 30 minutes
+        // First execution after 2 minutes (give server time to start)
         setTimeout(() => {
             if (this.isRunning && !this.processing) {
                 this.enrichBatch();
             }
-        }, 30000);
+        }, 120000); // 2 minutes
     }
     /**
      * Stop the enricher worker
@@ -81,7 +81,7 @@ class TokenEnricherWorker {
             }
             logger_1.log.info('Enriching tokens in background', { count: uniqueMints.length });
             // 3. Process in small batches to avoid rate limits
-            const batchSize = 5;
+            const batchSize = 3; // Reduced from 5 to 3
             let enriched = 0;
             let failed = 0;
             for (let i = 0; i < uniqueMints.length; i += batchSize) {
@@ -95,9 +95,9 @@ class TokenEnricherWorker {
                         failed++;
                     }
                 }
-                // Delay between batches to avoid rate limits
+                // Delay between batches to avoid rate limits (increased from 2s to 5s)
                 if (i + batchSize < uniqueMints.length) {
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+                    await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay
                 }
             }
             logger_1.log.info('Enrichment complete', { enriched, failed });
@@ -142,8 +142,8 @@ class TokenEnricherWorker {
                 }
             }
         }
-        // Limit to 50 tokens per batch
-        return tokens.slice(0, 50);
+        // Limit to 15 tokens per batch (reduced from 50 to save API credits)
+        return tokens.slice(0, 15);
     }
     /**
      * Enrich a single token

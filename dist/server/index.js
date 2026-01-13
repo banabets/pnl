@@ -157,7 +157,6 @@ const token_feed_1 = require("./token-feed");
 const volume_bot_1 = require("./volume-bot");
 // Launchpad Service
 const launchpad_service_1 = require("./launchpad-service");
-const token_enricher_worker_1 = require("./token-enricher-worker");
 // MongoDB Connection
 const database_3 = require("./database");
 // Connect to MongoDB
@@ -166,10 +165,12 @@ const database_3 = require("./database");
     // Start token feed service (requires HELIUS_API_KEY for optimal performance)
     token_feed_1.tokenFeed.start().then(() => {
         logger_1.log.info('Token feed service started successfully');
-        // Start enricher worker after token feed is ready
-        token_enricher_worker_1.tokenEnricherWorker.start().catch((error) => {
-            logger_1.log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
-        });
+        // ⚠️ Token Enricher DISABLED to save API credits
+        // Uncomment to re-enable: tokenEnricherWorker.start()
+        logger_1.log.warn('Token Enricher Worker DISABLED to conserve API credits');
+        // tokenEnricherWorker.start().catch((error) => {
+        //   log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
+        // });
     }).catch((error) => {
         logger_1.log.error('Failed to start token feed', { error: error.message, stack: error.stack });
         logger_1.log.warn('Token feed service disabled - Token Explorer will use pump.fun API fallback');

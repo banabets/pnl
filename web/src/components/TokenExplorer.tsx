@@ -279,7 +279,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   const [trades, setTrades] = useState<any[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [chartType, setChartType] = useState<'1H' | '4H' | '1D' | '1W'>('1D');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'new' | 'graduating' | 'trending'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'new' | 'graduating' | 'trending'>('new'); // Start with New Tokens
 
   // Advanced filters
   const [searchQuery, setSearchQuery] = useState('');

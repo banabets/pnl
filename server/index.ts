@@ -214,10 +214,12 @@ connectDatabase().then(() => {
   // Start token feed service (requires HELIUS_API_KEY for optimal performance)
   tokenFeed.start().then(() => {
     log.info('Token feed service started successfully');
-    // Start enricher worker after token feed is ready
-    tokenEnricherWorker.start().catch((error) => {
-      log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
-    });
+    // ⚠️ Token Enricher DISABLED to save API credits
+    // Uncomment to re-enable: tokenEnricherWorker.start()
+    log.warn('Token Enricher Worker DISABLED to conserve API credits');
+    // tokenEnricherWorker.start().catch((error) => {
+    //   log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
+    // });
   }).catch((error) => {
     log.error('Failed to start token feed', { error: error.message, stack: error.stack });
     log.warn('Token feed service disabled - Token Explorer will use pump.fun API fallback');
