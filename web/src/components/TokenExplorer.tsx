@@ -331,14 +331,30 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
       // Debounced token updates (price, volume, txns, graduation flags, etc.)
       socket.on('token:update', (token: any) => {
         if (!token?.mint) return;
-        setTokens((prev) => prev.map((t) => (t.mint === token.mint ? ({ ...t, ...token } as any) : t)));
+        setTokens((prev) => {
+          const updated = prev.map((t) => (t.mint === token.mint ? ({ ...t, ...token } as any) : t));
+          // If token was updated but doesn't exist in list, add it (don't remove it)
+          const exists = updated.some(t => t.mint === token.mint);
+          if (!exists) {
+            return [...updated, token as any];
+          }
+          return updated;
+        });
         setSelectedToken((prev) => (prev && prev.mint === token.mint ? ({ ...prev, ...token } as any) : prev));
       });
 
       // Explicit graduation event (pumpfun -> raydium)
       socket.on('token:graduation', (token: any) => {
         if (!token?.mint) return;
-        setTokens((prev) => prev.map((t) => (t.mint === token.mint ? ({ ...t, ...token, complete: true } as any) : t)));
+        setTokens((prev) => {
+          const updated = prev.map((t) => (t.mint === token.mint ? ({ ...t, ...token, complete: true } as any) : t));
+          // If token was graduated but doesn't exist in list, add it (don't remove it)
+          const exists = updated.some(t => t.mint === token.mint);
+          if (!exists) {
+            return [...updated, { ...token, complete: true } as any];
+          }
+          return updated;
+        });
         setSelectedToken((prev) => (prev && prev.mint === token.mint ? ({ ...prev, ...token, complete: true } as any) : prev));
       });
 
@@ -732,14 +748,17 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
     let filtered = [...tokens];
 
     // Apply active filter (new, graduating, trending, all)
+    // Note: We keep tokens that were previously shown even if they no longer match the filter
+    // This prevents tokens from disappearing when they get updated
     if (activeFilter !== 'all') {
       filtered = filtered.filter(token => {
         switch (activeFilter) {
           case 'new':
-            // New tokens: less than 30 minutes old OR isNew flag
+            // New tokens: less than 30 minutes old OR isNew flag OR less than 60 minutes (more lenient)
             if (token.isNew) return true;
             const age = token.age ?? (token.created_timestamp ? Math.floor((Date.now() / 1000 - token.created_timestamp) / 60) : null);
-            return age !== null && age < 30;
+            // Be more lenient: accept tokens up to 60 minutes old for "new" filter
+            return age !== null && age < 60;
           case 'graduating':
             return token.isGraduating === true;
           case 'trending':

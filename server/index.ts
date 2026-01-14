@@ -589,16 +589,40 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
     const tokens = await fetchPumpFunTokens();
     const now = Date.now() / 1000;
     const thirtyMinutesAgo = now - (30 * 60);
+    const oneHourAgo = now - (60 * 60);
 
-    const newTokens = tokens
+    // First try to get tokens < 30 min
+    let newTokens = tokens
       .filter((token: any) => {
         const tokenTime = token.created_timestamp || 0;
         return tokenTime >= thirtyMinutesAgo;
       })
-      .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0))
-      .slice(0, limit);
+      .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0));
 
-    res.json(newTokens);
+    // If we don't have enough new tokens, include tokens up to 1 hour old
+    if (newTokens.length < limit) {
+      const olderTokens = tokens
+        .filter((token: any) => {
+          const tokenTime = token.created_timestamp || 0;
+          return tokenTime >= oneHourAgo && tokenTime < thirtyMinutesAgo;
+        })
+        .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0));
+      newTokens = [...newTokens, ...olderTokens];
+    }
+
+    // If still not enough, return whatever we have (up to 2 hours old)
+    if (newTokens.length < limit) {
+      const twoHoursAgo = now - (120 * 60);
+      const evenOlderTokens = tokens
+        .filter((token: any) => {
+          const tokenTime = token.created_timestamp || 0;
+          return tokenTime >= twoHoursAgo && tokenTime < oneHourAgo;
+        })
+        .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0));
+      newTokens = [...newTokens, ...evenOlderTokens];
+    }
+
+    res.json(newTokens.slice(0, limit));
   } catch (error) {
     log.error('Error in /api/tokens/new', { error: (error as Error).message });
     res.status(500).json({ error: 'Failed to fetch new tokens' });
