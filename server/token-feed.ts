@@ -635,10 +635,22 @@ class TokenFeedService extends EventEmitter {
       const existing = this.onChainTokens.get(mint);
       if (!existing) return;
 
-      // Skip if we already have good metadata (not generic token name)
-      if (existing.name && !existing.name.startsWith('Token ') && existing.name !== 'Unknown') {
+      // Only skip if we have COMPLETE metadata (name, image, market cap, price)
+      // Don't skip if we have name but missing other critical data
+      if (existing.name && !existing.name.startsWith('Token ') && existing.name !== 'Unknown'
+          && existing.imageUrl && existing.marketCap > 0 && existing.price > 0) {
+        log.info('Token already has complete metadata, skipping fetch', { mint: mint.slice(0, 8) });
         return;
       }
+      
+      // Always try to enrich if we're missing any data
+      log.info('Token missing data, will enrich', {
+        mint: mint.slice(0, 8),
+        hasName: !!(existing.name && !existing.name.startsWith('Token ')),
+        hasImage: !!existing.imageUrl,
+        hasMarketCap: existing.marketCap > 0,
+        hasPrice: existing.price > 0
+      });
 
       log.info('🎯 Fetching basic metadata from Pump.fun', { mint: mint.slice(0, 8) });
 
@@ -650,18 +662,38 @@ class TokenFeedService extends EventEmitter {
         },
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        log.info('Pump.fun API response for token', { 
+      if (!response.ok) {
+        log.warn('Pump.fun API returned error', { 
           mint: mint.slice(0, 8),
           status: response.status,
-          hasName: !!(data.name),
-          hasSymbol: !!(data.symbol),
-          hasImage: !!(data.image_uri),
-          hasMarketCap: !!(data.usd_market_cap || data.market_cap),
-          dataKeys: Object.keys(data),
-          fullData: JSON.stringify(data).substring(0, 500) // First 500 chars for debugging
+          statusText: response.statusText
         });
+        return;
+      }
+      
+      const data = await response.json();
+      
+      // Log response for debugging
+      log.info('Pump.fun API response for token', { 
+        mint: mint.slice(0, 8),
+        status: response.status,
+        hasName: !!(data.name),
+        hasSymbol: !!(data.symbol),
+        hasImage: !!(data.image_uri),
+        hasMarketCap: !!(data.usd_market_cap || data.market_cap),
+        dataKeys: Object.keys(data).slice(0, 20), // First 20 keys
+        sampleData: {
+          name: data.name,
+          symbol: data.symbol,
+          image_uri: data.image_uri ? data.image_uri.substring(0, 50) + '...' : null,
+          usd_market_cap: data.usd_market_cap,
+          market_cap: data.market_cap,
+          price_usd: data.price_usd,
+          price: data.price
+        }
+      });
+      
+      if (data) {
 
         // Update token with complete metadata from Pump.fun
         if (data.name && data.name.trim().length > 0) {
