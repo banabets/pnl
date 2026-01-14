@@ -700,8 +700,8 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
       if (recent.length > 0) {
         const converted = recent.map((t: any) => ({
           mint: t.mint,
-          name: `Token ${mint.substring(0, 8)}`,
-          symbol: 'UNK',
+          name: `Token ${t.mint.substring(0, 8)}`,
+          symbol: t.mint.substring(0, 6).toUpperCase(),
           created_timestamp: t.timestamp || Date.now() / 1000,
           image_uri: '',
           usd_market_cap: 0,
