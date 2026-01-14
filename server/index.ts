@@ -515,29 +515,39 @@ async function fetchPumpFunTokens(): Promise<any[]> {
               calculatedMarketCap = parseFloat(token.price_usd) * parseFloat(token.supply);
             }
             
+            // Try to enrich with tokenFeed if available and data is missing
+            let enrichedToken: any = null;
+            if (tokenFeed.isServiceStarted() && (!hasImage || !calculatedMarketCap || !token.price_usd)) {
+              try {
+                enrichedToken = await tokenFeed.getToken(token.mint);
+              } catch (error) {
+                // Ignore errors
+              }
+            }
+            
             return {
               ...token,
               mint: token.mint,
-              name: finalName,
-              symbol: finalSymbol,
-              imageUrl: hasImage ? token.image_uri : '',
-              image_uri: hasImage ? token.image_uri : '',
-              marketCap: calculatedMarketCap,
-              market_cap: calculatedMarketCap,
-              usd_market_cap: calculatedMarketCap,
+              name: enrichedToken?.name || finalName,
+              symbol: enrichedToken?.symbol || finalSymbol,
+              imageUrl: enrichedToken?.imageUrl || (hasImage ? token.image_uri : ''),
+              image_uri: enrichedToken?.imageUrl || (hasImage ? token.image_uri : ''),
+              marketCap: enrichedToken?.marketCap || calculatedMarketCap,
+              market_cap: enrichedToken?.marketCap || calculatedMarketCap,
+              usd_market_cap: enrichedToken?.marketCap || calculatedMarketCap,
               createdAt: createdTimestamp * 1000, // Convert to milliseconds
               created_timestamp: createdTimestamp,
-              liquidity: token.liquidity || 0,
-              holders: token.holders || 0,
-              volume24h: token.volume_24h || 0,
-              volume_24h: token.volume_24h || 0,
-              price: token.price_usd || 0,
-              price_usd: token.price_usd || 0,
+              liquidity: enrichedToken?.liquidity || token.liquidity || 0,
+              holders: enrichedToken?.holders || token.holders || 0,
+              volume24h: enrichedToken?.volume24h || token.volume_24h || 0,
+              volume_24h: enrichedToken?.volume24h || token.volume_24h || 0,
+              price: enrichedToken?.price || token.price_usd || 0,
+              price_usd: enrichedToken?.price || token.price_usd || 0,
               dexId: token.complete ? 'raydium' : 'pumpfun',
               age: ageSeconds,
               isNew: ageSeconds < 1800, // < 30 min
-              isGraduating: token.complete || calculatedMarketCap > 50000,
-              isTrending: (token.volume_24h || 0) > 1000,
+              isGraduating: token.complete || (enrichedToken?.marketCap || calculatedMarketCap) > 50000,
+              isTrending: (enrichedToken?.volume24h || token.volume_24h || 0) > 1000,
               // Optional fields
               priceChange5m: token.priceChange?.m5 || 0,
               priceChange1h: token.priceChange?.h1 || 0,
