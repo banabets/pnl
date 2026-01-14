@@ -601,28 +601,36 @@ app.get('/api/tokens/feed', readLimiter, async (req, res) => {
         
         if (tokens && tokens.length > 0) {
           // Enrich tokens that are missing data
+          // ALWAYS try to enrich tokens, even if they have some data
+          // This ensures we get the most complete data possible
           const enrichedTokens = await Promise.all(
             tokens.map(async (token: any) => {
-              // If token is missing critical data, try to enrich it
-              if ((!token.imageUrl || !token.marketCap || !token.price) && tokenFeed.isServiceStarted()) {
+              if (tokenFeed.isServiceStarted()) {
                 try {
-                  // Try to get enriched data from tokenFeed
+                  // Always try to get enriched data from tokenFeed
+                  // This will create the token if it doesn't exist and fetch metadata
                   const enriched = await tokenFeed.getToken(token.mint);
                   if (enriched) {
+                    // Merge enriched data with existing token data (enriched takes priority)
                     return {
                       ...token,
                       name: enriched.name || token.name,
                       symbol: enriched.symbol || token.symbol,
                       imageUrl: enriched.imageUrl || token.imageUrl,
-                      marketCap: enriched.marketCap || token.marketCap,
-                      price: enriched.price || token.price,
-                      volume24h: enriched.volume24h || token.volume24h,
-                      liquidity: enriched.liquidity || token.liquidity,
-                      holders: enriched.holders || token.holders,
+                      marketCap: enriched.marketCap || token.marketCap || 0,
+                      price: enriched.price || token.price || 0,
+                      volume24h: enriched.volume24h || token.volume24h || 0,
+                      liquidity: enriched.liquidity || token.liquidity || 0,
+                      holders: enriched.holders || token.holders || 0,
+                      priceChange1h: enriched.priceChange1h || token.priceChange1h || 0,
+                      priceChange24h: enriched.priceChange24h || token.priceChange24h || 0,
                     };
                   }
                 } catch (error) {
-                  // Ignore enrichment errors
+                  log.debug('Enrichment failed for token', { 
+                    mint: token.mint?.substring(0, 8),
+                    error: error instanceof Error ? error.message : String(error)
+                  });
                 }
               }
               return token;
