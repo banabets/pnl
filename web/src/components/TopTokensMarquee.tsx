@@ -22,24 +22,57 @@ export default function TopTokensMarquee() {
         // First try top gainers
         let response = await api.get('/tokens/top-gainers?limit=20&hours=5');
         if (response.data.success && response.data.tokens && response.data.tokens.length > 0) {
-          setTokens(response.data.tokens);
+          const formattedTokens = response.data.tokens.map((t: any) => ({
+            mint: t.mint,
+            name: t.name || t.symbol || `Token ${t.mint.substring(0, 8)}`,
+            symbol: t.symbol || t.name?.substring(0, 6).toUpperCase() || 'TKN',
+            image_uri: t.image_uri || t.imageUrl || '',
+            price_change_1h: t.price_change_1h || t.priceChange1h || 0,
+            price_change_24h: t.price_change_24h || t.priceChange24h || 0,
+            price_usd: t.price_usd || t.price || 0,
+            market_cap: t.market_cap || t.usd_market_cap || 0,
+          }));
+          setTokens(formattedTokens);
           setLoading(false);
           return;
         }
 
-        // Fallback: get any recent tokens from /tokens/new
+        // Fallback 1: try trending tokens
         try {
-          response = await api.get('/tokens/new?limit=20');
-          if (response.data.tokens && Array.isArray(response.data.tokens)) {
+          response = await api.get('/tokens/trending?limit=20');
+          if (response.data.success && response.data.tokens && response.data.tokens.length > 0) {
             const formattedTokens = response.data.tokens.map((t: any) => ({
               mint: t.mint,
-              name: t.name || t.symbol || 'Unknown',
-              symbol: t.symbol || 'TKN',
-              image_uri: t.imageUrl || t.image_uri || '',
-              price_change_1h: t.priceChange1h || 0,
-              price_change_24h: t.priceChange24h || 0,
-              price_usd: t.price || 0,
-              market_cap: t.usd_market_cap || 0,
+              name: t.name || t.symbol || `Token ${t.mint.substring(0, 8)}`,
+              symbol: t.symbol || t.name?.substring(0, 6).toUpperCase() || 'TKN',
+              image_uri: t.image_uri || t.imageUrl || '',
+              price_change_1h: t.price_change_1h || t.priceChange1h || 0,
+              price_change_24h: t.price_change_24h || t.priceChange24h || 0,
+              price_usd: t.price_usd || t.price || 0,
+              market_cap: t.market_cap || t.usd_market_cap || 0,
+            }));
+            setTokens(formattedTokens);
+            setLoading(false);
+            return;
+          }
+        } catch (trendingError) {
+          console.warn('Failed to fetch trending tokens:', trendingError);
+        }
+
+        // Fallback 2: get any recent tokens from /tokens/new
+        try {
+          response = await api.get('/tokens/new?limit=20');
+          const tokensData = response.data.tokens || response.data;
+          if (Array.isArray(tokensData) && tokensData.length > 0) {
+            const formattedTokens = tokensData.map((t: any) => ({
+              mint: t.mint,
+              name: t.name || t.symbol || `Token ${t.mint.substring(0, 8)}`,
+              symbol: t.symbol || t.name?.substring(0, 6).toUpperCase() || 'TKN',
+              image_uri: t.image_uri || t.imageUrl || '',
+              price_change_1h: t.price_change_1h || t.priceChange1h || 0,
+              price_change_24h: t.price_change_24h || t.priceChange24h || 0,
+              price_usd: t.price_usd || t.price || 0,
+              market_cap: t.market_cap || t.usd_market_cap || 0,
             }));
             setTokens(formattedTokens);
           }

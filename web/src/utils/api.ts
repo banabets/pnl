@@ -2,7 +2,16 @@ import axios from 'axios';
 
 const getApiUrl = () => {
   if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+    // Ensure VITE_API_URL ends with /api
+    const apiUrl = import.meta.env.VITE_API_URL.trim();
+    if (apiUrl.endsWith('/api')) {
+      return apiUrl;
+    } else if (apiUrl.endsWith('/api/')) {
+      return apiUrl.slice(0, -1); // Remove trailing slash
+    } else {
+      // Add /api if not present
+      return apiUrl.endsWith('/') ? `${apiUrl}api` : `${apiUrl}/api`;
+    }
   }
   // Fallback for local development
   if (window.location.port === '3001' || window.location.port === '') {
