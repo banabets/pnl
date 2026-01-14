@@ -171,6 +171,7 @@ const database_3 = require("./database");
 token_feed_1.tokenFeed.start().then(() => {
     logger_1.log.info('Token feed service started successfully');
     // Token Enricher Worker DISABLED - using selective enrichment for top gainers only
+    // Basic metadata from Pump.fun API is fetched automatically for all new tokens
     logger_1.log.info('Using selective enrichment: only top gainers and on-demand tokens will be enriched');
 }).catch((error) => {
     logger_1.log.error('Failed to start token feed', { error: error.message, stack: error.stack });

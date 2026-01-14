@@ -603,7 +603,7 @@ class TokenFeedService extends EventEmitter {
         return;
       }
 
-      log.info('Fetching basic metadata from Pump.fun', { mint: mint.slice(0, 8) });
+      log.info('🎯 Fetching basic metadata from Pump.fun', { mint: mint.slice(0, 8) });
 
       // Fetch from Pump.fun API
       const response = await fetch(`https://frontend-api.pump.fun/coins/${mint}`, {
@@ -631,7 +631,7 @@ class TokenFeedService extends EventEmitter {
           imageUrl: existing.imageUrl,
         }, 'pumpfun');
 
-        log.info('Basic metadata fetched', {
+        log.info('✅ Basic metadata fetched successfully', {
           mint: mint.slice(0, 8),
           name: existing.name,
           symbol: existing.symbol
