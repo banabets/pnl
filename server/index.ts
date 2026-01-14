@@ -883,8 +883,46 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
         .slice(0, limit);
     }
 
+    // ALWAYS try to enrich tokens before mapping, even if they have some data
+    const tokensToEnrich = newTokens.slice(0, limit);
+    const enrichedNewTokens = await Promise.all(
+      tokensToEnrich.map(async (token: any) => {
+        if (tokenFeed.isServiceStarted()) {
+          try {
+            // Always try to get enriched data from tokenFeed
+            const enriched = await tokenFeed.getToken(token.mint);
+            if (enriched) {
+              // Merge enriched data with existing token data (enriched takes priority)
+              return {
+                ...token,
+                name: enriched.name || token.name,
+                symbol: enriched.symbol || token.symbol,
+                image_uri: enriched.imageUrl || token.image_uri || '',
+                imageUrl: enriched.imageUrl || token.image_uri || '',
+                usd_market_cap: enriched.marketCap || token.usd_market_cap || 0,
+                market_cap: enriched.marketCap || token.market_cap || 0,
+                marketCap: enriched.marketCap || token.market_cap || 0,
+                price: enriched.price || token.price_usd || 0,
+                price_usd: enriched.price || token.price_usd || 0,
+                volume_24h: enriched.volume24h || token.volume_24h || 0,
+                volume24h: enriched.volume24h || token.volume_24h || 0,
+                liquidity: enriched.liquidity || token.liquidity || 0,
+                holders: enriched.holders || token.holders || 0,
+              };
+            }
+          } catch (error) {
+            log.debug('Enrichment failed for token in /api/tokens/new', { 
+              mint: token.mint?.substring(0, 8),
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
+        return token;
+      })
+    );
+    
     // Map tokens to ensure all required fields are present
-    const result = newTokens.slice(0, limit).map((token: any) => {
+    const result = enrichedNewTokens.map((token: any) => {
       // Ensure proper name/symbol formatting
       const name = token.name && !token.name.startsWith('Token ') && token.name !== 'Unknown'
         ? token.name
