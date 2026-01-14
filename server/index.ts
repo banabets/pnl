@@ -574,7 +574,12 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
     if (tokenFeed.isServiceStarted()) {
       try {
         const tokens = await tokenFeed.getNew(limit);
-        return res.json({ success: true, count: tokens.length, tokens });
+        // Only use tokenFeed result if it has tokens, otherwise fallback
+        if (tokens && tokens.length > 0) {
+          return res.json({ success: true, count: tokens.length, tokens });
+        } else {
+          log.info('tokenFeed.getNew returned empty array, falling back to pump.fun API');
+        }
       } catch (feedError) {
         log.warn('tokenFeed.getNew failed, falling back to pump.fun API', { error: (feedError as Error).message });
       }
@@ -609,7 +614,12 @@ app.get('/api/tokens/graduating', readLimiter, async (req, res) => {
     if (tokenFeed.isServiceStarted()) {
       try {
         const tokens = await tokenFeed.getGraduating(limit);
-        return res.json({ success: true, count: tokens.length, tokens });
+        // Only use tokenFeed result if it has tokens, otherwise fallback
+        if (tokens && tokens.length > 0) {
+          return res.json({ success: true, count: tokens.length, tokens });
+        } else {
+          log.info('tokenFeed.getGraduating returned empty array, falling back to pump.fun API');
+        }
       } catch (feedError) {
         log.warn('tokenFeed.getGraduating failed, falling back to pump.fun API', { error: (feedError as Error).message });
       }
@@ -642,7 +652,12 @@ app.get('/api/tokens/trending', readLimiter, async (req, res) => {
     if (tokenFeed.isServiceStarted()) {
       try {
         const tokens = await tokenFeed.getTrending(limit);
-        return res.json({ success: true, count: tokens.length, tokens });
+        // Only use tokenFeed result if it has tokens, otherwise fallback
+        if (tokens && tokens.length > 0) {
+          return res.json({ success: true, count: tokens.length, tokens });
+        } else {
+          log.info('tokenFeed.getTrending returned empty array, falling back to pump.fun API');
+        }
       } catch (feedError) {
         log.warn('tokenFeed.getTrending failed, falling back to pump.fun API', { error: (feedError as Error).message });
       }

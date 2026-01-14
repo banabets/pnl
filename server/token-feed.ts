@@ -1046,7 +1046,13 @@ class TokenFeedService extends EventEmitter {
       switch (filter) {
         case 'new':
           // New tokens - under 30 min, or under 60 min with some activity
-          tokens = tokens.filter(t => t.isNew || (t.age < 60 && t.txns1h.buys > 0));
+          // If we have very few tokens, be less strict with filters
+          if (tokens.length < 10) {
+            // Be more lenient: accept tokens under 60 min
+            tokens = tokens.filter(t => t.age < 60);
+          } else {
+            tokens = tokens.filter(t => t.isNew || (t.age < 60 && t.txns1h.buys > 0));
+          }
           break;
         case 'graduating':
           tokens = tokens.filter(t => t.isGraduating);
