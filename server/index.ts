@@ -198,6 +198,9 @@ import { CopyTradingService, initCopyTrading, getCopyTrading, FollowedWallet, Co
 // Token Feed Service
 import { tokenFeed } from './token-feed';
 
+// Rate Limiter for external APIs
+import { rateLimiter } from './rate-limiter';
+
 // Geyser Service - Real-time data streaming
 import { geyserService } from './geyser-service';
 
