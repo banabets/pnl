@@ -221,6 +221,7 @@ connectDatabase().then(() => {
 tokenFeed.start().then(() => {
   log.info('Token feed service started successfully');
   // Token Enricher Worker DISABLED - using selective enrichment for top gainers only
+  // Basic metadata from Pump.fun API is fetched automatically for all new tokens
   log.info('Using selective enrichment: only top gainers and on-demand tokens will be enriched');
 }).catch((error) => {
   log.error('Failed to start token feed', { error: error.message, stack: error.stack });
