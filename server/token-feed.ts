@@ -1297,26 +1297,21 @@ class TokenFeedService extends EventEmitter {
         return null;
       }
 
-      await rateLimiter.waitIfNeeded('dexscreener');
+      // Use queue to serialize requests
+      const { dexscreenerQueue } = await import('./dexscreener-queue');
+      const data = await dexscreenerQueue.enqueue(async () => {
+        const response = await fetch(
+          `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
+          { headers: { 'Accept': 'application/json' } }
+        );
 
-      const response = await fetch(
-        `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
-        { headers: { 'Accept': 'application/json' } }
-      );
-
-      // Record request
-      rateLimiter.recordRequest('dexscreener');
-
-      if (!response.ok) {
-        // Try on-chain fallback
-        const onChainResult = await this.enrichTokenDataOnChain(mint);
-        if (onChainResult) {
-          return this.onChainTokens.get(mint) || null;
+        if (!response.ok) {
+          throw new Error(`DexScreener API returned ${response.status}`);
         }
-        return null;
-      }
 
-      const data = await response.json();
+        return await response.json();
+      });
+
       const pair = data.pairs?.[0];
       if (!pair) return null;
 
