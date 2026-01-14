@@ -654,10 +654,13 @@ class TokenFeedService extends EventEmitter {
         const data = await response.json();
         log.info('Pump.fun API response for token', { 
           mint: mint.slice(0, 8),
+          status: response.status,
           hasName: !!(data.name),
           hasSymbol: !!(data.symbol),
           hasImage: !!(data.image_uri),
-          hasMarketCap: !!(data.usd_market_cap || data.market_cap)
+          hasMarketCap: !!(data.usd_market_cap || data.market_cap),
+          dataKeys: Object.keys(data),
+          fullData: JSON.stringify(data).substring(0, 500) // First 500 chars for debugging
         });
 
         // Update token with complete metadata from Pump.fun
@@ -688,34 +691,65 @@ class TokenFeedService extends EventEmitter {
         }
         
         // Get market cap and price data from Pump.fun
-        if (data.usd_market_cap) {
+        // Try multiple possible field names
+        if (data.usd_market_cap !== undefined && data.usd_market_cap !== null) {
           existing.marketCap = parseFloat(String(data.usd_market_cap)) || 0;
-        } else if (data.market_cap) {
+        } else if (data.market_cap !== undefined && data.market_cap !== null) {
           existing.marketCap = parseFloat(String(data.market_cap)) || 0;
+        } else if (data.marketCap !== undefined && data.marketCap !== null) {
+          existing.marketCap = parseFloat(String(data.marketCap)) || 0;
         }
         
-        if (data.price_usd) {
+        // Try multiple price field names
+        if (data.price_usd !== undefined && data.price_usd !== null) {
           existing.price = parseFloat(String(data.price_usd)) || 0;
+        } else if (data.price !== undefined && data.price !== null) {
+          existing.price = parseFloat(String(data.price)) || 0;
+        } else if (data.usd !== undefined && data.usd !== null) {
+          existing.price = parseFloat(String(data.usd)) || 0;
         }
         
-        if (data.volume_24h) {
+        // Try multiple volume field names
+        if (data.volume_24h !== undefined && data.volume_24h !== null) {
           existing.volume24h = parseFloat(String(data.volume_24h)) || 0;
+        } else if (data.volume24h !== undefined && data.volume24h !== null) {
+          existing.volume24h = parseFloat(String(data.volume24h)) || 0;
+        } else if (data.volume !== undefined && data.volume !== null) {
+          existing.volume24h = parseFloat(String(data.volume)) || 0;
         }
         
-        if (data.liquidity) {
+        // Try multiple liquidity field names
+        if (data.liquidity !== undefined && data.liquidity !== null) {
           existing.liquidity = parseFloat(String(data.liquidity)) || 0;
+        } else if (data.usd_liquidity !== undefined && data.usd_liquidity !== null) {
+          existing.liquidity = parseFloat(String(data.usd_liquidity)) || 0;
         }
         
-        if (data.holders) {
+        // Try multiple holders field names
+        if (data.holders !== undefined && data.holders !== null) {
           existing.holders = parseInt(String(data.holders)) || 0;
+        } else if (data.holder_count !== undefined && data.holder_count !== null) {
+          existing.holders = parseInt(String(data.holder_count)) || 0;
         }
         
         // Update fdv if available
-        if (data.fdv) {
+        if (data.fdv !== undefined && data.fdv !== null) {
           existing.fdv = parseFloat(String(data.fdv)) || existing.marketCap;
         } else {
           existing.fdv = existing.marketCap;
         }
+        
+        log.info('Token data after enrichment', {
+          mint: mint.slice(0, 8),
+          name: existing.name,
+          symbol: existing.symbol,
+          hasImage: !!existing.imageUrl,
+          marketCap: existing.marketCap,
+          price: existing.price,
+          volume24h: existing.volume24h,
+          liquidity: existing.liquidity,
+          holders: existing.holders
+        });
 
         this.onChainTokens.set(mint, existing);
         this.broadcast([existing]);
