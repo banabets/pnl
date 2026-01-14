@@ -590,8 +590,37 @@ app.get('/api/tokens/feed', readLimiter, async (req, res) => {
         });
         
         if (tokens && tokens.length > 0) {
+          // Enrich tokens that are missing data
+          const enrichedTokens = await Promise.all(
+            tokens.map(async (token: any) => {
+              // If token is missing critical data, try to enrich it
+              if ((!token.imageUrl || !token.marketCap || !token.price) && tokenFeed.isServiceStarted()) {
+                try {
+                  // Try to get enriched data from tokenFeed
+                  const enriched = await tokenFeed.getToken(token.mint);
+                  if (enriched) {
+                    return {
+                      ...token,
+                      name: enriched.name || token.name,
+                      symbol: enriched.symbol || token.symbol,
+                      imageUrl: enriched.imageUrl || token.imageUrl,
+                      marketCap: enriched.marketCap || token.marketCap,
+                      price: enriched.price || token.price,
+                      volume24h: enriched.volume24h || token.volume24h,
+                      liquidity: enriched.liquidity || token.liquidity,
+                      holders: enriched.holders || token.holders,
+                    };
+                  }
+                } catch (error) {
+                  // Ignore enrichment errors
+                }
+              }
+              return token;
+            })
+          );
+          
           // Map TokenData to frontend format
-          const mappedTokens = tokens.map((token: any) => ({
+          const mappedTokens = enrichedTokens.map((token: any) => ({
             mint: token.mint,
             name: token.name && !token.name.startsWith('Token ') && token.name !== 'Unknown'
               ? token.name

@@ -1393,6 +1393,20 @@ class TokenFeedService extends EventEmitter {
    * Search for specific token by mint
    */
   async getToken(mint: string): Promise<TokenData | null> {
+    // If token exists in on-chain cache, return it
+    const cached = this.onChainTokens.get(mint);
+    if (cached) {
+      // If cached token is missing data, try to enrich it
+      if ((!cached.imageUrl || !cached.marketCap || !cached.price) && cached.name && !cached.name.startsWith('Token ')) {
+        // Token has name but missing other data, try to fetch metadata
+        await this.fetchBasicMetadata(mint).catch(() => {
+          // Ignore errors
+        });
+        // Return updated token
+        return this.onChainTokens.get(mint) || cached;
+      }
+      return cached;
+    }
     try {
       // Check rate limit
       if (!rateLimiter.canMakeRequest('dexscreener')) {
