@@ -28,6 +28,11 @@ export declare class PumpFunWebSocketListener {
      */
     onTokenUpdate(callback: (token: TokenUpdate) => void): () => void;
     /**
+     * Get recent tokens found via WebSocket
+     * Only returns tokens from the last 2 hours (very recent)
+     */
+    getRecentTokens(limit?: number): TokenUpdate[];
+    /**
      * Process account change and extract token mints
      */
     private processAccountChange;

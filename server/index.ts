@@ -220,8 +220,10 @@ connectDatabase().then(() => {
 // Requires HELIUS_API_KEY for best performance, but the app should still run without it.
 tokenFeed.start().then(() => {
   log.info('Token feed service started successfully');
-  // ⚠️ Token Enricher DISABLED to save API credits
-  log.warn('Token Enricher Worker DISABLED to conserve API credits');
+  // Start Token Enricher Worker to fetch metadata and images
+  tokenEnricherWorker.start().catch((error) => {
+    log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
+  });
 }).catch((error) => {
   log.error('Failed to start token feed', { error: error.message, stack: error.stack });
   log.warn('Token feed service disabled - will rely on pure RPC WebSocket listener');

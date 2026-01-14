@@ -610,18 +610,12 @@ class TokenFeedService extends EventEmitter {
 
   /**
    * Internal enrichment implementation (called via enrichInFlight wrapper)
-   * ⚠️ DISABLED to save API credits - DexScreener calls disabled
+   * Enriches token data with metadata, prices, volumes from DexScreener API
    */
   private async _enrichTokenDataInternal(mint: string): Promise<void> {
     const existing = this.onChainTokens.get(mint);
     if (!existing) return;
 
-    // ⚠️ OPTIMIZATION: Skip DexScreener enrichment to conserve API credits
-    // Only use Pump.fun API data without additional enrichment
-    log.info('Token enrichment DISABLED to save API credits', { mint: mint.slice(0, 8) });
-    return;
-
-    /* DISABLED CODE - Uncomment to re-enable DexScreener enrichment
     try {
       // 1. Check cache for metadata first (longest TTL)
       const cachedMetadata = this.getCachedMetadata(mint);
@@ -754,8 +748,6 @@ const data = await response.json();
 const pairs = Array.isArray(data.pairs) ? data.pairs : [];
 const solanaPairs = pairs.filter((p: any) => (p?.chainId || '').toLowerCase() === 'solana');
 
-const wantsRaydium = (existing.dexId === 'raydium') || this.graduatedTokens.has(mint);
-
 const byLiquidityDesc = (a: any, b: any) => ((b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
 
 let candidatePairs = solanaPairs;
@@ -835,7 +827,6 @@ if (!pair) return;
         }
       }
     }
-    */ // END OF DISABLED CODE
   }
 
   /**

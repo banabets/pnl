@@ -512,231 +512,194 @@ class TokenFeedService extends events_1.EventEmitter {
     }
     /**
      * Internal enrichment implementation (called via enrichInFlight wrapper)
-     * ⚠️ DISABLED to save API credits - DexScreener calls disabled
+     * Enriches token data with metadata, prices, volumes from DexScreener API
      */
     async _enrichTokenDataInternal(mint) {
         const existing = this.onChainTokens.get(mint);
         if (!existing)
             return;
-        // ⚠️ OPTIMIZATION: Skip DexScreener enrichment to conserve API credits
-        // Only use Pump.fun API data without additional enrichment
-        logger_1.log.info('Token enrichment DISABLED to save API credits', { mint: mint.slice(0, 8) });
-        return;
-        /* DISABLED CODE - Uncomment to re-enable DexScreener enrichment
         try {
-          // 1. Check cache for metadata first (longest TTL)
-          const cachedMetadata = this.getCachedMetadata(mint);
-          if (cachedMetadata) {
-            log.info('Using cached metadata', { mint: mint.slice(0, 8) });
-            existing.name = cachedMetadata.name || existing.name;
-            existing.symbol = cachedMetadata.symbol || existing.symbol;
-            existing.imageUrl = cachedMetadata.imageUrl || existing.imageUrl;
-          }
-    
-          // 2. Check cache for price (shorter TTL)
-          const cachedPrice = this.getCachedPrice(mint);
-          if (cachedPrice !== null) {
-            existing.price = cachedPrice;
-          }
-    
-          // 3. Check cache for volume
-          const cachedVolume = this.getCachedVolume(mint);
-          if (cachedVolume) {
-            existing.volume1h = cachedVolume.volume1h || existing.volume1h;
-            existing.volume24h = cachedVolume.volume24h || existing.volume24h;
-          }
-    
-          // 4. Check cache for market data
-          const cachedMarketData = this.getCachedMarketData(mint);
-          if (cachedMarketData) {
-            existing.liquidity = cachedMarketData.liquidity || existing.liquidity;
-            existing.marketCap = cachedMarketData.marketCap || existing.marketCap;
-            if (cachedMarketData.holders) {
-              existing.holders = cachedMarketData.holders;
-            }
-          }
-    
-          // 5. Check cache for price changes
-          const cachedPriceChanges = this.getCachedPriceChanges(mint);
-          if (cachedPriceChanges) {
-            existing.priceChange5m = cachedPriceChanges.priceChange5m || existing.priceChange5m;
-            existing.priceChange1h = cachedPriceChanges.priceChange1h || existing.priceChange1h;
-            existing.priceChange24h = cachedPriceChanges.priceChange24h || existing.priceChange24h;
-          }
-    
-          // 6. If we have all cached data, skip API call
-          if (cachedMetadata && cachedPrice !== null && cachedVolume && cachedMarketData && cachedPriceChanges) {
-            log.info('All data cached, skipping API call', { mint: mint.slice(0, 8) });
-            this.onChainTokens.set(mint, existing);
-            return;
-          }
-    
-          // 7. Fetch from API only if cache is missing/expired
-          // Wait if rate limit is reached
-          await rateLimiter.waitIfNeeded('dexscreener');
-          
-          // Check if we can make request
-          if (!rateLimiter.canMakeRequest('dexscreener')) {
-            log.info('Rate limit reached for DexScreener, using on-chain fallback', { mint: mint.slice(0, 8) });
-            const onChainResult = await this.enrichTokenDataOnChain(mint);
-            if (onChainResult) {
-              return;
-            }
-            // If on-chain fails, use cached data
-            return;
-          }
-    
-          log.info('Fetching fresh data from DexScreener', {
-            mint: mint.slice(0, 8),
-            remainingRequests: rateLimiter.getRemainingRequests('dexscreener')
-          });
-    
-          // If we already have a pairAddress, try pair cache/endpoint first (saves work and stabilizes Raydium data)
-          const wantsRaydium = (existing.dexId === 'raydium') || this.graduatedTokens.has(mint);
-          if (existing.pairAddress && (wantsRaydium || existing.dexId)) {
-            const cachedPair = this.pairCache.get(existing.pairAddress);
-            if (cachedPair && Date.now() < cachedPair.expires) {
-              const pair = cachedPair.data;
-              this.applyDexPairToToken(existing, pair, mint);
-              this.onChainTokens.set(mint, existing);
-              return;
-            }
-    
-            // Fetch single pair info (chainId solana)
-            const pairResp = await fetch(
-              `https://api.dexscreener.com/latest/dex/pairs/solana/${existing.pairAddress}`,
-              { headers: { 'Accept': 'application/json' } }
-            );
-            rateLimiter.recordRequest('dexscreener');
-            if (pairResp.ok) {
-              const pairData = await pairResp.json();
-              const pair = Array.isArray(pairData?.pairs) ? pairData.pairs[0] : null;
-              if (pair) {
-                this.pairCache.set(existing.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
-                this.applyDexPairToToken(existing, pair, mint);
-                this.onChainTokens.set(mint, existing);
-                return;
-              }
-            }
-            // If pair endpoint fails, continue with token endpoint as fallback
-          }
-    
-          const response = await fetch(
-            `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
-            { headers: { 'Accept': 'application/json' } }
-          );
-    
-          // Record the request
-          rateLimiter.recordRequest('dexscreener');
-    
-          if (!response.ok) {
-            // If API fails, try on-chain fallback
-            log.warn('DexScreener API failed, trying on-chain fallback', { mint: mint.slice(0, 8) });
-            const onChainResult = await this.enrichTokenDataOnChain(mint);
-            
-            if (onChainResult) {
-              log.info('On-chain enrichment successful', { mint: mint.slice(0, 8) });
-              return;
-            }
-    
-            // If on-chain also fails, use cached data if available (graceful degradation)
-            if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
-              log.warn('Using cached data as final fallback', { mint: mint.slice(0, 8) });
-            }
-            return;
-          }
-    
-    const data = await response.json();
-    
-    // Choose the best pair:
-    // - If the token already graduated, prefer Raydium pairs
-    // - Otherwise prefer Pump.fun pairs when available
-    // - Fallback to highest-liquidity Solana pair
-    const pairs = Array.isArray(data.pairs) ? data.pairs : [];
-    const solanaPairs = pairs.filter((p: any) => (p?.chainId || '').toLowerCase() === 'solana');
-    
-    const wantsRaydium = (existing.dexId === 'raydium') || this.graduatedTokens.has(mint);
-    
-    const byLiquidityDesc = (a: any, b: any) => ((b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
-    
-    let candidatePairs = solanaPairs;
-    if (wantsRaydium) {
-      const raydiumPairs = solanaPairs.filter((p: any) => (p?.dexId || '').toLowerCase().includes('raydium'));
-      if (raydiumPairs.length > 0) candidatePairs = raydiumPairs;
-    } else {
-      const pumpPairs = solanaPairs.filter((p: any) => {
-        const dex = (p?.dexId || '').toLowerCase();
-        return dex.includes('pump') || dex.includes('pumpfun');
-      });
-      if (pumpPairs.length > 0) candidatePairs = pumpPairs;
-    }
-    
-    candidatePairs.sort(byLiquidityDesc);
-    const pair = candidatePairs[0];
-    if (!pair) return;
-    
-          // Cache selected pair by pairAddress (useful for graduated Raydium tokens)
-          if (pair.pairAddress) {
-            this.pairCache.set(pair.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
-          }
-    
-    
-          // 8. Apply fresh DexScreener pair to token + update caches
-          this.applyDexPairToToken(existing, pair, mint);
-    
-          this.onChainTokens.set(mint, existing);
-    
-          // 11. Update in MongoDB with enrichment data
-          await tokenIndexer.updateEnrichment(mint, {
-            name: existing.name,
-            symbol: existing.symbol,
-            imageUrl: existing.imageUrl,
-            price: existing.price,
-            priceChange5m: existing.priceChange5m,
-            priceChange1h: existing.priceChange1h,
-            priceChange24h: existing.priceChange24h,
-            liquidity: existing.liquidity,
-            marketCap: existing.marketCap,
-            volume1h: existing.volume1h,
-            volume24h: existing.volume24h,
-            holders: existing.holders,
-          }, 'dexscreener');
-    
-        } catch (error) {
-          // If API fails, try on-chain fallback first
-          log.warn('API error, trying on-chain fallback', { mint: mint.slice(0, 8) });
-          const onChainResult = await this.enrichTokenDataOnChain(mint);
-          
-          if (!onChainResult) {
-            // If on-chain also fails, use cached data (graceful degradation)
+            // 1. Check cache for metadata first (longest TTL)
             const cachedMetadata = this.getCachedMetadata(mint);
-            const cachedPrice = this.getCachedPrice(mint);
-            const cachedVolume = this.getCachedVolume(mint);
-            const cachedMarketData = this.getCachedMarketData(mint);
-            
-            if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
-              log.warn('Using cached data as final fallback', { mint: mint.slice(0, 8) });
-              if (cachedMetadata) {
+            if (cachedMetadata) {
+                logger_1.log.info('Using cached metadata', { mint: mint.slice(0, 8) });
                 existing.name = cachedMetadata.name || existing.name;
                 existing.symbol = cachedMetadata.symbol || existing.symbol;
                 existing.imageUrl = cachedMetadata.imageUrl || existing.imageUrl;
-              }
-              if (cachedPrice !== null) {
+            }
+            // 2. Check cache for price (shorter TTL)
+            const cachedPrice = this.getCachedPrice(mint);
+            if (cachedPrice !== null) {
                 existing.price = cachedPrice;
-              }
-              if (cachedVolume) {
+            }
+            // 3. Check cache for volume
+            const cachedVolume = this.getCachedVolume(mint);
+            if (cachedVolume) {
                 existing.volume1h = cachedVolume.volume1h || existing.volume1h;
                 existing.volume24h = cachedVolume.volume24h || existing.volume24h;
-              }
-              if (cachedMarketData) {
+            }
+            // 4. Check cache for market data
+            const cachedMarketData = this.getCachedMarketData(mint);
+            if (cachedMarketData) {
                 existing.liquidity = cachedMarketData.liquidity || existing.liquidity;
                 existing.marketCap = cachedMarketData.marketCap || existing.marketCap;
-              }
-              this.onChainTokens.set(mint, existing);
+                if (cachedMarketData.holders) {
+                    existing.holders = cachedMarketData.holders;
+                }
             }
-          }
+            // 5. Check cache for price changes
+            const cachedPriceChanges = this.getCachedPriceChanges(mint);
+            if (cachedPriceChanges) {
+                existing.priceChange5m = cachedPriceChanges.priceChange5m || existing.priceChange5m;
+                existing.priceChange1h = cachedPriceChanges.priceChange1h || existing.priceChange1h;
+                existing.priceChange24h = cachedPriceChanges.priceChange24h || existing.priceChange24h;
+            }
+            // 6. If we have all cached data, skip API call
+            if (cachedMetadata && cachedPrice !== null && cachedVolume && cachedMarketData && cachedPriceChanges) {
+                logger_1.log.info('All data cached, skipping API call', { mint: mint.slice(0, 8) });
+                this.onChainTokens.set(mint, existing);
+                return;
+            }
+            // 7. Fetch from API only if cache is missing/expired
+            // Wait if rate limit is reached
+            await rate_limiter_1.rateLimiter.waitIfNeeded('dexscreener');
+            // Check if we can make request
+            if (!rate_limiter_1.rateLimiter.canMakeRequest('dexscreener')) {
+                logger_1.log.info('Rate limit reached for DexScreener, using on-chain fallback', { mint: mint.slice(0, 8) });
+                const onChainResult = await this.enrichTokenDataOnChain(mint);
+                if (onChainResult) {
+                    return;
+                }
+                // If on-chain fails, use cached data
+                return;
+            }
+            logger_1.log.info('Fetching fresh data from DexScreener', {
+                mint: mint.slice(0, 8),
+                remainingRequests: rate_limiter_1.rateLimiter.getRemainingRequests('dexscreener')
+            });
+            // If we already have a pairAddress, try pair cache/endpoint first (saves work and stabilizes Raydium data)
+            const wantsRaydium = (existing.dexId === 'raydium') || this.graduatedTokens.has(mint);
+            if (existing.pairAddress && (wantsRaydium || existing.dexId)) {
+                const cachedPair = this.pairCache.get(existing.pairAddress);
+                if (cachedPair && Date.now() < cachedPair.expires) {
+                    const pair = cachedPair.data;
+                    this.applyDexPairToToken(existing, pair, mint);
+                    this.onChainTokens.set(mint, existing);
+                    return;
+                }
+                // Fetch single pair info (chainId solana)
+                const pairResp = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${existing.pairAddress}`, { headers: { 'Accept': 'application/json' } });
+                rate_limiter_1.rateLimiter.recordRequest('dexscreener');
+                if (pairResp.ok) {
+                    const pairData = await pairResp.json();
+                    const pair = Array.isArray(pairData?.pairs) ? pairData.pairs[0] : null;
+                    if (pair) {
+                        this.pairCache.set(existing.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
+                        this.applyDexPairToToken(existing, pair, mint);
+                        this.onChainTokens.set(mint, existing);
+                        return;
+                    }
+                }
+                // If pair endpoint fails, continue with token endpoint as fallback
+            }
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`, { headers: { 'Accept': 'application/json' } });
+            // Record the request
+            rate_limiter_1.rateLimiter.recordRequest('dexscreener');
+            if (!response.ok) {
+                // If API fails, try on-chain fallback
+                logger_1.log.warn('DexScreener API failed, trying on-chain fallback', { mint: mint.slice(0, 8) });
+                const onChainResult = await this.enrichTokenDataOnChain(mint);
+                if (onChainResult) {
+                    logger_1.log.info('On-chain enrichment successful', { mint: mint.slice(0, 8) });
+                    return;
+                }
+                // If on-chain also fails, use cached data if available (graceful degradation)
+                if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
+                    logger_1.log.warn('Using cached data as final fallback', { mint: mint.slice(0, 8) });
+                }
+                return;
+            }
+            const data = await response.json();
+            // Choose the best pair:
+            // - If the token already graduated, prefer Raydium pairs
+            // - Otherwise prefer Pump.fun pairs when available
+            // - Fallback to highest-liquidity Solana pair
+            const pairs = Array.isArray(data.pairs) ? data.pairs : [];
+            const solanaPairs = pairs.filter((p) => (p?.chainId || '').toLowerCase() === 'solana');
+            const byLiquidityDesc = (a, b) => ((b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
+            let candidatePairs = solanaPairs;
+            if (wantsRaydium) {
+                const raydiumPairs = solanaPairs.filter((p) => (p?.dexId || '').toLowerCase().includes('raydium'));
+                if (raydiumPairs.length > 0)
+                    candidatePairs = raydiumPairs;
+            }
+            else {
+                const pumpPairs = solanaPairs.filter((p) => {
+                    const dex = (p?.dexId || '').toLowerCase();
+                    return dex.includes('pump') || dex.includes('pumpfun');
+                });
+                if (pumpPairs.length > 0)
+                    candidatePairs = pumpPairs;
+            }
+            candidatePairs.sort(byLiquidityDesc);
+            const pair = candidatePairs[0];
+            if (!pair)
+                return;
+            // Cache selected pair by pairAddress (useful for graduated Raydium tokens)
+            if (pair.pairAddress) {
+                this.pairCache.set(pair.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
+            }
+            // 8. Apply fresh DexScreener pair to token + update caches
+            this.applyDexPairToToken(existing, pair, mint);
+            this.onChainTokens.set(mint, existing);
+            // 11. Update in MongoDB with enrichment data
+            await token_indexer_1.tokenIndexer.updateEnrichment(mint, {
+                name: existing.name,
+                symbol: existing.symbol,
+                imageUrl: existing.imageUrl,
+                price: existing.price,
+                priceChange5m: existing.priceChange5m,
+                priceChange1h: existing.priceChange1h,
+                priceChange24h: existing.priceChange24h,
+                liquidity: existing.liquidity,
+                marketCap: existing.marketCap,
+                volume1h: existing.volume1h,
+                volume24h: existing.volume24h,
+                holders: existing.holders,
+            }, 'dexscreener');
         }
-        */ // END OF DISABLED CODE
+        catch (error) {
+            // If API fails, try on-chain fallback first
+            logger_1.log.warn('API error, trying on-chain fallback', { mint: mint.slice(0, 8) });
+            const onChainResult = await this.enrichTokenDataOnChain(mint);
+            if (!onChainResult) {
+                // If on-chain also fails, use cached data (graceful degradation)
+                const cachedMetadata = this.getCachedMetadata(mint);
+                const cachedPrice = this.getCachedPrice(mint);
+                const cachedVolume = this.getCachedVolume(mint);
+                const cachedMarketData = this.getCachedMarketData(mint);
+                if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
+                    logger_1.log.warn('Using cached data as final fallback', { mint: mint.slice(0, 8) });
+                    if (cachedMetadata) {
+                        existing.name = cachedMetadata.name || existing.name;
+                        existing.symbol = cachedMetadata.symbol || existing.symbol;
+                        existing.imageUrl = cachedMetadata.imageUrl || existing.imageUrl;
+                    }
+                    if (cachedPrice !== null) {
+                        existing.price = cachedPrice;
+                    }
+                    if (cachedVolume) {
+                        existing.volume1h = cachedVolume.volume1h || existing.volume1h;
+                        existing.volume24h = cachedVolume.volume24h || existing.volume24h;
+                    }
+                    if (cachedMarketData) {
+                        existing.liquidity = cachedMarketData.liquidity || existing.liquidity;
+                        existing.marketCap = cachedMarketData.marketCap || existing.marketCap;
+                    }
+                    this.onChainTokens.set(mint, existing);
+                }
+            }
+        }
     }
     /**
      * Enrich token data from on-chain (Metaplex metadata) - Fallback when APIs fail

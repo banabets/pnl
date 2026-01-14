@@ -131,7 +131,7 @@ declare class TokenFeedService extends EventEmitter {
     enrichTokenData(mint: string): Promise<void>;
     /**
      * Internal enrichment implementation (called via enrichInFlight wrapper)
-     * ⚠️ DISABLED to save API credits - DexScreener calls disabled
+     * Enriches token data with metadata, prices, volumes from DexScreener API
      */
     private _enrichTokenDataInternal;
     /**
