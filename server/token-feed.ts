@@ -493,8 +493,8 @@ class TokenFeedService extends EventEmitter {
         age: tokenData.age,
       });
 
-      // Fetch additional metadata from DexScreener after a delay
-      setTimeout(() => this.enrichTokenData(event.mint), 5000);
+      // Automatic enrichment DISABLED - only top gainers and on-demand tokens are enriched
+      // setTimeout(() => this.enrichTokenData(event.mint), 5000);
     });
 
     // Listen for graduations
@@ -510,9 +510,10 @@ class TokenFeedService extends EventEmitter {
         existing.dexId = 'raydium';
         // If we don't yet know the Raydium pool address, we'll enrich via DexScreener right away.
         existing.pairAddress = event.raydiumPool || existing.pairAddress;
-        if (!event.raydiumPool) {
-          setTimeout(() => this.enrichTokenData(event.mint), 2000);
-        }
+        // Automatic enrichment DISABLED
+        // if (!event.raydiumPool) {
+        //   setTimeout(() => this.enrichTokenData(event.mint), 2000);
+        // }
         existing.liquidity = event.liquidity || existing.liquidity;
         this.broadcast([existing]);
         this.emit('graduation', existing);

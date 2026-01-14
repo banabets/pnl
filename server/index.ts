@@ -220,10 +220,8 @@ connectDatabase().then(() => {
 // Requires HELIUS_API_KEY for best performance, but the app should still run without it.
 tokenFeed.start().then(() => {
   log.info('Token feed service started successfully');
-  // Start Token Enricher Worker to fetch metadata and images
-  tokenEnricherWorker.start().catch((error) => {
-    log.error('Failed to start token enricher worker', { error: error.message, stack: error.stack });
-  });
+  // Token Enricher Worker DISABLED - using selective enrichment for top gainers only
+  log.info('Using selective enrichment: only top gainers and on-demand tokens will be enriched');
 }).catch((error) => {
   log.error('Failed to start token feed', { error: error.message, stack: error.stack });
   log.warn('Token feed service disabled - will rely on pure RPC WebSocket listener');
@@ -705,7 +703,42 @@ app.get('/api/tokens/top-gainers', readLimiter, async (req, res) => {
 
         if (topGainers.length > 0) {
           log.info('Top gainers from tokenFeed', { count: topGainers.length });
-          return res.json({ success: true, tokens: topGainers });
+
+          // Enrich top gainers with fresh data (selective enrichment)
+          const enrichmentPromises = topGainers.slice(0, 10).map((token, index) => {
+            // Stagger enrichment to avoid rate limits (500ms delay between each)
+            return new Promise((resolve) => {
+              setTimeout(() => {
+                tokenFeed.enrichTokenData(token.mint).then(() => resolve(true)).catch(() => resolve(false));
+              }, index * 500);
+            });
+          });
+
+          // Wait for enrichment to complete (with timeout)
+          await Promise.race([
+            Promise.all(enrichmentPromises),
+            new Promise(resolve => setTimeout(resolve, 8000)) // 8 second timeout
+          ]);
+
+          // Fetch updated data after enrichment
+          const enrichedTokens = await Promise.all(
+            topGainers.map(async (token) => {
+              const updated = await tokenFeed.getToken(token.mint);
+              if (updated) {
+                return {
+                  ...token,
+                  name: updated.name || token.name,
+                  symbol: updated.symbol || token.symbol,
+                  image_uri: updated.imageUrl || token.image_uri,
+                  price_usd: updated.price || token.price_usd,
+                  market_cap: updated.marketCap || token.market_cap,
+                };
+              }
+              return token;
+            })
+          );
+
+          return res.json({ success: true, tokens: enrichedTokens });
         }
       } catch (feedError) {
         log.warn('tokenFeed.getTokens failed, falling back to pump.fun API', { error: (feedError as Error).message });
@@ -5478,10 +5511,27 @@ app.get('/api/subscription/plans', (req, res) => {
 // Get specific token by mint
 app.get('/api/tokens/:mint', async (req, res) => {
   try {
-    const token = await tokenFeed.getToken(req.params.mint);
+    const mint = req.params.mint;
+
+    // Get token from cache first
+    let token = await tokenFeed.getToken(mint);
     if (!token) {
       return res.status(404).json({ error: 'Token not found' });
     }
+
+    // Enrich on-demand if metadata is missing (selective enrichment)
+    if (!token.imageUrl || !token.name || token.price === 0) {
+      log.info('Enriching token on-demand', { mint: mint.slice(0, 8) });
+      try {
+        await tokenFeed.enrichTokenData(mint);
+        // Get updated token after enrichment
+        token = await tokenFeed.getToken(mint) || token;
+      } catch (enrichError) {
+        log.warn('On-demand enrichment failed', { mint: mint.slice(0, 8) });
+        // Continue with unenriched data
+      }
+    }
+
     res.json({ success: true, token });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
