@@ -1407,6 +1407,51 @@ class TokenFeedService extends EventEmitter {
       }
       return cached;
     }
+    
+    // Token not in cache, try to create it and fetch metadata
+    // This allows enriching tokens that come from other sources (pump.fun API, etc.)
+    try {
+      // Create a basic token entry
+      const newToken: TokenData = {
+        mint: mint,
+        name: `Token ${mint.slice(0, 8)}`,
+        symbol: mint.slice(0, 6).toUpperCase(),
+        price: 0,
+        priceChange5m: 0,
+        priceChange1h: 0,
+        priceChange24h: 0,
+        volume5m: 0,
+        volume1h: 0,
+        volume24h: 0,
+        liquidity: 0,
+        marketCap: 0,
+        fdv: 0,
+        txns5m: { buys: 0, sells: 0 },
+        txns1h: { buys: 0, sells: 0 },
+        txns24h: { buys: 0, sells: 0 },
+        createdAt: Date.now(),
+        pairAddress: '',
+        dexId: 'unknown',
+        age: 0,
+        isNew: true,
+        isGraduating: false,
+        isTrending: false,
+        riskScore: 50,
+      };
+      
+      this.onChainTokens.set(mint, newToken);
+      
+      // Try to fetch metadata immediately
+      await this.fetchBasicMetadata(mint).catch(() => {
+        // Ignore errors
+      });
+      
+      // Return enriched token
+      return this.onChainTokens.get(mint) || newToken;
+    } catch (error) {
+      log.warn('Failed to create token entry for enrichment', { mint: mint.slice(0, 8) });
+      return null;
+    }
     try {
       // Check rate limit
       if (!rateLimiter.canMakeRequest('dexscreener')) {
