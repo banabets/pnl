@@ -366,7 +366,7 @@ export default function UserProfile() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="your@email.com"
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
           )}
@@ -396,7 +396,7 @@ export default function UserProfile() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 placeholder="Repeat your password"
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
           )}
@@ -509,7 +509,7 @@ export default function UserProfile() {
                   value={editUsername}
                   onChange={(e) => setEditUsername(e.target.value)}
                   required
-                  className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                  className="input-field"
                 />
               </div>
               
@@ -536,7 +536,7 @@ export default function UserProfile() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Your full name or nickname (optional)"
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
             
@@ -556,7 +556,7 @@ export default function UserProfile() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-3 bg-black border-2 border-white/20 hover:border-white/40 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6)] transition-all"
+              className="btn-primary w-full py-3 font-semibold"
             >
               {loading ? 'Saving...' : 'Save Changes'}
             </button>
@@ -573,7 +573,7 @@ export default function UserProfile() {
               <select
                 value={theme}
                 onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'auto')}
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               >
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
@@ -627,14 +627,14 @@ export default function UserProfile() {
                 min="0.1"
                 max="50"
                 step="0.1"
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
 
             <button
               onClick={handleUpdateSettings}
               disabled={loading}
-              className="w-full px-6 py-3 bg-black border-2 border-white/20 hover:border-white/40 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6)] transition-all"
+              className="btn-primary w-full py-3 font-semibold"
             >
               {loading ? 'Saving...' : 'Save Settings'}
             </button>
@@ -653,7 +653,7 @@ export default function UserProfile() {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 required
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
             
@@ -667,7 +667,7 @@ export default function UserProfile() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
             
@@ -681,14 +681,14 @@ export default function UserProfile() {
                 onChange={(e) => setConfirmNewPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full px-4 py-2.5 bg-black border border-white/15 rounded-md text-white focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
             
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-3 bg-black border-2 border-white/20 hover:border-white/40 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_2px_6px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] hover:shadow-[0_4px_10px_rgba(0,0,0,0.6)] transition-all"
+              className="btn-primary w-full py-3 font-semibold"
             >
               {loading ? 'Changing...' : 'Change Password'}
             </button>

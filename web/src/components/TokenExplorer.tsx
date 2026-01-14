@@ -816,44 +816,54 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-black rounded-2xl p-6 border border-white/5">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-          <h2 className="text-3xl font-bold text-white">Token Explorer</h2>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-white/70">
+      <div className="container-card animate-fade-in">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-3xl font-bold text-white mb-1">Token Explorer</h2>
+            <p className="text-sm text-white/50">Discover and analyze tokens in real-time</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2.5 text-white/70 cursor-pointer hover:text-white/90 transition-colors">
               <input
                 type="checkbox"
                 checked={autoRefresh}
                 onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="rounded accent-primary-500"
+                className="w-4 h-4 rounded accent-primary-500 cursor-pointer focus:ring-2 focus:ring-white/20"
               />
-              <span className="text-sm">Auto-refresh (15s)</span>
+              <span className="text-sm font-medium">Auto-refresh (15s)</span>
             </label>
             <button
               onClick={loadTokens}
               disabled={loading}
-              className="px-4 py-2 bg-gradient-to-r from-primary-500 to-accent-pink hover:from-primary-600 hover:to-accent-pink/80 text-white rounded-lg font-medium disabled:opacity-50 transition-all duration-200"
+              className="btn-primary flex items-center gap-2 min-w-[100px] justify-center"
             >
-              {loading ? 'Loading...' : 'Refresh'}
+              {loading ? (
+                <>
+                  <div className="loading-spinner w-4 h-4"></div>
+                  <span>Loading...</span>
+                </>
+              ) : (
+                'Refresh'
+              )}
             </button>
           </div>
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2.5">
           {[
             { key: 'new', label: 'New (< 30m)' },
-            { key: 'all', label: 'All Tokens' },
             { key: 'graduating', label: 'Graduating' },
             { key: 'trending', label: 'Trending' },
+            { key: 'all', label: 'All Tokens' },
           ].map((filter) => (
             <button
               key={filter.key}
               onClick={() => setActiveFilter(filter.key as typeof activeFilter)}
-              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 ${
+              className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 ${
                 activeFilter === filter.key
-                  ? 'bg-white text-black shadow-lg'
-                  : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white border border-white/10'
+                  ? 'bg-white text-black shadow-lg shadow-white/20 scale-105'
+                  : 'badge hover:bg-white/10 hover:text-white hover:scale-105 active:scale-95'
               }`}
             >
               {filter.label}
@@ -863,18 +873,18 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
       </div>
 
       {/* Advanced Search & Filters */}
-      <div className="bg-black rounded-lg p-6 border border-white/15 shadow-[0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)]">
+      <div className="card animate-slide-up">
         {/* Search Bar */}
-        <div className="mb-4">
+        <div className="mb-6">
           <div className="relative">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by name, symbol, or mint address..."
-              className="w-full px-4 py-3 pl-10 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none placeholder:text-white/40"
+              className="input-field pl-10"
             />
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
@@ -884,11 +894,11 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Market Cap Filter */}
           <div>
-            <label className="block text-white/60 text-xs font-medium mb-2">Market Cap</label>
+            <label className="block text-white/70 text-xs font-semibold mb-2.5 uppercase tracking-wider">Market Cap</label>
             <select
               value={marketCapFilter}
               onChange={(e) => setMarketCapFilter(e.target.value as any)}
-              className="w-full px-3 py-2 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none text-sm"
+              className="input-field py-2.5 text-sm cursor-pointer"
             >
               <option value="all">All</option>
               <option value="micro">Micro (&lt; $10K)</option>
@@ -904,7 +914,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
             <select
               value={volumeFilter}
               onChange={(e) => setVolumeFilter(e.target.value as any)}
-              className="w-full px-3 py-2 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none text-sm"
+              className="input-field py-2.5 text-sm cursor-pointer"
             >
               <option value="all">All</option>
               <option value="low">Low (&lt; $1K)</option>
@@ -919,7 +929,7 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
             <select
               value={ageFilter}
               onChange={(e) => setAgeFilter(e.target.value as any)}
-              className="w-full px-3 py-2 bg-black border border-white/15 text-white rounded-lg focus:border-white/30 focus:outline-none text-sm"
+              className="input-field py-2.5 text-sm cursor-pointer"
             >
               <option value="all">All</option>
               <option value="fresh">Fresh (&lt; 1h)</option>

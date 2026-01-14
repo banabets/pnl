@@ -399,12 +399,12 @@ export default function PumpFun({ socket }: PumpFunProps) {
                     }
                   }}
                   placeholder="Ingresa la dirección del token"
-                  className="flex-1 px-4 py-2.5 bg-black text-white rounded-md border border-white/15 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                  className="input-field flex-1"
                 />
                 <button
                   onClick={handleLoadTokenInfo}
                   disabled={loadingTokenInfo || !config.tokenMint || config.tokenMint.length < 32}
-                  className="px-5 py-2.5 bg-black border border-white/15 hover:border-white/30 text-white rounded-md font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] text-sm"
+                  className="btn-primary"
                 >
                   {loadingTokenInfo ? 'Buscando...' : 'Buscar'}
                 </button>
@@ -420,7 +420,7 @@ export default function PumpFun({ socket }: PumpFunProps) {
                 value={config.tokenName}
                 onChange={(e) => setConfig({ ...config, tokenName: e.target.value })}
                 placeholder="Nombre del token (opcional)"
-                className="w-full px-4 py-2.5 bg-black text-white rounded-md border border-white/15 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
           </div>
@@ -568,7 +568,7 @@ export default function PumpFun({ socket }: PumpFunProps) {
               <select
                 value={config.executionMode}
                 onChange={(e) => setConfig({ ...config, executionMode: e.target.value as any })}
-                className="w-full px-4 py-2.5 bg-black text-white rounded-md border border-white/15 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               >
                 <option value="simultaneous">Simultáneo</option>
                 <option value="sequential">Secuencial</option>
@@ -587,7 +587,7 @@ export default function PumpFun({ socket }: PumpFunProps) {
                 min="0.1"
                 max="50"
                 step="0.1"
-                className="w-full px-4 py-2.5 bg-black text-white rounded-md border border-white/15 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
           </div>
@@ -603,7 +603,7 @@ export default function PumpFun({ socket }: PumpFunProps) {
                 onChange={(e) => setConfig({ ...config, delayBetweenWallets: parseInt(e.target.value) || 100 })}
                 min="0"
                 max="5000"
-                className="w-full px-4 py-2.5 bg-black text-white rounded-md border border-white/15 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] transition-all text-sm"
+                className="input-field"
               />
             </div>
           )}

@@ -493,8 +493,8 @@ class TokenFeedService extends EventEmitter {
         age: tokenData.age,
       });
 
-      // Automatic enrichment DISABLED - only top gainers and on-demand tokens are enriched
-      // setTimeout(() => this.enrichTokenData(event.mint), 5000);
+      // Fetch basic metadata from Pump.fun API (free, no rate limits)
+      setTimeout(() => this.fetchBasicMetadata(event.mint), 1000);
     });
 
     // Listen for graduations
@@ -587,6 +587,62 @@ class TokenFeedService extends EventEmitter {
    */
   getOnChainTokens(): Map<string, TokenData> {
     return this.onChainTokens;
+  }
+
+  /**
+   * Fetch basic metadata from Pump.fun API (free, no rate limits)
+   * This gets name, symbol, and image without using DexScreener
+   */
+  async fetchBasicMetadata(mint: string): Promise<void> {
+    try {
+      const existing = this.onChainTokens.get(mint);
+      if (!existing) return;
+
+      // Skip if we already have good metadata
+      if (existing.name && existing.name !== 'Unknown' && existing.imageUrl) {
+        return;
+      }
+
+      log.info('Fetching basic metadata from Pump.fun', { mint: mint.slice(0, 8) });
+
+      // Fetch from Pump.fun API
+      const response = await fetch(`https://frontend-api.pump.fun/coins/${mint}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // Update token with basic metadata
+        if (data.name) existing.name = data.name;
+        if (data.symbol) existing.symbol = data.symbol;
+        if (data.image_uri) existing.imageUrl = data.image_uri;
+
+        this.onChainTokens.set(mint, existing);
+        this.broadcast([existing]);
+
+        // Update in MongoDB
+        await tokenIndexer.updateEnrichment(mint, {
+          name: existing.name,
+          symbol: existing.symbol,
+          imageUrl: existing.imageUrl,
+        }, 'pumpfun');
+
+        log.info('Basic metadata fetched', {
+          mint: mint.slice(0, 8),
+          name: existing.name,
+          symbol: existing.symbol
+        });
+      }
+    } catch (error: any) {
+      log.warn('Failed to fetch basic metadata', {
+        mint: mint.slice(0, 8),
+        error: error.message
+      });
+    }
   }
 
   /**

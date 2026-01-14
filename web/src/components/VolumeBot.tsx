@@ -189,7 +189,7 @@ export default function VolumeBot({ socket }: VolumeBotProps) {
               onChange={(e) => setConfig({ ...config, tokenMint: e.target.value })}
               disabled={status.isRunning}
               placeholder="Ex: 4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R"
-              className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
+              className="input-field"
             />
           </div>
 

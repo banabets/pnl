@@ -125,6 +125,11 @@ declare class TokenFeedService extends EventEmitter {
      */
     getOnChainTokens(): Map<string, TokenData>;
     /**
+     * Fetch basic metadata from Pump.fun API (free, no rate limits)
+     * This gets name, symbol, and image without using DexScreener
+     */
+    fetchBasicMetadata(mint: string): Promise<void>;
+    /**
      * Enrich token data with DexScreener metadata (with intelligent caching)
      * Public method so worker can access it
      */

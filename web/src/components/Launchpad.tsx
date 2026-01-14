@@ -181,7 +181,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
                 disabled={isLaunching}
                 placeholder="Ex: My Awesome Token"
                 maxLength={32}
-                className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
+                className="input-field"
               />
               <div className="text-xs text-white/40 mt-1">{formData.name.length}/32 characters</div>
             </div>
@@ -228,7 +228,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
                 onChange={(e) => setFormData({ ...formData, twitter: e.target.value })}
                 disabled={isLaunching}
                 placeholder="https://twitter.com/..."
-                className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
+                className="input-field"
               />
             </div>
 
@@ -240,7 +240,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
                 onChange={(e) => setFormData({ ...formData, telegram: e.target.value })}
                 disabled={isLaunching}
                 placeholder="https://t.me/..."
-                className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
+                className="input-field"
               />
             </div>
 
@@ -252,7 +252,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
                 onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                 disabled={isLaunching}
                 placeholder="https://..."
-                className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
+                className="input-field"
               />
             </div>
           </div>
@@ -269,7 +269,7 @@ export default function Launchpad({ socket }: LaunchpadProps) {
               min="0"
               step="0.1"
               placeholder="0"
-              className="w-full px-4 py-2 bg-black border border-white/20 rounded text-white placeholder-white/30 focus:outline-none focus:border-white/40 disabled:opacity-50"
+              className="input-field"
             />
             <div className="text-xs text-white/40 mt-1">
               Amount of SOL to buy tokens immediately after launching
