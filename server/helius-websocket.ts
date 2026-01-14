@@ -490,7 +490,10 @@ class HeliusWebSocketService extends EventEmitter {
           liquidity: txDetails.liquidity,
         };
 
-        log.info('Token graduated', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
+        // Use debug level to reduce log spam (only log every 10th graduation)
+        if (Math.random() < 0.1) {
+          log.debug('Token graduated', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
+        }
         this.emit('graduation', event);
         this.emit('event', event);
       }

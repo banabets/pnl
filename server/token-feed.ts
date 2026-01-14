@@ -81,6 +81,9 @@ class TokenFeedService extends EventEmitter {
   private callbacks: Set<(tokens: TokenData[]) => void> = new Set();
   private onChainTokens: Map<string, TokenData> = new Map();
   private graduatedTokens: Set<string> = new Set();
+  // Track recently processed graduations to avoid duplicates
+  private recentGraduations: Map<string, number> = new Map();
+  private readonly GRADUATION_DEDUP_WINDOW = 60000; // 1 minute
   private isStarted = false;
 
   /**
@@ -499,7 +502,29 @@ class TokenFeedService extends EventEmitter {
 
     // Listen for graduations
     heliusWebSocket.on('graduation', async (event: GraduationEvent) => {
-      log.info('On-chain: Token graduated', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
+      const now = Date.now();
+      
+      // Deduplicate: Skip if we processed this graduation recently
+      const lastProcessed = this.recentGraduations.get(event.mint);
+      if (lastProcessed && (now - lastProcessed) < this.GRADUATION_DEDUP_WINDOW) {
+        return; // Skip duplicate graduation event
+      }
+      
+      this.recentGraduations.set(event.mint, now);
+      
+      // Cleanup old entries periodically
+      if (this.recentGraduations.size > 1000) {
+        for (const [mint, timestamp] of this.recentGraduations.entries()) {
+          if (now - timestamp > this.GRADUATION_DEDUP_WINDOW * 2) {
+            this.recentGraduations.delete(mint);
+          }
+        }
+      }
+
+      // Use debug level to reduce log spam - only log if not already processed
+      if (!this.graduatedTokens.has(event.mint)) {
+        log.debug('On-chain: Token graduated', { symbol: event.symbol, mint: event.mint.slice(0, 8) });
+      }
 
       this.graduatedTokens.add(event.mint);
 
@@ -598,8 +623,8 @@ class TokenFeedService extends EventEmitter {
       const existing = this.onChainTokens.get(mint);
       if (!existing) return;
 
-      // Skip if we already have good metadata
-      if (existing.name && existing.name !== 'Unknown' && existing.imageUrl) {
+      // Skip if we already have good metadata (image check disabled)
+      if (existing.name && existing.name !== 'Unknown') {
         return;
       }
 
@@ -616,10 +641,11 @@ class TokenFeedService extends EventEmitter {
       if (response.ok) {
         const data = await response.json();
 
-        // Update token with basic metadata
+        // Update token with basic metadata (images disabled)
         if (data.name) existing.name = data.name;
         if (data.symbol) existing.symbol = data.symbol;
-        if (data.image_uri) existing.imageUrl = data.image_uri;
+        // Images DISABLED to save bandwidth
+        // if (data.image_uri) existing.imageUrl = data.image_uri;
 
         this.onChainTokens.set(mint, existing);
         this.broadcast([existing]);
@@ -628,7 +654,7 @@ class TokenFeedService extends EventEmitter {
         await tokenIndexer.updateEnrichment(mint, {
           name: existing.name,
           symbol: existing.symbol,
-          imageUrl: existing.imageUrl,
+          // imageUrl: existing.imageUrl,
         }, 'pumpfun');
 
         log.info('✅ Basic metadata fetched successfully', {
@@ -668,10 +694,15 @@ class TokenFeedService extends EventEmitter {
   /**
    * Internal enrichment implementation (called via enrichInFlight wrapper)
    * Enriches token data with metadata, prices, volumes from DexScreener API
+   * DISABLED - Only uses on-chain data and Pump.fun to avoid rate limits
    */
   private async _enrichTokenDataInternal(mint: string): Promise<void> {
     const existing = this.onChainTokens.get(mint);
     if (!existing) return;
+
+    // DexScreener enrichment is DISABLED to avoid rate limits
+    // Only use cached data or on-chain fallback
+    log.info('DexScreener enrichment DISABLED, using on-chain fallback only', { mint: mint.slice(0, 8) });
 
     try {
       // 1. Check cache for metadata first (longest TTL)
@@ -716,139 +747,26 @@ class TokenFeedService extends EventEmitter {
 
       // 6. If we have all cached data, skip API call
       if (cachedMetadata && cachedPrice !== null && cachedVolume && cachedMarketData && cachedPriceChanges) {
-        log.info('All data cached, skipping API call', { mint: mint.slice(0, 8) });
+        log.info('All data cached, no need for API call', { mint: mint.slice(0, 8) });
         this.onChainTokens.set(mint, existing);
         return;
       }
 
-      // 7. Fetch from API only if cache is missing/expired
-      // Wait if rate limit is reached
-      await rateLimiter.waitIfNeeded('dexscreener');
-      
-      // Check if we can make request
-      if (!rateLimiter.canMakeRequest('dexscreener')) {
-        log.info('Rate limit reached for DexScreener, using on-chain fallback', { mint: mint.slice(0, 8) });
-        const onChainResult = await this.enrichTokenDataOnChain(mint);
-        if (onChainResult) {
-          return;
-        }
-        // If on-chain fails, use cached data
+      // 7. DexScreener API calls are DISABLED
+      // Try on-chain fallback instead
+      log.info('Trying on-chain fallback instead of DexScreener', { mint: mint.slice(0, 8) });
+      const onChainResult = await this.enrichTokenDataOnChain(mint);
+
+      if (onChainResult) {
+        log.info('On-chain enrichment successful', { mint: mint.slice(0, 8) });
         return;
       }
 
-      log.info('Fetching fresh data from DexScreener', {
-        mint: mint.slice(0, 8),
-        remainingRequests: rateLimiter.getRemainingRequests('dexscreener')
-      });
-
-      // If we already have a pairAddress, try pair cache/endpoint first (saves work and stabilizes Raydium data)
-      const wantsRaydium = (existing.dexId === 'raydium') || this.graduatedTokens.has(mint);
-      if (existing.pairAddress && (wantsRaydium || existing.dexId)) {
-        const cachedPair = this.pairCache.get(existing.pairAddress);
-        if (cachedPair && Date.now() < cachedPair.expires) {
-          const pair = cachedPair.data;
-          this.applyDexPairToToken(existing, pair, mint);
-          this.onChainTokens.set(mint, existing);
-          return;
-        }
-
-        // Fetch single pair info (chainId solana)
-        const pairResp = await fetch(
-          `https://api.dexscreener.com/latest/dex/pairs/solana/${existing.pairAddress}`,
-          { headers: { 'Accept': 'application/json' } }
-        );
-        rateLimiter.recordRequest('dexscreener');
-        if (pairResp.ok) {
-          const pairData = await pairResp.json();
-          const pair = Array.isArray(pairData?.pairs) ? pairData.pairs[0] : null;
-          if (pair) {
-            this.pairCache.set(existing.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
-            this.applyDexPairToToken(existing, pair, mint);
-            this.onChainTokens.set(mint, existing);
-            return;
-          }
-        }
-        // If pair endpoint fails, continue with token endpoint as fallback
+      // If on-chain fails, use cached data if available (graceful degradation)
+      if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
+        log.info('Using cached data as fallback', { mint: mint.slice(0, 8) });
+        this.onChainTokens.set(mint, existing);
       }
-
-      const response = await fetch(
-        `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
-        { headers: { 'Accept': 'application/json' } }
-      );
-
-      // Record the request
-      rateLimiter.recordRequest('dexscreener');
-
-      if (!response.ok) {
-        // If API fails, try on-chain fallback
-        log.warn('DexScreener API failed, trying on-chain fallback', { mint: mint.slice(0, 8) });
-        const onChainResult = await this.enrichTokenDataOnChain(mint);
-        
-        if (onChainResult) {
-          log.info('On-chain enrichment successful', { mint: mint.slice(0, 8) });
-          return;
-        }
-
-        // If on-chain also fails, use cached data if available (graceful degradation)
-        if (cachedMetadata || cachedPrice !== null || cachedVolume || cachedMarketData) {
-          log.warn('Using cached data as final fallback', { mint: mint.slice(0, 8) });
-        }
-        return;
-      }
-
-const data = await response.json();
-
-// Choose the best pair:
-// - If the token already graduated, prefer Raydium pairs
-// - Otherwise prefer Pump.fun pairs when available
-// - Fallback to highest-liquidity Solana pair
-const pairs = Array.isArray(data.pairs) ? data.pairs : [];
-const solanaPairs = pairs.filter((p: any) => (p?.chainId || '').toLowerCase() === 'solana');
-
-const byLiquidityDesc = (a: any, b: any) => ((b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
-
-let candidatePairs = solanaPairs;
-if (wantsRaydium) {
-  const raydiumPairs = solanaPairs.filter((p: any) => (p?.dexId || '').toLowerCase().includes('raydium'));
-  if (raydiumPairs.length > 0) candidatePairs = raydiumPairs;
-} else {
-  const pumpPairs = solanaPairs.filter((p: any) => {
-    const dex = (p?.dexId || '').toLowerCase();
-    return dex.includes('pump') || dex.includes('pumpfun');
-  });
-  if (pumpPairs.length > 0) candidatePairs = pumpPairs;
-}
-
-candidatePairs.sort(byLiquidityDesc);
-const pair = candidatePairs[0];
-if (!pair) return;
-
-      // Cache selected pair by pairAddress (useful for graduated Raydium tokens)
-      if (pair.pairAddress) {
-        this.pairCache.set(pair.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
-      }
-
-
-      // 8. Apply fresh DexScreener pair to token + update caches
-      this.applyDexPairToToken(existing, pair, mint);
-
-      this.onChainTokens.set(mint, existing);
-
-      // 11. Update in MongoDB with enrichment data
-      await tokenIndexer.updateEnrichment(mint, {
-        name: existing.name,
-        symbol: existing.symbol,
-        imageUrl: existing.imageUrl,
-        price: existing.price,
-        priceChange5m: existing.priceChange5m,
-        priceChange1h: existing.priceChange1h,
-        priceChange24h: existing.priceChange24h,
-        liquidity: existing.liquidity,
-        marketCap: existing.marketCap,
-        volume1h: existing.volume1h,
-        volume24h: existing.volume24h,
-        holders: existing.holders,
-      }, 'dexscreener');
 
     } catch (error) {
       // If API fails, try on-chain fallback first
@@ -960,10 +878,11 @@ if (!pair) return;
         updated = true;
       }
 
-      if (metaJson.image && !existing.imageUrl) {
-        existing.imageUrl = metaJson.image;
-        updated = true;
-      }
+      // Images DISABLED to save bandwidth and avoid rate limits
+      // if (metaJson.image && !existing.imageUrl) {
+      //   existing.imageUrl = metaJson.image;
+      //   updated = true;
+      // }
 
       // 7. Get mint info (supply, decimals)
       try {
@@ -1156,89 +1075,19 @@ if (!pair) return;
   }
 
   /**
-   * Fetch from DexScreener search API
+   * Fetch from DexScreener search API - DISABLED to avoid rate limits
    */
   private async fetchFromDexScreenerSearch(query: string): Promise<TokenData[]> {
-    try {
-      // Check rate limit
-      if (!rateLimiter.canMakeRequest('dexscreener')) {
-        log.info('Rate limit reached for DexScreener search, skipping');
-        return [];
-      }
-
-      await rateLimiter.waitIfNeeded('dexscreener');
-      
-      const response = await fetch(
-        `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`,
-        { headers: { 'Accept': 'application/json' } }
-      );
-
-      // Record request
-      rateLimiter.recordRequest('dexscreener');
-
-      if (!response.ok) return [];
-
-      const data = await response.json();
-      const pairs = data.pairs || [];
-
-      return pairs
-        .filter((p: any) => p.chainId === 'solana' && p.baseToken?.address)
-        .map((pair: any) => this.mapPairToToken(pair))
-        .filter((t: TokenData | null) => t !== null) as TokenData[];
-    } catch (error) {
-      log.error('DexScreener search error', { error: error instanceof Error ? error.message : String(error) });
-      return [];
-    }
+    log.info('DexScreener search DISABLED to avoid rate limits');
+    return [];
   }
 
   /**
-   * Fetch latest Solana pairs from DexScreener
+   * Fetch latest Solana pairs from DexScreener - DISABLED to avoid rate limits
    */
   private async fetchFromDexScreenerPairs(): Promise<TokenData[]> {
-    try {
-      // Check rate limit
-      if (!rateLimiter.canMakeRequest('dexscreener')) {
-        log.info('Rate limit reached for DexScreener pairs, skipping');
-        return [];
-      }
-
-      await rateLimiter.waitIfNeeded('dexscreener');
-
-      // Get pairs from multiple DEXs
-      const endpoints = [
-        'https://api.dexscreener.com/latest/dex/pairs/solana',
-      ];
-
-      const allPairs: any[] = [];
-
-      for (const endpoint of endpoints) {
-        try {
-          const response = await fetch(endpoint, {
-            headers: { 'Accept': 'application/json' }
-          });
-
-          // Record request
-          rateLimiter.recordRequest('dexscreener');
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.pairs && Array.isArray(data.pairs)) {
-              allPairs.push(...data.pairs);
-            }
-          }
-        } catch (e) {
-          log.error('Error fetching from endpoint', { endpoint, error: e instanceof Error ? e.message : String(e) });
-        }
-      }
-
-      return allPairs
-        .filter((p: any) => p.chainId === 'solana' && p.baseToken?.address)
-        .map((pair: any) => this.mapPairToToken(pair))
-        .filter((t: TokenData | null) => t !== null) as TokenData[];
-    } catch (error) {
-      log.error('DexScreener pairs error', { error: error instanceof Error ? error.message : String(error) });
-      return [];
-    }
+    log.info('DexScreener pairs DISABLED to avoid rate limits');
+    return [];
   }
 
   /**

@@ -14,9 +14,9 @@ class RateLimiter {
   private configs: Map<string, RateLimitConfig> = new Map();
 
   constructor() {
-    // Configure rate limits for different services
+    // Configure rate limits for different services (more conservative to avoid 429s)
     this.configs.set('dexscreener', {
-      max: 10,           // 10 requests
+      max: 8,            // 8 requests (reduced from 10 to be safer)
       window: 60000,     // per minute
       name: 'DexScreener'
     });
@@ -89,7 +89,10 @@ class RateLimiter {
 
     while (!this.canMakeRequest(service) && attempts < maxAttempts) {
       const waitMs = Math.min(waitTime, maxWait);
-      log.info(`⏳ Rate limit reached for ${config.name}, waiting ${waitMs}ms... (attempt ${attempts + 1}/${maxAttempts})`);
+      // Only log every 5th attempt to reduce log spam
+      if (attempts % 5 === 0 || attempts === 0) {
+        log.info(`⏳ Rate limit reached for ${config.name}, waiting ${waitMs}ms... (attempt ${attempts + 1}/${maxAttempts})`);
+      }
       
       await new Promise(resolve => setTimeout(resolve, waitMs));
       
