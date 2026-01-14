@@ -836,7 +836,39 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
         .slice(0, limit);
     }
 
-    const result = newTokens.slice(0, limit);
+    // Map tokens to ensure all required fields are present
+    const result = newTokens.slice(0, limit).map((token: any) => {
+      // Ensure proper name/symbol formatting
+      const name = token.name && !token.name.startsWith('Token ') && token.name !== 'Unknown'
+        ? token.name
+        : token.symbol && token.symbol !== 'UNK' && token.symbol !== 'NEW'
+        ? token.symbol
+        : `Token ${token.mint.substring(0, 8)}`;
+      
+      const symbol = token.symbol && token.symbol !== 'UNK' && token.symbol !== 'NEW'
+        ? token.symbol
+        : name.substring(0, 6).toUpperCase();
+      
+      return {
+        ...token,
+        mint: token.mint,
+        name: name,
+        symbol: symbol,
+        image_uri: token.image_uri || token.imageUrl || '',
+        imageUrl: token.image_uri || token.imageUrl || '',
+        market_cap: token.market_cap || token.usd_market_cap || token.marketCap || 0,
+        usd_market_cap: token.usd_market_cap || token.market_cap || token.marketCap || 0,
+        marketCap: token.marketCap || token.market_cap || token.usd_market_cap || 0,
+        price: token.price || token.price_usd || 0,
+        price_usd: token.price_usd || token.price || 0,
+        volume_24h: token.volume_24h || token.volume24h || 0,
+        volume24h: token.volume24h || token.volume_24h || 0,
+        liquidity: token.liquidity || 0,
+        holders: token.holders || 0,
+        created_timestamp: token.created_timestamp || token.timestamp || Math.floor((token.createdAt || Date.now()) / 1000),
+      };
+    });
+    
     log.info('Returning tokens from /api/tokens/new', { count: result.length, totalSources: uniqueTokens.length });
     res.json(result);
   } catch (error) {
