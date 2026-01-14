@@ -7,6 +7,7 @@ import { rateLimiter } from './rate-limiter';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { getMint } from '@solana/spl-token';
 import { log } from './logger';
+import { EventEmitter } from 'events';
 
 interface TokenData {
   mint: string;
@@ -50,7 +51,7 @@ interface CacheEntry<T> {
   expires: number; // timestamp when cache expires
 }
 
-class TokenFeedService {
+class TokenFeedService extends EventEmitter {
   // Cache inteligente con diferentes TTLs según tipo de dato
   private metadataCache: Map<string, CacheEntry<any>> = new Map(); // name, symbol, image
   private priceCache: Map<string, CacheEntry<number>> = new Map();
@@ -58,6 +59,14 @@ class TokenFeedService {
   private marketDataCache: Map<string, CacheEntry<{ marketCap: number; liquidity: number; holders?: number }>> = new Map();
   private priceChangeCache: Map<string, CacheEntry<{ priceChange5m: number; priceChange1h: number; priceChange24h: number }>> = new Map();
   private fullTokenCache: Map<string, CacheEntry<TokenData>> = new Map(); // Full token data cache
+  // Cache by pairAddress for fast Raydium lookups and to avoid repeating selection work
+  private pairCache: Map<string, CacheEntry<any>> = new Map();
+
+  // Deduplicate concurrent enrichment calls per mint
+  private enrichInFlight: Map<string, Promise<void>> = new Map();
+
+  // Debounce token update broadcasts (trades can be noisy)
+  private pendingTokenBroadcast: Map<string, NodeJS.Timeout> = new Map();
   
   // TTLs diferentes según tipo de dato (en milisegundos)
   private readonly TTL = {
@@ -82,6 +91,7 @@ class TokenFeedService {
   }
 
   constructor() {
+    super();
     // Cleanup expired cache entries every 5 minutes
     setInterval(() => this.cleanupExpiredCache(), 5 * 60 * 1000);
   }
@@ -132,6 +142,99 @@ class TokenFeedService {
       if (now >= entry.expires) {
         this.fullTokenCache.delete(key);
       }
+    }
+
+    // Clean pair cache
+    for (const [key, entry] of this.pairCache) {
+      if (now >= entry.expires) {
+        this.pairCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Schedule a debounced broadcast for a single token update.
+   * This prevents spamming the frontend with updates on every trade.
+   */
+  private scheduleTokenBroadcast(mint: string, token: TokenData, delayMs = 1000): void {
+    const existing = this.pendingTokenBroadcast.get(mint);
+    if (existing) {
+      // already scheduled
+      return;
+    }
+    const t = setTimeout(() => {
+      this.pendingTokenBroadcast.delete(mint);
+      this.broadcast([token]);
+      this.emit('token_update', token);
+    }, delayMs);
+    this.pendingTokenBroadcast.set(mint, t);
+  }
+
+  /**
+   * Apply a DexScreener pair object to our internal TokenData and refresh caches.
+   * Centralizing this logic ensures token and pair caching are consistent.
+   */
+  private applyDexPairToToken(existing: TokenData, pair: any, mint: string): void {
+    const metadata = {
+      name: pair.baseToken?.name,
+      symbol: pair.baseToken?.symbol,
+      imageUrl: pair.info?.imageUrl,
+    };
+
+    const price = parseFloat(pair.priceUsd || '0');
+    const priceChanges = {
+      priceChange5m: pair.priceChange?.m5 || 0,
+      priceChange1h: pair.priceChange?.h1 || 0,
+      priceChange24h: pair.priceChange?.h24 || 0,
+    };
+
+    const volume = {
+      volume5m: pair.volume?.m5 || 0,
+      volume1h: pair.volume?.h1 || 0,
+      volume24h: pair.volume?.h24 || 0,
+    };
+
+    const marketData = {
+      marketCap: pair.marketCap || 0,
+      liquidity: pair.liquidity?.usd || existing.liquidity,
+      holders: pair.holders,
+    };
+
+    // Update token data
+    existing.name = metadata.name || existing.name;
+    existing.symbol = metadata.symbol || existing.symbol;
+    existing.imageUrl = metadata.imageUrl || existing.imageUrl;
+    existing.price = price || existing.price;
+    existing.priceChange5m = priceChanges.priceChange5m;
+    existing.priceChange1h = priceChanges.priceChange1h;
+    existing.priceChange24h = priceChanges.priceChange24h;
+    existing.liquidity = marketData.liquidity;
+    existing.marketCap = marketData.marketCap;
+    existing.volume1h = volume.volume1h || existing.volume1h;
+    existing.volume24h = volume.volume24h || 0;
+    if (marketData.holders) {
+      existing.holders = marketData.holders;
+    }
+
+    // Keep pairAddress/dexId in sync with the selected DexScreener pair
+    if (pair.pairAddress) {
+      existing.pairAddress = pair.pairAddress;
+    }
+    if (pair.dexId) {
+      existing.dexId = pair.dexId;
+    }
+
+    // Update caches
+    this.setCachedMetadata(mint, metadata);
+    if (price > 0) {
+      this.setCachedPrice(mint, price);
+    }
+    this.setCachedVolume(mint, volume);
+    this.setCachedMarketData(mint, marketData);
+    this.setCachedPriceChanges(mint, priceChanges);
+
+    if (pair.pairAddress) {
+      this.pairCache.set(pair.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
     }
   }
 
@@ -369,6 +472,7 @@ class TokenFeedService {
 
       this.onChainTokens.set(event.mint, tokenData);
       this.broadcast([tokenData]);
+      this.emit('new_token', tokenData);
 
       // Index to MongoDB
       await tokenIndexer.indexToken({
@@ -411,6 +515,7 @@ class TokenFeedService {
         }
         existing.liquidity = event.liquidity || existing.liquidity;
         this.broadcast([existing]);
+        this.emit('graduation', existing);
 
         // Update in MongoDB
         await tokenIndexer.indexToken({
@@ -466,6 +571,10 @@ class TokenFeedService {
           isGraduating: existing.isGraduating,
           createdAt: existing.createdAt || Date.now(),
         }).catch(() => {}); // Ignore errors
+
+        // Emit trade event and a debounced token update so the frontend feels "alive"
+        this.emit('trade', event);
+        this.scheduleTokenBroadcast(event.mint, existing, 750);
       }
     });
 
@@ -484,6 +593,25 @@ class TokenFeedService {
    * Public method so worker can access it
    */
   async enrichTokenData(mint: string): Promise<void> {
+    // Deduplicate concurrent enrichment calls to avoid burning API credits
+    const inflight = this.enrichInFlight.get(mint);
+    if (inflight) {
+      return inflight;
+    }
+
+    const run = this._enrichTokenDataInternal(mint);
+    this.enrichInFlight.set(mint, run);
+    try {
+      await run;
+    } finally {
+      this.enrichInFlight.delete(mint);
+    }
+  }
+
+  /**
+   * Internal enrichment implementation (called via enrichInFlight wrapper)
+   */
+  private async _enrichTokenDataInternal(mint: string): Promise<void> {
     const existing = this.onChainTokens.get(mint);
     if (!existing) return;
 
@@ -554,6 +682,37 @@ class TokenFeedService {
         mint: mint.slice(0, 8),
         remainingRequests: rateLimiter.getRemainingRequests('dexscreener')
       });
+
+      // If we already have a pairAddress, try pair cache/endpoint first (saves work and stabilizes Raydium data)
+      const wantsRaydium = (existing.dexId === 'raydium') || this.graduatedTokens.has(mint);
+      if (existing.pairAddress && (wantsRaydium || existing.dexId)) {
+        const cachedPair = this.pairCache.get(existing.pairAddress);
+        if (cachedPair && Date.now() < cachedPair.expires) {
+          const pair = cachedPair.data;
+          this.applyDexPairToToken(existing, pair, mint);
+          this.onChainTokens.set(mint, existing);
+          return;
+        }
+
+        // Fetch single pair info (chainId solana)
+        const pairResp = await fetch(
+          `https://api.dexscreener.com/latest/dex/pairs/solana/${existing.pairAddress}`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        rateLimiter.recordRequest('dexscreener');
+        if (pairResp.ok) {
+          const pairData = await pairResp.json();
+          const pair = Array.isArray(pairData?.pairs) ? pairData.pairs[0] : null;
+          if (pair) {
+            this.pairCache.set(existing.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
+            this.applyDexPairToToken(existing, pair, mint);
+            this.onChainTokens.set(mint, existing);
+            return;
+          }
+        }
+        // If pair endpoint fails, continue with token endpoint as fallback
+      }
+
       const response = await fetch(
         `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
         { headers: { 'Accept': 'application/json' } }
@@ -608,65 +767,14 @@ candidatePairs.sort(byLiquidityDesc);
 const pair = candidatePairs[0];
 if (!pair) return;
 
-
-      // 8. Update with fresh DexScreener data
-      const metadata = {
-        name: pair.baseToken?.name,
-        symbol: pair.baseToken?.symbol,
-        imageUrl: pair.info?.imageUrl,
-      };
-      
-      const price = parseFloat(pair.priceUsd || '0');
-      const priceChanges = {
-        priceChange5m: pair.priceChange?.m5 || 0,
-        priceChange1h: pair.priceChange?.h1 || 0,
-        priceChange24h: pair.priceChange?.h24 || 0,
-      };
-      
-      const volume = {
-        volume5m: pair.volume?.m5 || 0,
-        volume1h: pair.volume?.h1 || 0,
-        volume24h: pair.volume?.h24 || 0,
-      };
-      
-      const marketData = {
-        marketCap: pair.marketCap || 0,
-        liquidity: pair.liquidity?.usd || existing.liquidity,
-        holders: pair.holders,
-      };
-
-      // 9. Update token data
-      existing.name = metadata.name || existing.name;
-      existing.symbol = metadata.symbol || existing.symbol;
-      existing.imageUrl = metadata.imageUrl || existing.imageUrl;
-      existing.price = price || existing.price;
-      existing.priceChange5m = priceChanges.priceChange5m;
-      existing.priceChange1h = priceChanges.priceChange1h;
-      existing.priceChange24h = priceChanges.priceChange24h;
-      existing.liquidity = marketData.liquidity;
-      existing.marketCap = marketData.marketCap;
-      existing.volume1h = volume.volume1h || existing.volume1h;
-      existing.volume24h = volume.volume24h || 0;
-      if (marketData.holders) {
-        existing.holders = marketData.holders;
-      }
-
-      // Keep pairAddress/dexId in sync with the selected DexScreener pair
+      // Cache selected pair by pairAddress (useful for graduated Raydium tokens)
       if (pair.pairAddress) {
-        existing.pairAddress = pair.pairAddress;
-      }
-      if (pair.dexId) {
-        existing.dexId = pair.dexId;
+        this.pairCache.set(pair.pairAddress, { data: pair, expires: Date.now() + this.TTL.marketData });
       }
 
-      // 10. Update all caches with fresh data
-      this.setCachedMetadata(mint, metadata);
-      if (price > 0) {
-        this.setCachedPrice(mint, price);
-      }
-      this.setCachedVolume(mint, volume);
-      this.setCachedMarketData(mint, marketData);
-      this.setCachedPriceChanges(mint, priceChanges);
+
+      // 8. Apply fresh DexScreener pair to token + update caches
+      this.applyDexPairToToken(existing, pair, mint);
 
       this.onChainTokens.set(mint, existing);
 

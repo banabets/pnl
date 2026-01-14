@@ -117,6 +117,20 @@ class HeliusWebSocketService extends EventEmitter {
   private readonly MAX_429_ERRORS = 5; // Max consecutive 429 errors before opening circuit breaker
   private readonly CIRCUIT_BREAKER_RESET_TIME = 60000; // 1 minute before resetting circuit breaker
 
+  // =============================
+  // Tx details optimization
+  // =============================
+  // Cache parsed tx details by signature to avoid refetching
+  private txDetailsCache: Map<string, { data: any; expires: number }> = new Map();
+  // Deduplicate concurrent requests for the same signature
+  private txDetailsInFlight: Map<string, Promise<any>> = new Map();
+  // Batch queue for Helius enhanced transactions endpoint
+  private txBatchQueue: Array<{ sig: string; resolve: (v: any) => void; reject: (e: any) => void }> = [];
+  private txBatchTimer: NodeJS.Timeout | null = null;
+  private readonly TX_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+  private readonly TX_BATCH_WINDOW_MS = 200; // collect signatures for 200ms
+  private readonly TX_BATCH_MAX = 100; // max per request (Helius supports batching)
+
   constructor() {
     super();
     // Get RPC URL, preferring SOLANA_RPC_URL or RPC_URL
@@ -472,36 +486,110 @@ class HeliusWebSocketService extends EventEmitter {
    * Get transaction details using Helius enhanced API
    */
   private async getTransactionDetails(signature: string): Promise<any> {
-    try {
-      const apiKey = process.env.HELIUS_API_KEY;
-      if (!apiKey) {
-        // Fallback to basic RPC
-        return this.getBasicTransactionDetails(signature);
-      }
+    const now = Date.now();
 
+    // 0) Cache hit
+    const cached = this.txDetailsCache.get(signature);
+    if (cached && now < cached.expires) {
+      return cached.data;
+    }
+
+    // 1) In-flight dedupe
+    const inflight = this.txDetailsInFlight.get(signature);
+    if (inflight) {
+      return inflight;
+    }
+
+    const apiKey = process.env.HELIUS_API_KEY;
+
+    // 2) If no API key, fallback to basic RPC (already rate-limited)
+    if (!apiKey) {
+      const p = this.getBasicTransactionDetails(signature);
+      this.txDetailsInFlight.set(signature, p);
+      try {
+        const res = await p;
+        if (res) this.txDetailsCache.set(signature, { data: res, expires: now + this.TX_CACHE_TTL });
+        return res;
+      } finally {
+        this.txDetailsInFlight.delete(signature);
+      }
+    }
+
+    // 3) Use batching against Helius enhanced endpoint to reduce credits
+    const p = new Promise<any>((resolve, reject) => {
+      this.txBatchQueue.push({ sig: signature, resolve, reject });
+      if (!this.txBatchTimer) {
+        this.txBatchTimer = setTimeout(() => {
+          this.flushTxBatch(apiKey).catch(() => {});
+        }, this.TX_BATCH_WINDOW_MS);
+      }
+      // If queue is big, flush immediately
+      if (this.txBatchQueue.length >= this.TX_BATCH_MAX) {
+        this.flushTxBatch(apiKey).catch(() => {});
+      }
+    });
+
+    this.txDetailsInFlight.set(signature, p);
+    try {
+      const res = await p;
+      if (res) this.txDetailsCache.set(signature, { data: res, expires: now + this.TX_CACHE_TTL });
+      return res;
+    } finally {
+      this.txDetailsInFlight.delete(signature);
+    }
+  }
+
+  /**
+   * Flush a batch of queued signatures to Helius enhanced transactions endpoint.
+   */
+  private async flushTxBatch(apiKey: string): Promise<void> {
+    if (this.txBatchTimer) {
+      clearTimeout(this.txBatchTimer);
+      this.txBatchTimer = null;
+    }
+    if (this.txBatchQueue.length === 0) return;
+
+    const batch = this.txBatchQueue.splice(0, this.TX_BATCH_MAX);
+    const sigs = batch.map(b => b.sig);
+
+    try {
       const response = await fetch(
         `https://api.helius.xyz/v0/transactions/?api-key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transactions: [signature] })
+          body: JSON.stringify({ transactions: sigs })
         }
       );
 
       if (!response.ok) {
-        return this.getBasicTransactionDetails(signature);
+        // Fallback: resolve each via basic RPC (rate-limited/circuit-breaker protected)
+        for (const item of batch) {
+          this.getBasicTransactionDetails(item.sig)
+            .then(res => item.resolve(res))
+            .catch(err => item.resolve(null));
+        }
+        return;
       }
 
       const data = await response.json();
-      const tx = data[0];
-      if (!tx) return null;
-
-      // Parse Helius enhanced transaction
-      return this.parseHeliusTransaction(tx);
-
-    } catch (error) {
-      log.error('Error fetching transaction details', { error: error instanceof Error ? error.message : String(error) });
-      return null;
+      // data is an array aligned with the sigs order
+      for (let i = 0; i < batch.length; i++) {
+        const item = batch[i];
+        const tx = Array.isArray(data) ? data[i] : null;
+        if (!tx) {
+          item.resolve(null);
+          continue;
+        }
+        const parsed = this.parseHeliusTransaction(tx);
+        item.resolve(parsed);
+      }
+    } catch (error: any) {
+      // On error: resolve null to avoid blocking the event pipeline
+      log.error('Error flushing Helius tx batch', { error: error?.message || String(error) });
+      for (const item of batch) {
+        item.resolve(null);
+      }
     }
   }
 

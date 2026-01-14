@@ -327,6 +327,53 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
           } as Token, ...prev].slice(0, 50);
         });
       });
+
+      // Debounced token updates (price, volume, txns, graduation flags, etc.)
+      socket.on('token:update', (token: any) => {
+        if (!token?.mint) return;
+        setTokens((prev) => prev.map((t) => (t.mint === token.mint ? ({ ...t, ...token } as any) : t)));
+        setSelectedToken((prev) => (prev && prev.mint === token.mint ? ({ ...prev, ...token } as any) : prev));
+      });
+
+      // Explicit graduation event (pumpfun -> raydium)
+      socket.on('token:graduation', (token: any) => {
+        if (!token?.mint) return;
+        setTokens((prev) => prev.map((t) => (t.mint === token.mint ? ({ ...t, ...token, complete: true } as any) : t)));
+        setSelectedToken((prev) => (prev && prev.mint === token.mint ? ({ ...prev, ...token, complete: true } as any) : prev));
+      });
+
+      // Live trades (used to make the UI feel alive)
+      socket.on('trade:new', (trade: any) => {
+        if (!trade?.mint) return;
+        // Only push into the detail panel when the selected token matches
+        setTokenTransactions((prev) => {
+          if (!selectedToken || selectedToken.mint !== trade.mint) return prev;
+          const next = [{
+            ...trade,
+            timestamp: trade.timestamp || Date.now(),
+          }, ...prev];
+          return next.slice(0, 50);
+        });
+
+        setBuyVsSellRatio((prev) => {
+          if (!selectedToken || selectedToken.mint !== trade.mint) return prev;
+          const next = prev ? { ...prev } : { buys: 0, sells: 0 };
+          if (trade.side === 'buy') next.buys += 1;
+          if (trade.side === 'sell') next.sells += 1;
+          return next;
+        });
+
+        // Update small counters on the list as well
+        setTokens((prev) => prev.map((t) => {
+          if (t.mint !== trade.mint) return t;
+          const txns1h = t.txns1h || { buys: 0, sells: 0 };
+          const volume1h = (t.volume1h || 0) + (trade.amountSol || 0);
+          const updatedTxns1h = trade.side === 'buy'
+            ? { ...txns1h, buys: (txns1h.buys || 0) + 1 }
+            : { ...txns1h, sells: (txns1h.sells || 0) + 1 };
+          return { ...t, txns1h: updatedTxns1h, volume1h, price: trade.price || t.price } as any;
+        }));
+      });
     }
 
     let interval: NodeJS.Timeout;
@@ -340,9 +387,12 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
       if (interval) clearInterval(interval);
       if (socket) {
         socket.off('token:new');
+        socket.off('token:update');
+        socket.off('token:graduation');
+        socket.off('trade:new');
       }
     };
-  }, [autoRefresh, socket, activeFilter]);
+  }, [autoRefresh, socket, activeFilter, selectedToken]);
 
   useEffect(() => {
     if (selectedToken) {

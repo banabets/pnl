@@ -321,6 +321,15 @@ const broadcast = (event: string, data: any) => {
   io.emit(event, data);
 };
 
+// ==========================================
+// Real-time feed to frontend (Socket.IO)
+// ==========================================
+// tokenFeed emits debounced token updates and raw trade events
+tokenFeed.on('new_token', (token) => broadcast('token:new', token));
+tokenFeed.on('token_update', (token) => broadcast('token:update', token));
+tokenFeed.on('graduation', (token) => broadcast('token:graduation', token));
+tokenFeed.on('trade', (trade) => broadcast('trade:new', trade));
+
 // Connect price alert manager with broadcast for real-time notifications
 priceAlertManager.setBroadcastCallback(broadcast);
 log.info('Price Alert Manager connected to WebSocket notifications');
