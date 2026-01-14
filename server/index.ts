@@ -849,7 +849,7 @@ app.get('/api/tokens/trending', readLimiter, async (req, res) => {
             mint: token.mint,
             name: token.name || token.symbol || `Token ${token.mint.substring(0, 8)}`,
             symbol: token.symbol || token.name?.substring(0, 6).toUpperCase() || 'TKN',
-            image_uri: token.imageUrl || token.image_uri || '',
+            image_uri: token.imageUrl || (token as any).image_uri || '',
             price_change_1h: token.priceChange1h || 0,
             price_change_24h: token.priceChange24h || 0,
             price_usd: token.price || 0,
@@ -876,12 +876,12 @@ app.get('/api/tokens/trending', readLimiter, async (req, res) => {
         mint: token.mint,
         name: token.name || token.symbol || `Token ${token.mint.substring(0, 8)}`,
         symbol: token.symbol || token.name?.substring(0, 6).toUpperCase() || 'TKN',
-        image_uri: token.imageUrl || token.image_uri || '',
-        price_change_1h: token.priceChange1h || token.price_change_1h || 0,
-        price_change_24h: token.priceChange24h || token.price_change_24h || 0,
-        price_usd: token.price || token.price_usd || 0,
-        market_cap: token.marketCap || token.market_cap || 0,
-        volume_24h: token.volume24h || token.volume_24h || 0,
+        image_uri: token.imageUrl || (token as any).image_uri || '',
+        price_change_1h: token.priceChange1h || (token as any).price_change_1h || 0,
+        price_change_24h: token.priceChange24h || (token as any).price_change_24h || 0,
+        price_usd: token.price || (token as any).price_usd || 0,
+        market_cap: token.marketCap || (token as any).market_cap || 0,
+        volume_24h: token.volume24h || (token as any).volume_24h || 0,
       }));
 
     log.info('Trending tokens from fallback', { count: trendingTokens.length });
@@ -933,7 +933,7 @@ app.get('/api/tokens/top-gainers', readLimiter, async (req, res) => {
               : token.name && token.name.trim().length > 0
               ? token.name.substring(0, 6).toUpperCase()
               : 'TKN',
-            image_uri: token.imageUrl || token.image_uri || '',
+            image_uri: token.imageUrl || (token as any).image_uri || '',
             price_change_1h: token.priceChange1h || 0,
             price_change_24h: token.priceChange24h || 0,
             price_usd: token.price || 0,
@@ -978,7 +978,7 @@ app.get('/api/tokens/top-gainers', readLimiter, async (req, res) => {
                     : ((updated.name || token.name) && (updated.name || token.name).trim().length > 0)
                     ? (updated.name || token.name).substring(0, 6).toUpperCase()
                     : 'TKN',
-                  image_uri: updated.imageUrl || updated.image_uri || token.image_uri || '',
+                  image_uri: updated.imageUrl || (updated as any).image_uri || (token as any).image_uri || '',
                   price_usd: updated.price || token.price_usd || 0,
                   market_cap: updated.marketCap || token.market_cap || 0,
                 };
