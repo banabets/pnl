@@ -569,62 +569,150 @@ app.get('/api/tokens/feed', readLimiter, async (req, res) => {
 app.get('/api/tokens/new', readLimiter, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
+    let allTokens: any[] = [];
 
-    // Try to use tokenFeed service first
+    // 1) Try to use tokenFeed service first
     if (tokenFeed.isServiceStarted()) {
       try {
-        const tokens = await tokenFeed.getNew(limit);
-        // Only use tokenFeed result if it has tokens, otherwise fallback
+        const tokens = await tokenFeed.getNew(limit * 2); // Get more to have options
         if (tokens && tokens.length > 0) {
-          return res.json({ success: true, count: tokens.length, tokens });
-        } else {
-          log.info('tokenFeed.getNew returned empty array, falling back to pump.fun API');
+          allTokens = [...allTokens, ...tokens];
+          log.info('tokenFeed.getNew returned tokens', { count: tokens.length });
         }
       } catch (feedError) {
-        log.warn('tokenFeed.getNew failed, falling back to pump.fun API', { error: (feedError as Error).message });
+        log.warn('tokenFeed.getNew failed', { error: (feedError as Error).message });
       }
     }
 
-    // Fallback to pump.fun API
-    const tokens = await fetchPumpFunTokens();
+    // 2) Try heliusWebSocket recent tokens
+    try {
+      const { heliusWebSocket } = await import('./helius-websocket');
+      if (heliusWebSocket && heliusWebSocket.isActive()) {
+        const heliusTokens = heliusWebSocket.getRecentTokens(limit);
+        if (heliusTokens && heliusTokens.length > 0) {
+          // Convert helius tokens to our format
+          const converted = heliusTokens.map((t: any) => ({
+            mint: t.mint,
+            name: t.name || 'Unknown',
+            symbol: t.symbol || 'UNK',
+            created_timestamp: t.timestamp || Date.now() / 1000,
+            image_uri: t.imageUri || '',
+            usd_market_cap: t.marketCap || 0,
+            market_cap: t.marketCap || 0,
+            price_usd: t.price || 0,
+            volume_24h: t.volume24h || 0,
+            isNew: true,
+            age: (Date.now() / 1000) - (t.timestamp || Date.now() / 1000),
+          }));
+          allTokens = [...allTokens, ...converted];
+          log.info('heliusWebSocket.getRecentTokens returned tokens', { count: heliusTokens.length });
+        }
+      }
+    } catch (heliusError) {
+      log.debug('heliusWebSocket not available', { error: (heliusError as Error).message });
+    }
+
+    // 3) Try wsListener recent tokens
+    try {
+      const recent = wsListener.getRecentTokens?.(limit) || [];
+      if (recent.length > 0) {
+        const converted = recent.map((t: any) => ({
+          mint: t.mint,
+          name: 'Unknown',
+          symbol: 'UNK',
+          created_timestamp: t.timestamp || Date.now() / 1000,
+          image_uri: '',
+          usd_market_cap: 0,
+          market_cap: 0,
+          price_usd: 0,
+          volume_24h: 0,
+          isNew: true,
+          age: (Date.now() / 1000) - (t.timestamp || Date.now() / 1000),
+        }));
+        allTokens = [...allTokens, ...converted];
+        log.info('wsListener.getRecentTokens returned tokens', { count: recent.length });
+      }
+    } catch (wsError) {
+      log.debug('wsListener.getRecentTokens failed', { error: (wsError as Error).message });
+    }
+
+    // 4) Fallback to fetchPumpFunTokens (includes pump.fun API if enabled)
+    if (allTokens.length === 0) {
+      const fetched = await fetchPumpFunTokens();
+      if (fetched && fetched.length > 0) {
+        allTokens = [...allTokens, ...fetched];
+        log.info('fetchPumpFunTokens returned tokens', { count: fetched.length });
+      }
+    }
+
+    // Remove duplicates by mint
+    const uniqueTokens = Array.from(
+      new Map(allTokens.map(t => [t.mint, t])).values()
+    );
+
     const now = Date.now() / 1000;
     const thirtyMinutesAgo = now - (30 * 60);
     const oneHourAgo = now - (60 * 60);
+    const twoHoursAgo = now - (120 * 60);
 
     // First try to get tokens < 30 min
-    let newTokens = tokens
+    let newTokens = uniqueTokens
       .filter((token: any) => {
-        const tokenTime = token.created_timestamp || 0;
+        const tokenTime = token.created_timestamp || token.timestamp || 0;
         return tokenTime >= thirtyMinutesAgo;
       })
-      .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0));
+      .sort((a: any, b: any) => {
+        const aTime = a.created_timestamp || a.timestamp || 0;
+        const bTime = b.created_timestamp || b.timestamp || 0;
+        return bTime - aTime;
+      });
 
     // If we don't have enough new tokens, include tokens up to 1 hour old
     if (newTokens.length < limit) {
-      const olderTokens = tokens
+      const olderTokens = uniqueTokens
         .filter((token: any) => {
-          const tokenTime = token.created_timestamp || 0;
+          const tokenTime = token.created_timestamp || token.timestamp || 0;
           return tokenTime >= oneHourAgo && tokenTime < thirtyMinutesAgo;
         })
-        .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0));
+        .sort((a: any, b: any) => {
+          const aTime = a.created_timestamp || a.timestamp || 0;
+          const bTime = b.created_timestamp || b.timestamp || 0;
+          return bTime - aTime;
+        });
       newTokens = [...newTokens, ...olderTokens];
     }
 
     // If still not enough, return whatever we have (up to 2 hours old)
     if (newTokens.length < limit) {
-      const twoHoursAgo = now - (120 * 60);
-      const evenOlderTokens = tokens
+      const evenOlderTokens = uniqueTokens
         .filter((token: any) => {
-          const tokenTime = token.created_timestamp || 0;
+          const tokenTime = token.created_timestamp || token.timestamp || 0;
           return tokenTime >= twoHoursAgo && tokenTime < oneHourAgo;
         })
-        .sort((a: any, b: any) => (b.created_timestamp || 0) - (a.created_timestamp || 0));
+        .sort((a: any, b: any) => {
+          const aTime = a.created_timestamp || a.timestamp || 0;
+          const bTime = b.created_timestamp || b.timestamp || 0;
+          return bTime - aTime;
+        });
       newTokens = [...newTokens, ...evenOlderTokens];
     }
 
-    res.json(newTokens.slice(0, limit));
+    // If still empty, return any tokens we have (no age filter)
+    if (newTokens.length === 0 && uniqueTokens.length > 0) {
+      newTokens = uniqueTokens
+        .sort((a: any, b: any) => {
+          const aTime = a.created_timestamp || a.timestamp || 0;
+          const bTime = b.created_timestamp || b.timestamp || 0;
+          return bTime - aTime;
+        })
+        .slice(0, limit);
+    }
+
+    const result = newTokens.slice(0, limit);
+    log.info('Returning tokens from /api/tokens/new', { count: result.length, totalSources: uniqueTokens.length });
+    res.json(result);
   } catch (error) {
-    log.error('Error in /api/tokens/new', { error: (error as Error).message });
+    log.error('Error in /api/tokens/new', { error: (error as Error).message, stack: (error as Error).stack });
     res.status(500).json({ error: 'Failed to fetch new tokens' });
   }
 });
