@@ -509,16 +509,22 @@ async function fetchPumpFunTokens(): Promise<any[]> {
               ? displaySymbol
               : finalName.substring(0, 6).toUpperCase();
 
+            // Calculate market cap if we have price and supply info
+            let calculatedMarketCap = token.usd_market_cap || token.market_cap || 0;
+            if (!calculatedMarketCap && token.price_usd && token.supply) {
+              calculatedMarketCap = parseFloat(token.price_usd) * parseFloat(token.supply);
+            }
+            
             return {
               ...token,
               mint: token.mint,
               name: finalName,
               symbol: finalSymbol,
-              imageUrl: hasImage ? token.image_uri : 'https://via.placeholder.com/40?text=' + finalSymbol.substring(0, 2),
-              image_uri: hasImage ? token.image_uri : 'https://via.placeholder.com/40?text=' + finalSymbol.substring(0, 2),
-              marketCap: token.usd_market_cap || token.market_cap || 0,
-              market_cap: token.usd_market_cap || token.market_cap || 0,
-              usd_market_cap: token.usd_market_cap || token.market_cap || 0,
+              imageUrl: hasImage ? token.image_uri : '',
+              image_uri: hasImage ? token.image_uri : '',
+              marketCap: calculatedMarketCap,
+              market_cap: calculatedMarketCap,
+              usd_market_cap: calculatedMarketCap,
               createdAt: createdTimestamp * 1000, // Convert to milliseconds
               created_timestamp: createdTimestamp,
               liquidity: token.liquidity || 0,
@@ -530,7 +536,7 @@ async function fetchPumpFunTokens(): Promise<any[]> {
               dexId: token.complete ? 'raydium' : 'pumpfun',
               age: ageSeconds,
               isNew: ageSeconds < 1800, // < 30 min
-              isGraduating: token.complete || (token.usd_market_cap || 0) > 50000,
+              isGraduating: token.complete || calculatedMarketCap > 50000,
               isTrending: (token.volume_24h || 0) > 1000,
               // Optional fields
               priceChange5m: token.priceChange?.m5 || 0,
@@ -584,8 +590,45 @@ app.get('/api/tokens/feed', readLimiter, async (req, res) => {
         });
         
         if (tokens && tokens.length > 0) {
-          log.info('Token feed from tokenFeed service', { count: tokens.length, limit, filter });
-          return res.json(tokens);
+          // Map TokenData to frontend format
+          const mappedTokens = tokens.map((token: any) => ({
+            mint: token.mint,
+            name: token.name && !token.name.startsWith('Token ') && token.name !== 'Unknown'
+              ? token.name
+              : token.symbol && token.symbol !== 'UNK' && token.symbol !== 'NEW'
+              ? token.symbol
+              : `Token ${token.mint.substring(0, 8)}`,
+            symbol: token.symbol && token.symbol !== 'UNK' && token.symbol !== 'NEW'
+              ? token.symbol
+              : token.name && !token.name.startsWith('Token ')
+              ? token.name.substring(0, 6).toUpperCase()
+              : 'TKN',
+            image_uri: token.imageUrl || '',
+            imageUrl: token.imageUrl || '',
+            market_cap: token.marketCap || 0,
+            usd_market_cap: token.marketCap || 0,
+            marketCap: token.marketCap || 0,
+            price: token.price || 0,
+            price_usd: token.price || 0,
+            volume_24h: token.volume24h || 0,
+            volume24h: token.volume24h || 0,
+            liquidity: token.liquidity || 0,
+            holders: token.holders || 0,
+            created_timestamp: Math.floor((token.createdAt || Date.now()) / 1000),
+            createdAt: token.createdAt || Date.now(),
+            priceChange1h: token.priceChange1h || 0,
+            priceChange24h: token.priceChange24h || 0,
+            price_change_1h: token.priceChange1h || 0,
+            price_change_24h: token.priceChange24h || 0,
+            complete: token.dexId !== 'pumpfun',
+            dexId: token.dexId || 'pumpfun',
+            isNew: token.isNew || false,
+            isGraduating: token.isGraduating || false,
+            isTrending: token.isTrending || false,
+            age: token.age || 0,
+          }));
+          log.info('Token feed from tokenFeed service', { count: mappedTokens.length, limit, filter });
+          return res.json(mappedTokens);
         } else {
           log.warn('tokenFeed returned empty array, falling back to pump.fun API');
         }
@@ -854,14 +897,25 @@ app.get('/api/tokens/trending', readLimiter, async (req, res) => {
         if (tokens && tokens.length > 0) {
           trendingTokens = tokens.map((token: any) => ({
             mint: token.mint,
-            name: token.name || token.symbol || `Token ${token.mint.substring(0, 8)}`,
-            symbol: token.symbol || token.name?.substring(0, 6).toUpperCase() || 'TKN',
+            name: token.name && !token.name.startsWith('Token ') && token.name !== 'Unknown'
+              ? token.name
+              : token.symbol && token.symbol !== 'UNK' && token.symbol !== 'NEW'
+              ? token.symbol
+              : `Token ${token.mint.substring(0, 8)}`,
+            symbol: token.symbol && token.symbol !== 'UNK' && token.symbol !== 'NEW'
+              ? token.symbol
+              : token.name && !token.name.startsWith('Token ')
+              ? token.name.substring(0, 6).toUpperCase()
+              : 'TKN',
             image_uri: token.imageUrl || (token as any).image_uri || '',
             price_change_1h: token.priceChange1h || 0,
             price_change_24h: token.priceChange24h || 0,
             price_usd: token.price || 0,
             market_cap: token.marketCap || 0,
+            usd_market_cap: token.marketCap || 0,
             volume_24h: token.volume24h || token.volume_24h || 0,
+            liquidity: token.liquidity || 0,
+            holders: token.holders || 0,
           }));
           log.info('Trending tokens from tokenFeed', { count: trendingTokens.length });
           return res.json({ success: true, count: trendingTokens.length, tokens: trendingTokens });

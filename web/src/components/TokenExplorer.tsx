@@ -571,12 +571,20 @@ export default function TokenExplorer({ socket }: TokenExplorerProps) {
           // Map TokenData from API to Token interface
           const mappedTokens: Token[] = tokensData.map((t: any) => ({
             mint: t.mint,
-            name: t.name || 'Unknown',
-            symbol: t.symbol || 'UNK',
-            description: '',
+            name: t.name && !t.name.startsWith('Token ') && t.name !== 'Unknown'
+              ? t.name
+              : t.symbol && t.symbol !== 'UNK' && t.symbol !== 'NEW'
+              ? t.symbol
+              : `Token ${t.mint.substring(0, 8)}`,
+            symbol: t.symbol && t.symbol !== 'UNK' && t.symbol !== 'NEW'
+              ? t.symbol
+              : t.name && !t.name.startsWith('Token ')
+              ? t.name.substring(0, 6).toUpperCase()
+              : `Token ${t.mint.substring(0, 8)}`.substring(0, 6).toUpperCase(),
+            description: t.description || '',
             image_uri: t.imageUrl || t.image_uri || '',
-            market_cap: t.marketCap || t.market_cap || 0,
-            usd_market_cap: t.marketCap || t.usd_market_cap || t.market_cap || 0,
+            market_cap: t.marketCap || t.market_cap || t.usd_market_cap || 0,
+            usd_market_cap: t.marketCap || t.market_cap || t.usd_market_cap || 0,
             creator: '',
             created_timestamp: t.created_timestamp || Math.floor((t.createdAt || Date.now()) / 1000),
             complete: t.complete !== undefined ? t.complete : (t.dexId !== 'pumpfun'), // Non-pumpfun = graduated

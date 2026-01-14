@@ -448,8 +448,14 @@ class TokenFeedService extends EventEmitter {
       // Create TokenData from on-chain event
       const tokenData: TokenData = {
         mint: event.mint,
-        name: event.name || `Token ${event.mint.slice(0, 8)}`,
-        symbol: event.symbol || 'NEW',
+        name: event.name && event.name.trim().length > 0 && !event.name.startsWith('Token ')
+          ? event.name
+          : `Token ${event.mint.slice(0, 8)}`,
+        symbol: event.symbol && event.symbol.trim().length > 0 && event.symbol !== 'NEW'
+          ? event.symbol
+          : event.name && event.name.trim().length > 0
+          ? event.name.substring(0, 6).toUpperCase()
+          : `Token ${event.mint.slice(0, 8)}`.substring(0, 6).toUpperCase(),
         price: 0,
         priceChange5m: 0,
         priceChange1h: 0,
@@ -646,8 +652,15 @@ class TokenFeedService extends EventEmitter {
 
       if (response.ok) {
         const data = await response.json();
+        log.info('Pump.fun API response for token', { 
+          mint: mint.slice(0, 8),
+          hasName: !!(data.name),
+          hasSymbol: !!(data.symbol),
+          hasImage: !!(data.image_uri),
+          hasMarketCap: !!(data.usd_market_cap || data.market_cap)
+        });
 
-        // Update token with basic metadata (images disabled)
+        // Update token with complete metadata from Pump.fun
         if (data.name && data.name.trim().length > 0) {
           existing.name = data.name;
         }
@@ -669,18 +682,64 @@ class TokenFeedService extends EventEmitter {
             : existing.name.substring(0, 6).toUpperCase();
         }
         
-        // Images DISABLED to save bandwidth
-        // if (data.image_uri) existing.imageUrl = data.image_uri;
+        // Enable images - they're important for UX
+        if (data.image_uri && data.image_uri.trim().length > 0) {
+          existing.imageUrl = data.image_uri;
+        }
+        
+        // Get market cap and price data from Pump.fun
+        if (data.usd_market_cap) {
+          existing.marketCap = parseFloat(String(data.usd_market_cap)) || 0;
+        } else if (data.market_cap) {
+          existing.marketCap = parseFloat(String(data.market_cap)) || 0;
+        }
+        
+        if (data.price_usd) {
+          existing.price = parseFloat(String(data.price_usd)) || 0;
+        }
+        
+        if (data.volume_24h) {
+          existing.volume24h = parseFloat(String(data.volume_24h)) || 0;
+        }
+        
+        if (data.liquidity) {
+          existing.liquidity = parseFloat(String(data.liquidity)) || 0;
+        }
+        
+        if (data.holders) {
+          existing.holders = parseInt(String(data.holders)) || 0;
+        }
+        
+        // Update fdv if available
+        if (data.fdv) {
+          existing.fdv = parseFloat(String(data.fdv)) || existing.marketCap;
+        } else {
+          existing.fdv = existing.marketCap;
+        }
 
         this.onChainTokens.set(mint, existing);
         this.broadcast([existing]);
 
-        // Update in MongoDB
+        // Update in MongoDB with full data
         await tokenIndexer.updateEnrichment(mint, {
           name: existing.name,
           symbol: existing.symbol,
-          // imageUrl: existing.imageUrl,
+          imageUrl: existing.imageUrl,
+          price: existing.price,
+          marketCap: existing.marketCap,
+          volume24h: existing.volume24h,
+          liquidity: existing.liquidity,
+          holders: existing.holders,
         }, 'pumpfun');
+        
+        log.info('✅ Token metadata enriched from Pump.fun', {
+          mint: mint.slice(0, 8),
+          name: existing.name,
+          symbol: existing.symbol,
+          hasImage: !!existing.imageUrl,
+          marketCap: existing.marketCap,
+          price: existing.price
+        });
 
         log.info('✅ Basic metadata fetched successfully', {
           mint: mint.slice(0, 8),
@@ -903,11 +962,11 @@ class TokenFeedService extends EventEmitter {
         updated = true;
       }
 
-      // Images DISABLED to save bandwidth and avoid rate limits
-      // if (metaJson.image && !existing.imageUrl) {
-      //   existing.imageUrl = metaJson.image;
-      //   updated = true;
-      // }
+      // Enable images from on-chain metadata
+      if (metaJson.image && !existing.imageUrl) {
+        existing.imageUrl = metaJson.image;
+        updated = true;
+      }
 
       // 7. Get mint info (supply, decimals)
       try {
@@ -978,10 +1037,21 @@ class TokenFeedService extends EventEmitter {
 
           // Convert to TokenData format
           for (const dbToken of dbTokens) {
+            // Ensure valid name/symbol (never generic)
+            const tokenName = dbToken.name && !dbToken.name.startsWith('Token ') && dbToken.name !== 'Unknown'
+              ? dbToken.name
+              : dbToken.symbol && dbToken.symbol !== 'UNK' && dbToken.symbol !== 'NEW'
+              ? dbToken.symbol
+              : `Token ${dbToken.mint.slice(0, 8)}`;
+            
+            const tokenSymbol = dbToken.symbol && dbToken.symbol !== 'UNK' && dbToken.symbol !== 'NEW'
+              ? dbToken.symbol
+              : tokenName.substring(0, 6).toUpperCase();
+            
             const tokenData: TokenData = {
               mint: dbToken.mint,
-              name: dbToken.name || `Token ${dbToken.mint.slice(0, 8)}`,
-              symbol: dbToken.symbol || 'UNK',
+              name: tokenName,
+              symbol: tokenSymbol,
               imageUrl: dbToken.imageUrl,
               price: dbToken.price || 0,
               priceChange5m: dbToken.priceChange5m || 0,
