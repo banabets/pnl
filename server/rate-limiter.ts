@@ -16,7 +16,7 @@ class RateLimiter {
   constructor() {
     // Configure rate limits for different services (more conservative to avoid 429s)
     this.configs.set('dexscreener', {
-      max: 8,            // 8 requests (reduced from 10 to be safer)
+      max: 5,            // 5 requests per minute (very conservative to avoid 429s)
       window: 60000,     // per minute
       name: 'DexScreener'
     });
@@ -83,14 +83,14 @@ class RateLimiter {
       return; // No limit configured
     }
 
-    let waitTime = 1000; // Start with 1 second
+    let waitTime = 2000; // Start with 2 seconds (increased to be more conservative)
     let attempts = 0;
     const maxAttempts = 10;
 
     while (!this.canMakeRequest(service) && attempts < maxAttempts) {
       const waitMs = Math.min(waitTime, maxWait);
-      // Only log every 5th attempt to reduce log spam
-      if (attempts % 5 === 0 || attempts === 0) {
+      // Only log every 10th attempt to reduce log spam significantly
+      if (attempts % 10 === 0 || attempts === 0) {
         log.info(`⏳ Rate limit reached for ${config.name}, waiting ${waitMs}ms... (attempt ${attempts + 1}/${maxAttempts})`);
       }
       

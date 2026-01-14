@@ -944,20 +944,19 @@ app.get('/api/tokens/top-gainers', readLimiter, async (req, res) => {
           log.info('Top gainers from tokenFeed', { count: topGainers.length });
 
           // Enrich top gainers with fresh data (selective enrichment)
-          const enrichmentPromises = topGainers.slice(0, 10).map((token, index) => {
-            // Stagger enrichment to avoid rate limits (500ms delay between each)
-            return new Promise((resolve) => {
-              setTimeout(() => {
-                tokenFeed.enrichTokenData(token.mint).then(() => resolve(true)).catch(() => resolve(false));
-              }, index * 500);
-            });
-          });
+          // Process sequentially to avoid rate limits (only enrich top 5 to save API calls)
+          const tokensToEnrich = topGainers.slice(0, 5);
+          for (const token of tokensToEnrich) {
+            try {
+              await tokenFeed.enrichTokenData(token.mint);
+              // Wait 15 seconds between each enrichment to respect rate limits
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            } catch (error) {
+              log.warn('Failed to enrich token', { mint: token.mint.substring(0, 8) });
+            }
+          }
 
-          // Wait for enrichment to complete (with timeout)
-          await Promise.race([
-            Promise.all(enrichmentPromises),
-            new Promise(resolve => setTimeout(resolve, 8000)) // 8 second timeout
-          ]);
+          // Enrichment is now sequential, no need to wait
 
           // Fetch updated data after enrichment
           const enrichedTokens = await Promise.all(
@@ -4628,47 +4627,59 @@ app.get('/api/pumpfun/token/:mint', async (req, res) => {
       discord: '',
     };
 
-    // Method 1: Try DexScreener API (most reliable)
+    // Method 1: Try DexScreener API (most reliable) - Use queue to avoid rate limits
     try {
-      const dexUrl = `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
-      const dexResponse = await fetch(dexUrl, {
-        headers: { 'Accept': 'application/json' },
-      });
-
-      if (dexResponse.ok) {
-        const dexData = await dexResponse.json();
-        if (dexData.pairs && dexData.pairs.length > 0) {
-          const pair = dexData.pairs[0]; // Get the most liquid pair
-          log.info('Found token info from DexScreener');
-          
-          tokenInfo.name = pair.baseToken?.name || tokenInfo.name;
-          tokenInfo.symbol = pair.baseToken?.symbol || tokenInfo.symbol;
-          tokenInfo.image_uri = pair.baseToken?.logoURI || tokenInfo.image_uri;
-          tokenInfo.price_usd = parseFloat(pair.priceUsd || 0);
-          tokenInfo.price_sol = parseFloat(pair.priceNative || 0);
-          tokenInfo.market_cap = parseFloat(pair.fdv || 0);
-          tokenInfo.usd_market_cap = parseFloat(pair.marketCap || pair.fdv || 0);
-          tokenInfo.volume_24h = parseFloat(pair.volume?.h24 || 0);
-          tokenInfo.price_change_24h = parseFloat(pair.priceChange?.h24 || 0);
-          tokenInfo.liquidity = parseFloat(pair.liquidity?.usd || 0);
-          tokenInfo.holders = parseInt(pair.holders || 0);
-          tokenInfo.complete = pair.liquidity?.usd ? parseFloat(pair.liquidity.usd) > 100000 : false;
-          tokenInfo.associated_market = pair.url || '';
-          
-          // Check if DEX is paid (DexScreener premium features)
-          // DexScreener free API has limited data, paid has more detailed info
-          tokenInfo.dex_is_paid = !!(pair.liquidity?.usd && pair.volume?.h24 && pair.priceChange?.h24);
-          
-          log.info('DexScreener token data', {
-            liquidity: tokenInfo.liquidity,
-            volume24h: tokenInfo.volume_24h,
-            holders: tokenInfo.holders
+      // Check rate limit first
+      if (!rateLimiter.canMakeRequest('dexscreener')) {
+        log.info('DexScreener rate limit reached, skipping for token endpoint', { mint: mint.substring(0, 8) });
+        // Skip DexScreener and try pump.fun instead
+      } else {
+        const { dexscreenerQueue } = await import('./dexscreener-queue');
+        const dexData = await dexscreenerQueue.enqueue(async () => {
+          const dexUrl = `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
+          const dexResponse = await fetch(dexUrl, {
+            headers: { 'Accept': 'application/json' },
           });
+          
+          if (!dexResponse.ok) {
+            throw new Error(`DexScreener API returned ${dexResponse.status}`);
+          }
+          
+          return await dexResponse.json();
+        });
+
+          if (dexData.pairs && dexData.pairs.length > 0) {
+            const pair = dexData.pairs[0]; // Get the most liquid pair
+            log.info('Found token info from DexScreener');
+            
+            tokenInfo.name = pair.baseToken?.name || tokenInfo.name;
+            tokenInfo.symbol = pair.baseToken?.symbol || tokenInfo.symbol;
+            tokenInfo.image_uri = pair.baseToken?.logoURI || tokenInfo.image_uri;
+            tokenInfo.price_usd = parseFloat(pair.priceUsd || 0);
+            tokenInfo.price_sol = parseFloat(pair.priceNative || 0);
+            tokenInfo.market_cap = parseFloat(pair.fdv || 0);
+            tokenInfo.usd_market_cap = parseFloat(pair.marketCap || pair.fdv || 0);
+            tokenInfo.volume_24h = parseFloat(pair.volume?.h24 || 0);
+            tokenInfo.price_change_24h = parseFloat(pair.priceChange?.h24 || 0);
+            tokenInfo.liquidity = parseFloat(pair.liquidity?.usd || 0);
+            tokenInfo.holders = parseInt(pair.holders || 0);
+            tokenInfo.complete = pair.liquidity?.usd ? parseFloat(pair.liquidity.usd) > 100000 : false;
+            tokenInfo.associated_market = pair.url || '';
+            
+            // Check if DEX is paid (DexScreener premium features)
+            // DexScreener free API has limited data, paid has more detailed info
+            tokenInfo.dex_is_paid = !!(pair.liquidity?.usd && pair.volume?.h24 && pair.priceChange?.h24);
+            
+            log.info('DexScreener token data', {
+              liquidity: tokenInfo.liquidity,
+              volume24h: tokenInfo.volume_24h,
+              holders: tokenInfo.holders
+            });
+          }
         }
+      } catch (dexError) {
+        log.error('DexScreener API failed', { error: (dexError as Error).message });
       }
-    } catch (dexError) {
-      log.error('DexScreener API failed', { error: (dexError as Error).message });
-    }
 
     // Method 2: Try pump.fun API
     try {
