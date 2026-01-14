@@ -496,8 +496,14 @@ class TokenFeedService extends EventEmitter {
         age: tokenData.age,
       });
 
-      // Fetch basic metadata from Pump.fun API (free, no rate limits)
-      setTimeout(() => this.fetchBasicMetadata(event.mint), 1000);
+      // Fetch basic metadata from Pump.fun API immediately (free, no rate limits)
+      // Don't wait - fetch immediately to get name/symbol
+      this.fetchBasicMetadata(event.mint).catch((error) => {
+        log.warn('Failed to fetch basic metadata for new token', { 
+          mint: event.mint.substring(0, 8),
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
     });
 
     // Listen for graduations
@@ -623,8 +629,8 @@ class TokenFeedService extends EventEmitter {
       const existing = this.onChainTokens.get(mint);
       if (!existing) return;
 
-      // Skip if we already have good metadata (image check disabled)
-      if (existing.name && existing.name !== 'Unknown') {
+      // Skip if we already have good metadata (not generic token name)
+      if (existing.name && !existing.name.startsWith('Token ') && existing.name !== 'Unknown') {
         return;
       }
 
@@ -642,8 +648,27 @@ class TokenFeedService extends EventEmitter {
         const data = await response.json();
 
         // Update token with basic metadata (images disabled)
-        if (data.name) existing.name = data.name;
-        if (data.symbol) existing.symbol = data.symbol;
+        if (data.name && data.name.trim().length > 0) {
+          existing.name = data.name;
+        }
+        if (data.symbol && data.symbol.trim().length > 0) {
+          existing.symbol = data.symbol;
+        }
+        
+        // Ensure we always have valid name/symbol (never "Unknown" or generic)
+        if (!existing.name || existing.name.startsWith('Token ') || existing.name === 'Unknown') {
+          existing.name = data.name && data.name.trim().length > 0
+            ? data.name
+            : data.symbol && data.symbol.trim().length > 0
+            ? data.symbol
+            : `Token ${mint.substring(0, 8)}`;
+        }
+        if (!existing.symbol || existing.symbol === 'UNK' || existing.symbol === 'NEW') {
+          existing.symbol = data.symbol && data.symbol.trim().length > 0
+            ? data.symbol
+            : existing.name.substring(0, 6).toUpperCase();
+        }
+        
         // Images DISABLED to save bandwidth
         // if (data.image_uri) existing.imageUrl = data.image_uri;
 
@@ -1213,10 +1238,23 @@ class TokenFeedService extends EventEmitter {
       if (ageMinutes > 60) riskScore -= 10;
       riskScore = Math.max(0, Math.min(100, riskScore));
 
+      // Ensure we always have valid name and symbol (never "Unknown")
+      const tokenName = baseToken.name && baseToken.name.trim().length > 0
+        ? baseToken.name
+        : baseToken.symbol && baseToken.symbol.trim().length > 0
+        ? baseToken.symbol
+        : `Token ${baseToken.address.substring(0, 8)}`;
+      
+      const tokenSymbol = baseToken.symbol && baseToken.symbol.trim().length > 0
+        ? baseToken.symbol
+        : baseToken.name && baseToken.name.trim().length > 0
+        ? baseToken.name.substring(0, 6).toUpperCase()
+        : tokenName.substring(0, 6).toUpperCase();
+
       return {
         mint: baseToken.address,
-        name: baseToken.name || 'Unknown',
-        symbol: baseToken.symbol || 'UNK',
+        name: tokenName,
+        symbol: tokenSymbol,
         imageUrl: pair.info?.imageUrl,
         price: parseFloat(pair.priceUsd || '0'),
         priceChange5m: pair.priceChange?.m5 || 0,

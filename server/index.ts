@@ -671,7 +671,11 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
           // Convert helius tokens to our format
           const converted = heliusTokens.map((t: any) => ({
             mint: t.mint,
-            name: t.name || 'Unknown',
+            name: t.name && !t.name.startsWith('Token ') && t.name !== 'Unknown'
+              ? t.name
+              : t.symbol && t.symbol !== 'UNK' && t.symbol !== 'NEW'
+              ? t.symbol
+              : `Token ${t.mint.substring(0, 8)}`,
             symbol: t.symbol || 'UNK',
             created_timestamp: t.timestamp || Date.now() / 1000,
             image_uri: t.imageUri || '',
@@ -696,7 +700,7 @@ app.get('/api/tokens/new', readLimiter, async (req, res) => {
       if (recent.length > 0) {
         const converted = recent.map((t: any) => ({
           mint: t.mint,
-          name: 'Unknown',
+          name: `Token ${mint.substring(0, 8)}`,
           symbol: 'UNK',
           created_timestamp: t.timestamp || Date.now() / 1000,
           image_uri: '',
