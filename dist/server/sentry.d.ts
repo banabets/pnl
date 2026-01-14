@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/node';
-import { Express } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 /**
  * Initialize Sentry error tracking
  */
@@ -8,12 +8,12 @@ export declare function initSentry(app?: Express): void;
  * Sentry request handler middleware
  * Must be the first middleware
  */
-export declare const sentryRequestHandler: () => any;
+export declare const sentryRequestHandler: () => (req: Request, res: Response, next: NextFunction) => void;
 /**
  * Sentry tracing middleware
  * Should be after request handler
  */
-export declare const sentryTracingHandler: () => any;
+export declare const sentryTracingHandler: () => (req: Request, res: Response, next: NextFunction) => void;
 /**
  * Sentry error handler middleware
  * Must be before other error handlers but after all controllers
@@ -46,7 +46,7 @@ export declare function addBreadcrumb(message: string, category: string, data?: 
 /**
  * Start a transaction for performance monitoring
  */
-export declare function startTransaction(name: string, op: string): any;
+export declare function startTransaction(name: string, op: string): Sentry.Transaction | null;
 /**
  * Close Sentry connection (call on app shutdown)
  */

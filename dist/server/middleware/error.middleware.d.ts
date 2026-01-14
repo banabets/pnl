@@ -5,7 +5,7 @@ import { AuthenticatedRequest } from '../auth-middleware';
  * Global error handling middleware
  * Catches all errors and formats them appropriately
  */
-export declare function errorHandler(err: Error | AppError, req: Request | AuthenticatedRequest, res: Response, next: NextFunction): any;
+export declare function errorHandler(err: Error | AppError, req: Request | AuthenticatedRequest, res: Response, next: NextFunction): Response<any, Record<string, any>> | undefined;
 /**
  * Async error wrapper
  * Wraps async route handlers to catch errors automatically

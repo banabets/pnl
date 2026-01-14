@@ -1,6 +1,319 @@
-export declare const FollowedWallet: any;
-export declare const CopyTrade: any;
-export declare const WalletStats: any;
+import mongoose from 'mongoose';
+export declare const FollowedWallet: mongoose.Model<{
+    createdAt: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    enabled: boolean;
+    walletAddress: string;
+    copyBuys: boolean;
+    copySells: boolean;
+    maxCopyAmountSol: number;
+    copyPercentage: number;
+    minTradeAmountSol: number;
+    skipTokensBelow: number;
+    useAudit: boolean;
+    totalCopied: number;
+    successfulTrades: number;
+    failedTrades: number;
+    totalPnl: number;
+    label?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    createdAt: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    enabled: boolean;
+    walletAddress: string;
+    copyBuys: boolean;
+    copySells: boolean;
+    maxCopyAmountSol: number;
+    copyPercentage: number;
+    minTradeAmountSol: number;
+    skipTokensBelow: number;
+    useAudit: boolean;
+    totalCopied: number;
+    successfulTrades: number;
+    failedTrades: number;
+    totalPnl: number;
+    label?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    createdAt: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    enabled: boolean;
+    walletAddress: string;
+    copyBuys: boolean;
+    copySells: boolean;
+    maxCopyAmountSol: number;
+    copyPercentage: number;
+    minTradeAmountSol: number;
+    skipTokensBelow: number;
+    useAudit: boolean;
+    totalCopied: number;
+    successfulTrades: number;
+    failedTrades: number;
+    totalPnl: number;
+    label?: string | null | undefined;
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    createdAt: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    enabled: boolean;
+    walletAddress: string;
+    copyBuys: boolean;
+    copySells: boolean;
+    maxCopyAmountSol: number;
+    copyPercentage: number;
+    minTradeAmountSol: number;
+    skipTokensBelow: number;
+    useAudit: boolean;
+    totalCopied: number;
+    successfulTrades: number;
+    failedTrades: number;
+    totalPnl: number;
+    label?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    createdAt: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    enabled: boolean;
+    walletAddress: string;
+    copyBuys: boolean;
+    copySells: boolean;
+    maxCopyAmountSol: number;
+    copyPercentage: number;
+    minTradeAmountSol: number;
+    skipTokensBelow: number;
+    useAudit: boolean;
+    totalCopied: number;
+    successfulTrades: number;
+    failedTrades: number;
+    totalPnl: number;
+    label?: string | null | undefined;
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    createdAt: NativeDate;
+    userId: mongoose.Types.ObjectId;
+    enabled: boolean;
+    walletAddress: string;
+    copyBuys: boolean;
+    copySells: boolean;
+    maxCopyAmountSol: number;
+    copyPercentage: number;
+    minTradeAmountSol: number;
+    skipTokensBelow: number;
+    useAudit: boolean;
+    totalCopied: number;
+    successfulTrades: number;
+    failedTrades: number;
+    totalPnl: number;
+    label?: string | null | undefined;
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
+export declare const CopyTrade: mongoose.Model<{
+    timestamp: NativeDate;
+    status: "pending" | "failed" | "success" | "skipped";
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    action: "buy" | "sell";
+    followedWallet: string;
+    originalAmountSol: number;
+    copiedAmountSol: number;
+    tokensTraded: number;
+    price?: number | null | undefined;
+    error?: string | null | undefined;
+    tokenName?: string | null | undefined;
+    originalSignature?: string | null | undefined;
+    ourSignature?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    timestamp: NativeDate;
+    status: "pending" | "failed" | "success" | "skipped";
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    action: "buy" | "sell";
+    followedWallet: string;
+    originalAmountSol: number;
+    copiedAmountSol: number;
+    tokensTraded: number;
+    price?: number | null | undefined;
+    error?: string | null | undefined;
+    tokenName?: string | null | undefined;
+    originalSignature?: string | null | undefined;
+    ourSignature?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    timestamp: NativeDate;
+    status: "pending" | "failed" | "success" | "skipped";
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    action: "buy" | "sell";
+    followedWallet: string;
+    originalAmountSol: number;
+    copiedAmountSol: number;
+    tokensTraded: number;
+    price?: number | null | undefined;
+    error?: string | null | undefined;
+    tokenName?: string | null | undefined;
+    originalSignature?: string | null | undefined;
+    ourSignature?: string | null | undefined;
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    timestamp: NativeDate;
+    status: "pending" | "failed" | "success" | "skipped";
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    action: "buy" | "sell";
+    followedWallet: string;
+    originalAmountSol: number;
+    copiedAmountSol: number;
+    tokensTraded: number;
+    price?: number | null | undefined;
+    error?: string | null | undefined;
+    tokenName?: string | null | undefined;
+    originalSignature?: string | null | undefined;
+    ourSignature?: string | null | undefined;
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    timestamp: NativeDate;
+    status: "pending" | "failed" | "success" | "skipped";
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    action: "buy" | "sell";
+    followedWallet: string;
+    originalAmountSol: number;
+    copiedAmountSol: number;
+    tokensTraded: number;
+    price?: number | null | undefined;
+    error?: string | null | undefined;
+    tokenName?: string | null | undefined;
+    originalSignature?: string | null | undefined;
+    ourSignature?: string | null | undefined;
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    timestamp: NativeDate;
+    status: "pending" | "failed" | "success" | "skipped";
+    userId: mongoose.Types.ObjectId;
+    tokenMint: string;
+    action: "buy" | "sell";
+    followedWallet: string;
+    originalAmountSol: number;
+    copiedAmountSol: number;
+    tokensTraded: number;
+    price?: number | null | undefined;
+    error?: string | null | undefined;
+    tokenName?: string | null | undefined;
+    originalSignature?: string | null | undefined;
+    ourSignature?: string | null | undefined;
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
+export declare const WalletStats: mongoose.Model<{
+    updatedAt: NativeDate;
+    totalTrades: number;
+    winRate: number;
+    walletAddress: string;
+    totalPnl: number;
+    avgTradeSize: number;
+    trades24h: number;
+    pnl24h: number;
+    pnl7d: number;
+    followerCount: number;
+    label?: string | null | undefined;
+    lastActive?: NativeDate | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {}, {}, mongoose.Document<unknown, {}, {
+    updatedAt: NativeDate;
+    totalTrades: number;
+    winRate: number;
+    walletAddress: string;
+    totalPnl: number;
+    avgTradeSize: number;
+    trades24h: number;
+    pnl24h: number;
+    pnl7d: number;
+    followerCount: number;
+    label?: string | null | undefined;
+    lastActive?: NativeDate | null | undefined;
+} & mongoose.DefaultTimestampProps, {}, {
+    timestamps: true;
+}> & {
+    updatedAt: NativeDate;
+    totalTrades: number;
+    winRate: number;
+    walletAddress: string;
+    totalPnl: number;
+    avgTradeSize: number;
+    trades24h: number;
+    pnl24h: number;
+    pnl7d: number;
+    followerCount: number;
+    label?: string | null | undefined;
+    lastActive?: NativeDate | null | undefined;
+} & mongoose.DefaultTimestampProps & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}, mongoose.Schema<any, mongoose.Model<any, any, any, any, any, any>, {}, {}, {}, {}, {
+    timestamps: true;
+}, {
+    updatedAt: NativeDate;
+    totalTrades: number;
+    winRate: number;
+    walletAddress: string;
+    totalPnl: number;
+    avgTradeSize: number;
+    trades24h: number;
+    pnl24h: number;
+    pnl7d: number;
+    followerCount: number;
+    label?: string | null | undefined;
+    lastActive?: NativeDate | null | undefined;
+} & mongoose.DefaultTimestampProps, mongoose.Document<unknown, {}, mongoose.FlatRecord<{
+    updatedAt: NativeDate;
+    totalTrades: number;
+    winRate: number;
+    walletAddress: string;
+    totalPnl: number;
+    avgTradeSize: number;
+    trades24h: number;
+    pnl24h: number;
+    pnl7d: number;
+    followerCount: number;
+    label?: string | null | undefined;
+    lastActive?: NativeDate | null | undefined;
+} & mongoose.DefaultTimestampProps>, {}, mongoose.ResolveSchemaOptions<{
+    timestamps: true;
+}>> & mongoose.FlatRecord<{
+    updatedAt: NativeDate;
+    totalTrades: number;
+    winRate: number;
+    walletAddress: string;
+    totalPnl: number;
+    avgTradeSize: number;
+    trades24h: number;
+    pnl24h: number;
+    pnl7d: number;
+    followerCount: number;
+    label?: string | null | undefined;
+    lastActive?: NativeDate | null | undefined;
+} & mongoose.DefaultTimestampProps> & {
+    _id: mongoose.Types.ObjectId;
+} & {
+    __v: number;
+}>>;
 export declare class CopyTradingService {
     private _connection;
     private _activeListeners;

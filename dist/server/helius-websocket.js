@@ -66,6 +66,19 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         this.RPC_MIN_DELAY = 200; // Minimum delay between RPC requests (ms)
         this.MAX_429_ERRORS = 5; // Max consecutive 429 errors before opening circuit breaker
         this.CIRCUIT_BREAKER_RESET_TIME = 60000; // 1 minute before resetting circuit breaker
+        // =============================
+        // Tx details optimization
+        // =============================
+        // Cache parsed tx details by signature to avoid refetching
+        this.txDetailsCache = new Map();
+        // Deduplicate concurrent requests for the same signature
+        this.txDetailsInFlight = new Map();
+        // Batch queue for Helius enhanced transactions endpoint
+        this.txBatchQueue = [];
+        this.txBatchTimer = null;
+        this.TX_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+        this.TX_BATCH_WINDOW_MS = 200; // collect signatures for 200ms
+        this.TX_BATCH_MAX = 100; // max per request (Helius supports batching)
         // Get RPC URL, preferring SOLANA_RPC_URL or RPC_URL
         let rpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL;
         // If no RPC URL is set, try to construct from HELIUS_API_KEY
@@ -138,6 +151,20 @@ class HeliusWebSocketService extends events_1.EventEmitter {
             this.ws.on('error', (error) => {
                 const errorMsg = error.message || String(error);
                 const errorStr = String(error);
+                // Check if it's a rate limit error (429) - STOP reconnecting to save API credits
+                const is429Error = errorMsg.includes('429') ||
+                    errorMsg.includes('Unexpected server response: 429') ||
+                    errorStr.includes('429') ||
+                    error?.code === 429 ||
+                    error?.statusCode === 429;
+                if (is429Error) {
+                    logger_1.log.error('WebSocket rate limited (429) - STOPPING reconnection to conserve API credits', {
+                        reason: 'Helius API rate limit exceeded',
+                        solution: 'Wait for rate limit to reset or upgrade Helius plan'
+                    });
+                    this.hasAuthError = true; // Reuse this flag to prevent reconnection
+                    return;
+                }
                 // Check if it's an authentication error (401) - check multiple formats
                 const is401Error = errorMsg.includes('401') ||
                     errorMsg.includes('Unauthorized') ||
@@ -279,7 +306,9 @@ class HeliusWebSocketService extends events_1.EventEmitter {
         }
         // Detect Pump.fun migration events (graduations to Raydium)
         if (logsStr.includes(PUMP_MIGRATION_PROGRAM)) {
-            await this.processPumpMigrationTransaction(signature, logs);
+            // TODO: Implement processPumpMigrationTransaction or use processPumpFunTransaction
+            logger_1.log.info('Pump.fun migration detected', { signature: signature.slice(0, 8) });
+            // await this.processPumpMigrationTransaction(signature, logs);
         }
         // Detect Raydium events (pool creation, swaps)
         if (logsStr.includes(RAYDIUM_AMM_PROGRAM) || logsStr.includes(RAYDIUM_CPMM_PROGRAM)) {
@@ -377,30 +406,102 @@ class HeliusWebSocketService extends events_1.EventEmitter {
      * Get transaction details using Helius enhanced API
      */
     async getTransactionDetails(signature) {
-        try {
-            const apiKey = process.env.HELIUS_API_KEY;
-            if (!apiKey) {
-                // Fallback to basic RPC
-                return this.getBasicTransactionDetails(signature);
+        const now = Date.now();
+        // 0) Cache hit
+        const cached = this.txDetailsCache.get(signature);
+        if (cached && now < cached.expires) {
+            return cached.data;
+        }
+        // 1) In-flight dedupe
+        const inflight = this.txDetailsInFlight.get(signature);
+        if (inflight) {
+            return inflight;
+        }
+        const apiKey = process.env.HELIUS_API_KEY;
+        // 2) If no API key, fallback to basic RPC (already rate-limited)
+        if (!apiKey) {
+            const p = this.getBasicTransactionDetails(signature);
+            this.txDetailsInFlight.set(signature, p);
+            try {
+                const res = await p;
+                if (res)
+                    this.txDetailsCache.set(signature, { data: res, expires: now + this.TX_CACHE_TTL });
+                return res;
             }
+            finally {
+                this.txDetailsInFlight.delete(signature);
+            }
+        }
+        // 3) Use batching against Helius enhanced endpoint to reduce credits
+        const p = new Promise((resolve, reject) => {
+            this.txBatchQueue.push({ sig: signature, resolve, reject });
+            if (!this.txBatchTimer) {
+                this.txBatchTimer = setTimeout(() => {
+                    this.flushTxBatch(apiKey).catch(() => { });
+                }, this.TX_BATCH_WINDOW_MS);
+            }
+            // If queue is big, flush immediately
+            if (this.txBatchQueue.length >= this.TX_BATCH_MAX) {
+                this.flushTxBatch(apiKey).catch(() => { });
+            }
+        });
+        this.txDetailsInFlight.set(signature, p);
+        try {
+            const res = await p;
+            if (res)
+                this.txDetailsCache.set(signature, { data: res, expires: now + this.TX_CACHE_TTL });
+            return res;
+        }
+        finally {
+            this.txDetailsInFlight.delete(signature);
+        }
+    }
+    /**
+     * Flush a batch of queued signatures to Helius enhanced transactions endpoint.
+     */
+    async flushTxBatch(apiKey) {
+        if (this.txBatchTimer) {
+            clearTimeout(this.txBatchTimer);
+            this.txBatchTimer = null;
+        }
+        if (this.txBatchQueue.length === 0)
+            return;
+        const batch = this.txBatchQueue.splice(0, this.TX_BATCH_MAX);
+        const sigs = batch.map(b => b.sig);
+        try {
             const response = await fetch(`https://api.helius.xyz/v0/transactions/?api-key=${apiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transactions: [signature] })
+                body: JSON.stringify({ transactions: sigs })
             });
             if (!response.ok) {
-                return this.getBasicTransactionDetails(signature);
+                // Fallback: resolve each via basic RPC (rate-limited/circuit-breaker protected)
+                for (const item of batch) {
+                    this.getBasicTransactionDetails(item.sig)
+                        .then(res => item.resolve(res))
+                        .catch(err => item.resolve(null));
+                }
+                return;
             }
             const data = await response.json();
-            const tx = data[0];
-            if (!tx)
-                return null;
-            // Parse Helius enhanced transaction
-            return this.parseHeliusTransaction(tx);
+            // data is an array aligned with the sigs order
+            for (let i = 0; i < batch.length; i++) {
+                const item = batch[i];
+                const tx = Array.isArray(data) ? data[i] : null;
+                if (!tx) {
+                    item.resolve(null);
+                    continue;
+                }
+                const parsed = this.parseHeliusTransaction(tx);
+                item.resolve(parsed);
+            }
         }
         catch (error) {
-            logger_1.log.error('Error fetching transaction details', { error: error instanceof Error ? error.message : String(error) });
-            return null;
+            // On error: resolve null to avoid blocking the event pipeline
+            logger_1.log.error('Error flushing Helius tx batch', { error: error?.message || String(error) });
+            for (const item of batch) {
+                item.resolve(null);
+            }
         }
     }
     /**

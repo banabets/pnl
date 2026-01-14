@@ -60,6 +60,13 @@ declare class HeliusWebSocketService extends EventEmitter {
     private readonly RPC_MIN_DELAY;
     private readonly MAX_429_ERRORS;
     private readonly CIRCUIT_BREAKER_RESET_TIME;
+    private txDetailsCache;
+    private txDetailsInFlight;
+    private txBatchQueue;
+    private txBatchTimer;
+    private readonly TX_CACHE_TTL;
+    private readonly TX_BATCH_WINDOW_MS;
+    private readonly TX_BATCH_MAX;
     constructor();
     /**
      * Start the WebSocket connection and subscriptions
@@ -97,6 +104,10 @@ declare class HeliusWebSocketService extends EventEmitter {
      * Get transaction details using Helius enhanced API
      */
     private getTransactionDetails;
+    /**
+     * Flush a batch of queued signatures to Helius enhanced transactions endpoint.
+     */
+    private flushTxBatch;
     /**
      * Pick the most likely token mint from Helius tokenTransfers array.
      * Filters out wSOL and chooses the transfer with the largest absolute token amount.

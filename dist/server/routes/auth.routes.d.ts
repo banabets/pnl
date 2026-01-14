@@ -2,6 +2,6 @@
  * Auth Routes
  * Authentication and user management endpoints
  */
-declare const router: any;
+declare const router: import("express-serve-static-core").Router;
 export default router;
 //# sourceMappingURL=auth.routes.d.ts.map

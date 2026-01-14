@@ -610,11 +610,18 @@ class TokenFeedService extends EventEmitter {
 
   /**
    * Internal enrichment implementation (called via enrichInFlight wrapper)
+   * ⚠️ DISABLED to save API credits - DexScreener calls disabled
    */
   private async _enrichTokenDataInternal(mint: string): Promise<void> {
     const existing = this.onChainTokens.get(mint);
     if (!existing) return;
 
+    // ⚠️ OPTIMIZATION: Skip DexScreener enrichment to conserve API credits
+    // Only use Pump.fun API data without additional enrichment
+    log.info('Token enrichment DISABLED to save API credits', { mint: mint.slice(0, 8) });
+    return;
+
+    /* DISABLED CODE - Uncomment to re-enable DexScreener enrichment
     try {
       // 1. Check cache for metadata first (longest TTL)
       const cachedMetadata = this.getCachedMetadata(mint);
@@ -828,6 +835,7 @@ if (!pair) return;
         }
       }
     }
+    */ // END OF DISABLED CODE
   }
 
   /**

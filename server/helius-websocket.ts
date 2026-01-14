@@ -214,16 +214,32 @@ class HeliusWebSocketService extends EventEmitter {
       this.ws.on('error', (error: any) => {
         const errorMsg = error.message || String(error);
         const errorStr = String(error);
-        
+
+        // Check if it's a rate limit error (429) - STOP reconnecting to save API credits
+        const is429Error = errorMsg.includes('429') ||
+                          errorMsg.includes('Unexpected server response: 429') ||
+                          errorStr.includes('429') ||
+                          error?.code === 429 ||
+                          error?.statusCode === 429;
+
+        if (is429Error) {
+          log.error('WebSocket rate limited (429) - STOPPING reconnection to conserve API credits', {
+            reason: 'Helius API rate limit exceeded',
+            solution: 'Wait for rate limit to reset or upgrade Helius plan'
+          });
+          this.hasAuthError = true; // Reuse this flag to prevent reconnection
+          return;
+        }
+
         // Check if it's an authentication error (401) - check multiple formats
-        const is401Error = errorMsg.includes('401') || 
-                          errorMsg.includes('Unauthorized') || 
+        const is401Error = errorMsg.includes('401') ||
+                          errorMsg.includes('Unauthorized') ||
                           errorMsg.includes('Unexpected server response: 401') ||
                           errorStr.includes('401') ||
                           errorStr.includes('Unauthorized') ||
                           error?.code === 401 ||
                           error?.statusCode === 401;
-        
+
         if (is401Error) {
           log.error('WebSocket authentication failed (401)', {
             reasons: [
@@ -375,7 +391,9 @@ class HeliusWebSocketService extends EventEmitter {
 
     // Detect Pump.fun migration events (graduations to Raydium)
     if (logsStr.includes(PUMP_MIGRATION_PROGRAM)) {
-      await this.processPumpMigrationTransaction(signature, logs);
+      // TODO: Implement processPumpMigrationTransaction or use processPumpFunTransaction
+      log.info('Pump.fun migration detected', { signature: signature.slice(0, 8) });
+      // await this.processPumpMigrationTransaction(signature, logs);
     }
 
     // Detect Raydium events (pool creation, swaps)

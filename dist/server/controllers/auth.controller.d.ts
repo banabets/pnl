@@ -39,5 +39,5 @@ export declare function changePassword(req: AuthenticatedRequest, res: Response)
 /**
  * Forgot password
  */
-export declare function forgotPassword(req: Request, res: Response): Promise<any>;
+export declare function forgotPassword(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
 //# sourceMappingURL=auth.controller.d.ts.map

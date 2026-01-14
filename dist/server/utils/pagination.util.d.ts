@@ -23,7 +23,7 @@ export declare function paginate<T>(data: T[], params: PaginationQuery, sortFn?:
  */
 export declare function getPaginationParams(params: PaginationQuery): {
     skip: number;
-    limit: z.infer<any>;
-    page: z.infer<any>;
+    limit: number;
+    page: number;
 };
 //# sourceMappingURL=pagination.util.d.ts.map

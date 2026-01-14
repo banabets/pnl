@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 interface TokenData {
     mint: string;
     name: string;
@@ -41,13 +42,16 @@ interface TokenFeedOptions {
     maxAge: number;
     limit: number;
 }
-declare class TokenFeedService {
+declare class TokenFeedService extends EventEmitter {
     private metadataCache;
     private priceCache;
     private volumeCache;
     private marketDataCache;
     private priceChangeCache;
     private fullTokenCache;
+    private pairCache;
+    private enrichInFlight;
+    private pendingTokenBroadcast;
     private readonly TTL;
     private callbacks;
     private onChainTokens;
@@ -62,6 +66,16 @@ declare class TokenFeedService {
      * Cleanup expired cache entries
      */
     private cleanupExpiredCache;
+    /**
+     * Schedule a debounced broadcast for a single token update.
+     * This prevents spamming the frontend with updates on every trade.
+     */
+    private scheduleTokenBroadcast;
+    /**
+     * Apply a DexScreener pair object to our internal TokenData and refresh caches.
+     * Centralizing this logic ensures token and pair caching are consistent.
+     */
+    private applyDexPairToToken;
     /**
      * Get cached metadata or null if expired/missing
      */
@@ -115,6 +129,11 @@ declare class TokenFeedService {
      * Public method so worker can access it
      */
     enrichTokenData(mint: string): Promise<void>;
+    /**
+     * Internal enrichment implementation (called via enrichInFlight wrapper)
+     * ⚠️ DISABLED to save API credits - DexScreener calls disabled
+     */
+    private _enrichTokenDataInternal;
     /**
      * Enrich token data from on-chain (Metaplex metadata) - Fallback when APIs fail
      * Returns true if enrichment was successful, false otherwise
